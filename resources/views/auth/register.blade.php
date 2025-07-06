@@ -2,9 +2,6 @@
 <html lang="en">
 
 <head>
-    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -43,11 +40,11 @@
 
 <body>
     <!-- login page start-->
-    <div class="container-fluid">
-        <div class="row">
-            <div class="col-xl-7"><img class="bg-img-cover bg-center" src="../assets/images/login/2.jpg"
+    <div class="container-fluid p-0">
+        <div class="row m-0">
+            <div class="col-xl-5"><img class="bg-img-cover bg-center" src="../assets/images/login/3.jpg"
                     alt="looginpage"></div>
-            <div class="col-xl-5 p-0">
+            <div class="col-xl-7 p-0">
                 <div class="login-card login-dark">
                     <div>
                         <div><a class="logo text-start" href="index.html"><img class="img-fluid for-light"
@@ -55,44 +52,91 @@
                                     class="img-fluid for-dark" src="../assets/images/logo/logo_dark.png"
                                     alt="looginpage"></a></div>
                         <div class="login-main">
-                            <form class="theme-form" action="{{ url('login') }}" method="post">
+                            <form class="theme-form" action="{{ route('register') }}" method="POST">
                                 @csrf
-                                <h4>Sign in to account</h4>
-                                <p>Enter your email & password to login</p>
+                                <h4>Create your account</h4>
+                                <p>Enter your personal details to create account</p>
+
+                                <div class="form-group">
+                                    <label class="col-form-label pt-0">Your Name</label>
+                                    <div class="row g-2">
+                                        <div class="col-6">
+                                            <input class="form-control" type="text" name="name" required
+                                                placeholder="First name">
+                                        </div>
+                                        <div class="col-6">
+                                            <!-- Optional: if you want to save last name separately -->
+                                            <!-- Or just remove this and use the first input only -->
+                                            <!-- <input class="form-control" type="text" name="last_name" placeholder="Last name"> -->
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="form-group">
                                     <label class="col-form-label">Email Address</label>
-                                    <input class="form-control" type="email" name="email" required=""
+                                    <input class="form-control" type="email" name="email" required
                                         placeholder="Test@gmail.com">
                                 </div>
+
                                 <div class="form-group">
                                     <label class="col-form-label">Password</label>
                                     <div class="form-input position-relative">
-                                        <input class="form-control" type="password" name="password" required=""
+                                        <input class="form-control" type="password" name="password" required
                                             placeholder="*********">
-                                        <div class="show-hide"><span class="show"> </span></div>
+                                        <div class="show-hide"><span class="show"></span></div>
                                     </div>
                                 </div>
+
+                                <div class="form-group">
+                                    <label class="col-form-label">Confirm Password</label>
+                                    <div class="form-input position-relative">
+                                        <input class="form-control" type="password" name="password_confirmation"
+                                            required placeholder="*********">
+                                    </div>
+                                </div>
+
                                 <div class="form-group mb-0">
                                     <div class="checkbox p-0">
                                         <input id="checkbox1" type="checkbox">
-                                        <label class="text-muted" for="checkbox1">Remember password</label>
+                                        <label class="text-muted" for="checkbox1">Agree with<a class="ms-2"
+                                                href="#">Privacy Policy</a></label>
                                     </div>
-                                    <button class="btn btn-primary btn-block w-100" type="submit">Sign in</button>
+                                    <button class="btn btn-primary btn-block w-100" type="submit">Create
+                                        Account</button>
                                 </div>
-                                <h6 class="text-muted mt-4 or">Or Sign in with</h6>
+
+                                <h6 class="text-muted mt-4 or">Or signup with</h6>
                                 <div class="social mt-4">
-                                    <div class="btn-showcase"><a class="btn btn-light"
-                                            href="https://www.linkedin.com/login" target="_blank"><i
-                                                class="txt-linkedin" data-feather="linkedin"></i> LinkedIn </a><a
-                                            class="btn btn-light" href="https://twitter.com/login?lang=en"
-                                            target="_blank"><i class="txt-twitter"
-                                                data-feather="twitter"></i>twitter</a><a class="btn btn-light"
-                                            href="https://www.facebook.com/" target="_blank"><i class="txt-fb"
-                                                data-feather="facebook"></i>facebook</a></div>
+                                    <div class="btn-showcase">
+                                        <a class="btn btn-light" href="https://www.linkedin.com/login"
+                                            target="_blank">
+                                            <i class="txt-linkedin" data-feather="linkedin"></i> LinkedIn
+                                        </a>
+                                        <a class="btn btn-light" href="https://twitter.com/login?lang=en"
+                                            target="_blank">
+                                            <i class="txt-twitter" data-feather="twitter"></i>twitter
+                                        </a>
+                                        <a class="btn btn-light" href="https://www.facebook.com/" target="_blank">
+                                            <i class="txt-fb" data-feather="facebook"></i>facebook
+                                        </a>
+                                    </div>
                                 </div>
-                                <p class="mt-4 mb-0 text-center">Don't have account?<a class="ms-2"
-                                        href="sign-up.html">Create Account</a></p>
+
+                                <p class="mt-4 mb-0 text-center">Already have an account?<a class="ms-2"
+                                        href="{{ route('login') }}">Sign in</a></p>
                             </form>
+
+                            @if ($errors->any())
+                                <div style="color:red;">
+                                    {{ $errors->first() }}
+                                </div>
+                            @endif
+                            @if (session('success'))
+                                <div style="color:green;">
+                                    {{ session('success') }}
+                                </div>
+                            @endif
+
                         </div>
                     </div>
                 </div>
