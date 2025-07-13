@@ -12,8 +12,8 @@
     <meta name="author" content="pixelstrap">
     <link rel="icon" href="../assets/images/favicon.png" type="image/x-icon">
     <link rel="shortcut icon" href="../assets/images/favicon.png" type="image/x-icon">
-    <title>Cuba - Premium Admin Template</title>
-    <!-- Google font-->
+    <title>LoadBoard - Signup</title>
+     <!-- Google font-->
     <link href="https://fonts.googleapis.com/css?family=Rubik:400,400i,500,500i,700,700i&amp;display=swap"
         rel="stylesheet">
     <link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,500,500i,700,700i,900&amp;display=swap"
@@ -67,8 +67,8 @@
                     <div class="col-md-6 position-relative">
                         <label>Name</label>
                         <div class="input-group">
-                            <input id="name" class="form-control pe-5 rounded-2" type="text" name="name" placeholder="Full Name"
-                                required>
+                            <input id="name" class="form-control pe-5 rounded-2" type="text" name="name"
+                                placeholder="Full Name" required>
                             <i id="name-icon"
                                 class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                         </div>
@@ -98,8 +98,8 @@
 
                     {{-- Confirm Password --}}
                     <div class="col-md-6 position-relative"> <label>Confirm Password</label>
-                        <div class="input-group"> <input id="confirm-password" class="form-control pe-5 rounded-2" type="password"
-                                name="password_confirmation" placeholder="********" required> <i
+                        <div class="input-group"> <input id="confirm-password" class="form-control pe-5 rounded-2"
+                                type="password" name="password_confirmation" placeholder="********" required> <i
                                 id="confirm-password-icon"
                                 class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                         </div>
