@@ -35,7 +35,7 @@ class AuthController extends Controller
             return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
         }
     }
-    
+
     public function verify(Request $request, LogsController $logsController)
     {
         try {
@@ -81,7 +81,13 @@ class AuthController extends Controller
                 'name' => 'required|string|max:255',
                 'email' => 'required|string|email|unique:users,email',
                 'password' => 'required|string|min:6|confirmed',
+                'role' => 'required|string|max:255',
+                'dob' => 'required|date',
+                'gender' => 'required|string|in:Male,Female,Other',
+                'cnic' => 'required|digits:13',
+                'address' => 'required|string|max:255',
             ]);
+
 
             User::create([
                 'name' => $request->name,
@@ -121,79 +127,91 @@ class AuthController extends Controller
             return back()->withErrors(['otp' => 'Invalid OTP. Please try again.']);
         }
     }
-public function sendOtp(Request $request, LogsController $logsController)
-{
-    try {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|unique:users,email',
-            'password' => 'required|string|min:6|confirmed',
-        ]);
+    public function sendOtp(Request $request, LogsController $logsController)
+    {
+        try {
+            $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => 'required|string|email|unique:users,email',
+                'password' => 'required|string|min:6|confirmed',
+                'role' => 'required|string|max:255',
+                'dob' => 'required|date',
+                'gender' => 'required|string|in:Male,Female,Other',
+                'cnic' => 'required|digits:13',
+                'address' => 'required|string|max:255',
+            ]);
 
-        $otp = rand(100000, 999999);
 
-        // Log OTP generation
-        \Log::info("Generated OTP: {$otp} for email: {$request->email}");
+            $otp = rand(100000, 999999);
 
-        session([
-            'pending_user' => [
-                'name' => $request->name,
-                'email' => $request->email,
-                'password' => Hash::make($request->password),
-            ],
-            'register_otp' => $otp,
-        ]);
+            // Log OTP generation
+            \Log::info("Generated OTP: {$otp} for email: {$request->email}");
 
-        // Prepare email content
-        $fromAddress = config('mail.from.address');
-        $fromName = config('mail.from.name');
-        $to = $request->email;
-        $subject = 'Your OTP Code';
-        $body = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
+            session([
+                'pending_user' => [
+                    'name' => $request->name,
+                    'email' => $request->email,
+                    'password' => Hash::make($request->password),
+                    'role' => $request->role,
+                    'dob' => $request->dob,
+                    'gender' => $request->gender,
+                    'cnic' => $request->cnic,
+                    'address' => $request->address,
+                ],
+                'register_otp' => $otp,
+            ]);
 
-        // Log full email structure
-        \Log::info("Email Message Details", [
-            'From' => "{$fromName} <{$fromAddress}>",
-            'To' => $to,
-            'Subject' => $subject,
-            'Body' => $body,
-        ]);
 
-        // Send OTP via raw email
-        Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
-            $message->from($fromAddress, $fromName)
+            // Prepare email content
+            $fromAddress = config('mail.from.address');
+            $fromName = config('mail.from.name');
+            $to = $request->email;
+            $subject = 'Your OTP Code';
+            $body = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
+
+            // Log full email structure
+            \Log::info("Email Message Details", [
+                'From' => "{$fromName} <{$fromAddress}>",
+                'To' => $to,
+                'Subject' => $subject,
+                'Body' => $body,
+            ]);
+
+            // Send OTP via raw email
+            Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
+                $message->from($fromAddress, $fromName)
                     ->to($to)
                     ->subject($subject);
-        });
+            });
 
-        // Log success
-        \Log::info("OTP email successfully sent to {$to}");
+            // Log success
+            \Log::info("OTP email successfully sent to {$to}");
 
-        // Custom application log
-        $logsController->createLog(
-            __METHOD__,
-            'success',
-            "OTP {$otp} sent to {$to}",
-            null,
-            json_encode(['email' => $to, 'otp' => $otp, 'from' => $fromAddress])
-        );
+            // Custom application log
+            $logsController->createLog(
+                __METHOD__,
+                'success',
+                "OTP {$otp} sent to {$to}",
+                null,
+                json_encode(['email' => $to, 'otp' => $otp, 'from' => $fromAddress])
+            );
 
-        return view('auth.enter_otp');
+            return view('auth.enter_otp');
 
-    } catch (\Exception $e) {
-        \Log::error("Error sending OTP to {$request->email}: " . $e->getMessage());
+        } catch (\Exception $e) {
+            \Log::error("Error sending OTP to {$request->email}: " . $e->getMessage());
 
-        $logsController->createLog(
-            __METHOD__,
-            'error',
-            'OTP sending failed: ' . $e->getMessage(),
-            null,
-            json_encode(['email' => $request->email ?? 'N/A'])
-        );
+            $logsController->createLog(
+                __METHOD__,
+                'error',
+                'OTP sending failed: ' . $e->getMessage(),
+                null,
+                json_encode(['email' => $request->email ?? 'N/A'])
+            );
 
-        return redirect()->back()->withErrors(['error' => 'Something went wrong: ' . $e->getMessage()]);
+            return redirect()->back()->withErrors(['error' => 'Something went wrong: ' . $e->getMessage()]);
+        }
     }
-}
 
 
 
