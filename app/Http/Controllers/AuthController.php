@@ -27,6 +27,18 @@ class AuthController extends Controller
 
 
     }
+
+    public function role(LogsController $logsController)
+    {
+        try {
+            return view('role');
+        } catch (\Exception $e) {
+            // Handle the exception, log it, or return an error response
+            $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
+            return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
+        }
+    }
+    
     public function verify(Request $request, LogsController $logsController)
     {
         try {

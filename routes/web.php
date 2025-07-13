@@ -5,6 +5,8 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
 
 // Public (guest) routes
+Route::get('/role', [AuthController::class, 'role'])->name('role');
+
 Route::get('/', [AuthController::class, 'login'])->name('login');
 Route::post('/login', [AuthController::class, 'verify'])->name('login.post');
 
