@@ -52,7 +52,7 @@
                                     class="img-fluid for-dark" src="../assets/images/logo/logo_dark.png"
                                     alt="looginpage"></a></div>
                         <div class="login-main">
-                            <form class="theme-form" action="{{ route('register') }}" method="POST">
+                            <form action="{{ route('otp.send') }}" method="POST">
                                 @csrf
                                 <h4>Create your account</h4>
                                 <p>Enter your personal details to create account</p>
@@ -108,8 +108,7 @@
                                 <h6 class="text-muted mt-4 or">Or signup with</h6>
                                 <div class="social mt-4">
                                     <div class="btn-showcase">
-                                        <a class="btn btn-light" href="https://www.linkedin.com/login"
-                                            target="_blank">
+                                        <a class="btn btn-light" href="https://www.linkedin.com/login" target="_blank">
                                             <i class="txt-linkedin" data-feather="linkedin"></i> LinkedIn
                                         </a>
                                         <a class="btn btn-light" href="https://twitter.com/login?lang=en"

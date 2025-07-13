@@ -11,7 +11,7 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [AuthController::class, 'verify'])->name('login.post');
 
     Route::get('/register', [AuthController::class, 'registerForm'])->name('register.form');
-    Route::post('/register', [AuthController::class, 'register'])->name('register');
+    // Route::post('/register', [AuthController::class, 'register'])->name('register'); // Keep commented for OTP flow
 
     Route::post('/send-otp', [AuthController::class, 'sendOtp'])->name('otp.send');
     Route::post('/verify-otp', [AuthController::class, 'verifyOtp'])->name('otp.verify');

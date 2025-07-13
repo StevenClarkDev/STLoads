@@ -8,9 +8,11 @@ use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
+use App\Mail\OtpMail; // Make sure this is at the top of your file
 
 class AuthController extends Controller
-{  public function landingPage()
+{
+    public function landingPage()
     {
         return view('welcome'); // create this blade file if not done
     }
@@ -90,6 +92,10 @@ class AuthController extends Controller
             'otp' => 'required|digits:6',
         ]);
 
+        if (!session()->has('register_otp') || !session()->has('pending_user')) {
+            return redirect()->route('register.form')->withErrors(['error' => 'Session expired. Please register again.']);
+        }
+
         if ($request->otp == session('register_otp')) {
             $data = session('pending_user');
 
@@ -103,8 +109,9 @@ class AuthController extends Controller
             return back()->withErrors(['otp' => 'Invalid OTP. Please try again.']);
         }
     }
-    public function sendOtp(Request $request)
-    {
+public function sendOtp(Request $request, LogsController $logsController)
+{
+    try {
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|unique:users,email',
@@ -113,7 +120,9 @@ class AuthController extends Controller
 
         $otp = rand(100000, 999999);
 
-        // Store user data + OTP in session
+        // Log OTP generation
+        \Log::info("Generated OTP: {$otp} for email: {$request->email}");
+
         session([
             'pending_user' => [
                 'name' => $request->name,
@@ -123,12 +132,58 @@ class AuthController extends Controller
             'register_otp' => $otp,
         ]);
 
-        // Send OTP via email
-        Mail::raw("Your OTP is: $otp", function ($message) use ($request) {
-            $message->to($request->email)
-                ->subject('Your OTP for Registration');
+        // Prepare email content
+        $fromAddress = config('mail.from.address');
+        $fromName = config('mail.from.name');
+        $to = $request->email;
+        $subject = 'Your OTP Code';
+        $body = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
+
+        // Log full email structure
+        \Log::info("Email Message Details", [
+            'From' => "{$fromName} <{$fromAddress}>",
+            'To' => $to,
+            'Subject' => $subject,
+            'Body' => $body,
+        ]);
+
+        // Send OTP via raw email
+        Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
+            $message->from($fromAddress, $fromName)
+                    ->to($to)
+                    ->subject($subject);
         });
 
-        return view('auth.enter-otp'); // Blade file where user inputs OTP
+        // Log success
+        \Log::info("OTP email successfully sent to {$to}");
+
+        // Custom application log
+        $logsController->createLog(
+            __METHOD__,
+            'success',
+            "OTP {$otp} sent to {$to}",
+            null,
+            json_encode(['email' => $to, 'otp' => $otp, 'from' => $fromAddress])
+        );
+
+        return view('auth.enter_otp');
+
+    } catch (\Exception $e) {
+        \Log::error("Error sending OTP to {$request->email}: " . $e->getMessage());
+
+        $logsController->createLog(
+            __METHOD__,
+            'error',
+            'OTP sending failed: ' . $e->getMessage(),
+            null,
+            json_encode(['email' => $request->email ?? 'N/A'])
+        );
+
+        return redirect()->back()->withErrors(['error' => 'Something went wrong: ' . $e->getMessage()]);
     }
+}
+
+
+
+
 }
