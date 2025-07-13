@@ -14,8 +14,10 @@
         content="admin template, Cuba admin template, dashboard template, flat admin template, responsive admin template, web app">
     <meta name="author" content="pixelstrap">
     <link rel="icon" href="../assets/images/favicon.png" type="image/x-icon">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+        integrity="sha512-b0HZvpK+k...fullhash..." crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="shortcut icon" href="../assets/images/favicon.png" type="image/x-icon">
-    <title>Cuba - Premium Admin Template</title>
+    <title>LoadBoard - Login</title>
     <!-- Google font-->
     <link href="https://fonts.googleapis.com/css?family=Rubik:400,400i,500,500i,700,700i&amp;display=swap"
         rel="stylesheet">
@@ -45,32 +47,43 @@
     <!-- login page start-->
     <div class="container-fluid">
         <div class="row">
-            <div class="col-xl-7"><img class="bg-img-cover bg-center" src="../assets/images/login/2.jpg"
-                    alt="looginpage"></div>
-            <div class="col-xl-5 p-0">
+            <div class="col-xl-7 p-0">
                 <div class="login-card login-dark">
                     <div>
-                        <div><a class="logo text-start" href="index.html"><img class="img-fluid for-light"
+                        <!-- <div><a class="logo text-start" href="index.html"><img class="img-fluid for-light"
                                     src="../assets/images/logo/logo.png" alt="looginpage"><img
                                     class="img-fluid for-dark" src="../assets/images/logo/logo_dark.png"
-                                    alt="looginpage"></a></div>
+                                    alt="looginpage"></a></div> -->
+                        <div class="text-center mb-4">
+                            <img src="../assets/images/stloads/logo-bg_none-small.png" alt="Load Board Logo"
+                                style="max-width: 40%;">
+                        </div>
                         <div class="login-main">
                             <form class="theme-form" action="{{ url('login') }}" method="post">
                                 @csrf
                                 <h4>Sign in to account</h4>
                                 <p>Enter your email & password to login</p>
-                                <div class="form-group">
+                                {{-- Email --}}
+                                <div class="form-group position-relative">
                                     <label class="col-form-label">Email Address</label>
-                                    <input class="form-control" type="email" name="email" required=""
-                                        placeholder="Test@gmail.com">
+                                    <div class="input-group">
+                                        <input id="email" class="form-control pe-5 rounded-2" type="email" name="email" required
+                                            placeholder="Test@gmail.com">
+                                        <i id="email-icon"
+                                            class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
+                                    </div>
                                 </div>
-                                <div class="form-group">
+                                {{-- Password --}}
+                                <div class="form-group position-relative">
                                     <label class="col-form-label">Password</label>
                                     <div class="form-input position-relative">
-                                        <input class="form-control" type="password" name="password" required=""
-                                            placeholder="*********">
-                                        <div class="show-hide"><span class="show"> </span></div>
+                                        <input id="password" class="form-control pe-5" type="password" name="password"
+                                            required placeholder="*********">
+                                        <i id="password-icon"
+                                            class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                                     </div>
+                                    <small id="password-error" class="text-danger d-none">Min. 8 characters with letters
+                                        & numbers</small>
                                 </div>
                                 <div class="form-group mb-0">
                                     <div class="checkbox p-0">
@@ -81,14 +94,10 @@
                                 </div>
                                 <h6 class="text-muted mt-4 or">Or Sign in with</h6>
                                 <div class="social mt-4">
-                                    <div class="btn-showcase"><a class="btn btn-light"
-                                            href="https://www.linkedin.com/login" target="_blank"><i
-                                                class="txt-linkedin" data-feather="linkedin"></i> LinkedIn </a><a
-                                            class="btn btn-light" href="https://twitter.com/login?lang=en"
-                                            target="_blank"><i class="txt-twitter"
-                                                data-feather="twitter"></i>twitter</a><a class="btn btn-light"
-                                            href="https://www.facebook.com/" target="_blank"><i class="txt-fb"
-                                                data-feather="facebook"></i>facebook</a></div>
+                                    <a href="{{ url('/auth/google') }}" target="_blank"
+                                        class="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center gap-2">
+                                        <i class="fab fa-google me-2"></i> Sign in with Google
+                                    </a>
                                 </div>
                                 <p class="mt-4 mb-0 text-center">Don't have account?<a class="ms-2"
                                         href={{ route('register.form') }}>Create Account</a></p>
@@ -97,6 +106,10 @@
                     </div>
                 </div>
             </div>
+            <!-- <div class="col-xl-5"><img class="bg-img-cover bg-center" src="../assets/images/login/login-poster-2.jpg"
+                    alt="loginpage"></div> -->
+            <div class="col-xl-5"><img class="bg-img-cover bg-center" src="../assets/images/login/login-poster.jpg"
+                    alt="loginpage"></div>
         </div>
         <!-- latest jquery-->
         <script src="../assets/js/jquery.min.js"></script>
@@ -114,5 +127,31 @@
         <script src="../assets/js/script.js"></script>
     </div>
 </body>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        function validateInput(id, regex, errorId = null) {
+            const input = document.getElementById(id);
+            const icon = document.getElementById(id + "-icon");
+            const error = errorId ? document.getElementById(errorId) : null;
+            if (!input || !icon) return; input.addEventListener("input", function () {
+                const isValid = regex.test(input.value); icon.classList.toggle("text-primary", isValid);
+                icon.classList.toggle("text-muted", !isValid);
+                if (error) {
+                    if (input.value.length > 0 && !isValid) {
+                        error.classList.remove("d-none");
+                    }
+                    else {
+                        error.classList.add("d-none");
+                    }
+                }
+            });
+        }
+        validateInput("email", /^[^\s@]+@[^\s@]+\.[^\s@]+$/);
+        validateInput("password", /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/, "password-error");
+    });
+
+</script>
+
 
 </html>
