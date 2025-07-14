@@ -213,7 +213,37 @@ class AuthController extends Controller
         }
     }
 
+    public function otp(LogsController $logsController)
+    {
+        try {
+            return view('auth.enter_otp');
+        } catch (\Exception $e) {
+            // Handle the exception, log it, or return an error response
+            $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
+            return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
+        }
+    }
 
+    public function forgetPassword(LogsController $logsController)
+    {
+        try {
+            return view('auth.forget_password');
+        } catch (\Exception $e) {
+            // Handle the exception, log it, or return an error response
+            $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
+            return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
+        }
+    }
 
+    public function newPassword(LogsController $logsController)
+    {
+        try {
+            return view('auth.new_password');
+        } catch (\Exception $e) {
+            // Handle the exception, log it, or return an error response
+            $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
+            return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
+        }
+    }
 
 }

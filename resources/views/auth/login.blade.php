@@ -86,12 +86,14 @@
                                         & numbers</small>
                                 </div>
                                 <div class="form-group mb-0">
-                                    <div class="checkbox p-0">
-                                        <input id="checkbox1" type="checkbox">
-                                        <label class="text-muted" for="checkbox1">Remember password</label>
-                                    </div>
-                                    <button class="btn btn-primary btn-block w-100" type="submit">Sign in</button>
-                                </div>
+                    <div class="checkbox p-0">
+                      <input id="checkbox1" type="checkbox">
+                      <label class="text-muted" for="checkbox1">Remember Me</label>
+                    </div><a class="link" href="{{ route('forget-password') }}">Forgot password?</a>
+                    <div class="text-end mt-3">
+                      <button class="btn btn-primary btn-block w-100" type="submit">Sign in</button>
+                    </div>
+                  </div>
                                 <h6 class="text-muted mt-4 or">Or Sign in with</h6>
                                 <div class="social mt-4">
                                     <a href="{{ url('/auth/google') }}" target="_blank"

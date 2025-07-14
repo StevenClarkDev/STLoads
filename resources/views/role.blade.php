@@ -240,7 +240,9 @@
                                 <i class="fas fa-boxes role-icon"></i>
                                 <h3 class="role-title">Shipper</h3>
                                 <p class="role-count">Count 40</p>
-                                <i class="fas fa-arrow-right role-arrow"></i>
+                                <a href="{{ route('login') }}">
+                                    <i class="fas fa-arrow-right role-arrow"></i>
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -250,7 +252,9 @@
                                 <i class="fas fa-truck-fast role-icon"></i>
                                 <h3 class="role-title">Carrier</h3>
                                 <p class="role-count">Count 40</p>
-                                <i class="fas fa-arrow-right role-arrow"></i>
+                                <a href="{{ route('login') }}">
+                                    <i class="fas fa-arrow-right role-arrow"></i>
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -260,7 +264,9 @@
                                 <i class="fas fa-handshake-angle role-icon"></i>
                                 <h3 class="role-title">Broker</h3>
                                 <p class="role-count">Count 40</p>
-                                <i class="fas fa-arrow-right role-arrow"></i>
+                                <a href="{{ route('login') }}">
+                                    <i class="fas fa-arrow-right role-arrow"></i>
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -270,7 +276,9 @@
                                 <i class="fas fa-ship role-icon"></i>
                                 <h3 class="role-title">Freight Forwarder</h3>
                                 <p class="role-count">Count 40</p>
-                                <i class="fas fa-arrow-right role-arrow"></i>
+                                <a href="{{ route('login') }}">
+                                    <i class="fas fa-arrow-right role-arrow"></i>
+                                </a>
                             </div>
                         </div>
                     </div>
