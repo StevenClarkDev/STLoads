@@ -68,7 +68,7 @@ class AuthController extends Controller
         return redirect()->route('login')->with('success', 'You have been logged out.');
     }
     public function registerForm()
-    {
+    { 
         return view('auth.register'); // create this blade file if not done
     }
 

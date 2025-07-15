@@ -46,8 +46,8 @@
             <div class="card p-5 rounded shadow my-4" style="max-width: 1100px; width: 100%;">
                 <div class="text-center mb-4"> <img src="../assets/images/stloads/logo-bg_none-small.png"
                         alt="Load Board Logo" style="max-width: 30%;"> </div>
-                <form class="row g-3" action="{{ route('register') }}" method="POST">
-                    @csrf
+                <form class="row g-3" action="{{ route('otp.send') }}" method="POST">
+
 
                     <h4>Sign Up</h4>
                     <p class="text-muted">Enter your details to create an account</p>
