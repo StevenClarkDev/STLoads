@@ -24,8 +24,8 @@
             <div class="col-md-6 position-relative">
                 <label>Name</label>
                 <div class="input-group">
-                    <input id="name" class="form-control pe-5 rounded-2" type="text" name="name"
-                        placeholder="Full Name" required>
+                    <input id="name" class="form-control pe-5 rounded-2" type="text" name="name" placeholder="Full Name"
+                        required>
                     <i id="name-icon"
                         class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                 </div>
@@ -47,10 +47,13 @@
             {{-- Role --}}
             <div class="col-md-6 position-relative">
                 <label>Role</label>
-                <div class="input-group">
-                    <input id="role" class="form-control pe-5 rounded-2" type="text" name="role"
-                        placeholder="Carrier / Broker" required>
-                </div>
+                <select id="role" class="form-control pe-5 rounded-2 text-muted" name="role" required>
+                    <option disabled selected>Select Role</option>
+                    <option>Carrier</option>
+                    <option>Shipper</option>
+                    <option>Broker</option>
+                    <option>Fright Forwarder</option>
+                </select>
             </div>
 
             {{-- Confirm Password --}}
@@ -76,19 +79,37 @@
                         <option>Other</option>
                     </select>
                 </div>
-
             </div>
 
-            {{-- CNIC --}}
-            <div class="col-md-6 position-relative">
-                <label>CNIC</label>
-                <div class="input-group">
-                    <input id="cnic" class="form-control pe-5 rounded-2" type="text" name="cnic"
-                        placeholder="e.g., 42101XXXXXXXXX" required>
-                    <i id="cnic-icon"
-                        class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
+            <div class="col-md-6 d-flex gap-3">
+                <!-- CNIC Upload -->
+                <div class="flex-fill">
+                    <label>CNIC Upload</label>
+                    <div class="d-flex align-items-center border rounded-2 p-1">
+                        <button type="button" class="btn d-flex align-items-center px-2"
+                            onclick="document.getElementById('cnic_upload').click()">
+                            <i class="fas fa-upload"></i>
+                        </button>
+                        <span id="cnic_file_name" class="ms-3 text-muted small">No file chosen</span>
+                        <input type="file" id="cnic_upload" name="cnic_upload" accept="image/*,.pdf" class="d-none"
+                            required>
+                    </div>
+                </div>
+
+                <!-- User Image Upload -->
+                <div class="flex-fill">
+                    <label>Image Upload</label>
+                    <div class="d-flex align-items-center border rounded-2 p-1">
+                        <button type="button" class="btn d-flex align-items-center px-2"
+                            onclick="document.getElementById('user_image').click()">
+                            <i class="fas fa-upload"></i>
+                        </button>
+                        <span id="user_image_name" class="ms-3 text-muted small">No file chosen</span>
+                        <input type="file" id="user_image" name="user_image" accept="image/*" class="d-none" required>
+                    </div>
                 </div>
             </div>
+
 
             {{-- Address --}}
             <div class="col-md-6">
@@ -98,7 +119,7 @@
 
             {{-- Submit --}}
             <div class="col-12 text-center mt-4">
-                <button type="submit" class="btn btn-primary w-50">Sign Up</button>
+                <a href="{{ route('otp') }}" class="btn btn-primary w-50">Sign Up</a>
                 <p class="mt-3 text-muted">Already have an account? <a href="{{ route('login') }}">Sign In</a>
                 </p>
             </div>
@@ -117,4 +138,17 @@
             @endif
         </form>
     </div>
+
+    <script>
+        document.getElementById('cnic_upload').addEventListener('change', function () {
+            const fileName = this.files[0]?.name || 'No file chosen';
+            document.getElementById('cnic_file_name').textContent = fileName;
+        });
+
+        document.getElementById('user_image').addEventListener('change', function () {
+            const fileName = this.files[0]?.name || 'No file chosen';
+            document.getElementById('user_image_name').textContent = fileName;
+        });
+    </script>
+
 @endsection
