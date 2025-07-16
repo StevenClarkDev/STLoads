@@ -14,11 +14,171 @@
                                         <svg class="stroke-icon">
                                             <use href="../assets/svg/icon-sprite.svg#stroke-home"></use>
                                         </svg></a></li>
-                                        <li class="breadcrumb-item active">User Approval</li>
+                                <li class="breadcrumb-item active">User Approval</li>
                                 <!-- <li class="breadcrumb-item">Admin</li> -->
                             </ol>
                         </div>
                     </div>
+                </div>
+            </div>
+            <div class="col-sm-12">
+                <div class="row">
+                    <div class="col-xxl-4 col-xl-5 col-md-6 box-col-6">
+                        <div class="card">
+                            <div class="card-header card-no-border pb-0 ">
+                                <div class="header-top mb-2">
+                                    <h5>Total Users</h5>
+                                    <div class="dropdown icon-dropdown">
+                                        <button class="btn dropdown-toggle" id="userdropdown" type="button"
+                                            data-bs-toggle="dropdown" aria-expanded="false"><i
+                                                class="icon-more-alt"></i></button>
+                                        <div class="dropdown-menu dropdown-menu-end" aria-labelledby="userdropdown"><a
+                                                class="dropdown-item" href="#">Weekly</a><a class="dropdown-item"
+                                                href="#">Monthly</a><a class="dropdown-item" href="#">Yearly</a></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body py-lg-3 my-4">
+                                <ul class="user-list">
+                                    <li>
+                                        <div class="user-icon primary">
+                                            <div class="user-box"><i class="font-primary" data-feather="user-plus"></i>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <h5 class="mb-1">178,098</h5><span
+                                                class="font-primary d-flex align-items-center"><i
+                                                    class="icon-arrow-up icon-rotate me-1"> </i><span
+                                                    class="f-w-500">+30.89</span></span>
+                                        </div>
+                                    </li>
+                                    <li>
+                                        <div class="user-icon success">
+                                            <div class="user-box"><i class="font-success" data-feather="user-minus"></i>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <h5 class="mb-1">178,098</h5><span
+                                                class="font-danger d-flex align-items-center"><i
+                                                    class="icon-arrow-down icon-rotate me-1"></i><span
+                                                    class="f-w-500">-08.89</span></span>
+                                        </div>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Widget Cards in 2 Rows -->
+                    <div class="col-xxl-5 col-xl-7 col-md-6 box-col-6">
+                        <div class="row gx-2 gy-0">
+                            <!-- Enrolled Carriers -->
+                            <div class="col-md-6">
+                                <div class="card small-widget mb-2">
+                                    <div class="card-body primary">
+                                        <span class="f-light">Enrolled Carriers</span>
+                                        <div class="d-flex align-items-end gap-1">
+                                            <h4>{{ $carrierCount ?? 15 }}</h4>
+                                            <span class="font-primary f-12 f-w-500">
+                                                <i class="icon-arrow-up"></i><span>+18%</span>
+                                            </span>
+                                        </div>
+                                        <div class="bg-gradient">
+                                            <i data-feather="truck" class="font-primary"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Enrolled Brookers -->
+                            <div class="col-md-6">
+                                <div class="card small-widget mb-2">
+                                    <div class="card-body warning">
+                                        <span class="f-light">Enrolled Brookers</span>
+                                        <div class="d-flex align-items-end gap-1">
+                                            <h4>{{ $brookerCount ?? 12 }}</h4>
+                                            <span class="font-warning f-12 f-w-500">
+                                                <i class="icon-arrow-up"></i><span>+22%</span>
+                                            </span>
+                                        </div>
+                                        <div class="bg-gradient">
+                                            <i data-feather="user-check" class="font-warning"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Enrolled Shippers -->
+                            <div class="col-md-6">
+                                <div class="card small-widget">
+                                    <div class="card-body secondary">
+                                        <span class="f-light">Enrolled Shippers</span>
+                                        <div class="d-flex align-items-end gap-1">
+                                            <h4>{{ $shipperCount ?? 19 }}</h4>
+                                            <span class="font-secondary f-12 f-w-500">
+                                                <i class="icon-arrow-down"></i><span>-5%</span>
+                                            </span>
+                                        </div>
+                                        <div class="bg-gradient">
+                                            <i data-feather="box" class="font-secondary"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Enrolled Freight Forwarders -->
+                            <div class="col-md-6">
+                                <div class="card small-widget">
+                                    <div class="card-body success">
+                                        <span class="f-light">Freight Forwarders</span>
+                                        <div class="d-flex align-items-end gap-1">
+                                            <h4>{{ $freightForwarderCount ?? 21 }}</h4>
+                                            <span class="font-success f-12 f-w-500">
+                                                <i class="icon-arrow-up"></i><span>+11%</span>
+                                            </span>
+                                        </div>
+                                        <div class="bg-gradient">
+                                            <i data-feather="send" class="font-success"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-xxl-3 col-xl-4 col-md-6 box-col-6">
+                        <div class="row">
+                            <div class="col-sm-12">
+                                <div class="card course-box widget-course">
+                                    <div class="card-body my-4">
+                                        <div class="course-widget">
+                                            <div class="course-icon">
+                                                <svg class="fill-icon">
+                                                    <use href="../assets/svg/icon-sprite.svg#course-1"></use>
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <h4 class="mb-0">10+</h4><span class="f-light">Pending Requests</span>
+                                                <span class="badge bg-secondary text-white my-3 p-2 rounded-4">
+                                                    5 new requests today
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <ul class="square-group">
+                                        <li class="square-1 warning"></li>
+                                        <li class="square-1 primary"></li>
+                                        <li class="square-2 warning1"></li>
+                                        <li class="square-3 danger"></li>
+                                        <li class="square-4 light"></li>
+                                        <li class="square-5 warning"></li>
+                                        <li class="square-6 success"></li>
+                                        <li class="square-7 success"></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
             <div class="col-sm-12">
@@ -32,10 +192,11 @@
                             <table class="table table-striped" id="user-approval-table">
                                 <thead>
                                     <tr>
-                                        <th>#</th>
+                                        <th>S No.</th>
                                         <th>Name</th>
                                         <th>Email</th>
-                                        <th>Status</th>
+                                        <th>Role</th>
+                                        <th>Date</th>
                                         <th>Action</th>
                                     </tr>
                                 </thead>
@@ -51,14 +212,26 @@
                                                 {{ $user->name }}
                                             </td>
                                             <td>{{ $user->email }}</td>
+                                            <!-- <td>
+                                                                                                                                                        @php
+                                                                                                                                                            $roleColors = [
+                                                                                                                                                                'carrier' => 'badge-primary',
+                                                                                                                                                                'brooker' => 'badge-info',
+                                                                                                                                                                'shipper' => 'badge-success',
+                                                                                                                                                                'freight forwarder' => 'badge-warning',
+                                                                                                                                                            ];
+                                                                                                                                                            $role = strtolower($user->role);
+                                                                                                                                                            $badgeClass = $roleColors[$role] ?? 'badge-secondary';
+                                                                                                                                                        @endphp
+                                                                                                                                                        <span class="badge {{ $badgeClass }}">
+                                                                                                                                                            {{ ucfirst($user->role) }}
+                                                                                                                                                        </span>
+                                                                                                                                                    </td> -->
+                                            <td>User Role</td>
+                                            <td>7th July 2025</td>
                                             <td>
-                                                <span
-                                                    class="badge {{ $user->status == 'approved' ? 'badge-success' : 'badge-warning' }}">
-                                                    {{ ucfirst($user->status) }}
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <a href="{{ route('user.profile', $user->id) }}">profile</a>
+                                                <a href="{{ route('user.profile', $user->id) }}" class="btn btn-info btn-sm"
+                                                    style="margin-bottom:4px;">Profile</a>
                                                 <form action="#" method="POST" style="display:inline;">
                                                     @csrf
                                                     <button type="submit" class="btn btn-success btn-sm" {{ $user->status == 'approved' ? 'disabled' : '' }}>Approve</button>
