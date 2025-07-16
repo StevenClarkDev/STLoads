@@ -67,8 +67,8 @@
                                 <div class="form-group position-relative">
                                     <label class="col-form-label">Email Address</label>
                                     <div class="input-group">
-                                        <input id="email" class="form-control pe-5 rounded-2" type="email" name="email" required
-                                            placeholder="Test@gmail.com">
+                                        <input id="email" class="form-control pe-5 rounded-2" type="email"
+                                            name="email" required placeholder="Test@gmail.com">
                                         <i id="email-icon"
                                             class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                                     </div>
@@ -79,21 +79,18 @@
                                     <div class="form-input position-relative">
                                         <input id="password" class="form-control pe-5" type="password" name="password"
                                             required placeholder="*********">
-                                        <i id="password-icon"
-                                            class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                                     </div>
-                                    <small id="password-error" class="text-danger d-none">Min. 8 characters with letters
-                                        & numbers</small>
                                 </div>
                                 <div class="form-group mb-0">
-                    <div class="checkbox p-0">
-                      <input id="checkbox1" type="checkbox">
-                      <label class="text-muted" for="checkbox1">Remember Me</label>
-                    </div><a class="link" href="{{ route('forget-password') }}">Forgot password?</a>
-                    <div class="text-end mt-3">
-                      <button class="btn btn-primary btn-block w-100" type="submit">Sign in</button>
-                    </div>
-                  </div>
+                                    <div class="checkbox p-0">
+                                        <input id="checkbox1" type="checkbox">
+                                        <label class="text-muted" for="checkbox1">Remember Me</label>
+                                    </div><a class="link" href="{{ route('forget-password') }}">Forgot password?</a>
+                                    <div class="text-end mt-3">
+                                        <button class="btn btn-primary btn-block w-100" type="submit">Sign
+                                            in</button>
+                                    </div>
+                                </div>
                                 <h6 class="text-muted mt-4 or">Or Sign in with</h6>
                                 <div class="social mt-4">
                                     <a href="{{ url('/auth/google') }}" target="_blank"
@@ -131,19 +128,20 @@
 </body>
 
 <script>
-    document.addEventListener("DOMContentLoaded", function () {
+    document.addEventListener("DOMContentLoaded", function() {
         function validateInput(id, regex, errorId = null) {
             const input = document.getElementById(id);
             const icon = document.getElementById(id + "-icon");
             const error = errorId ? document.getElementById(errorId) : null;
-            if (!input || !icon) return; input.addEventListener("input", function () {
-                const isValid = regex.test(input.value); icon.classList.toggle("text-primary", isValid);
+            if (!input || !icon) return;
+            input.addEventListener("input", function() {
+                const isValid = regex.test(input.value);
+                icon.classList.toggle("text-primary", isValid);
                 icon.classList.toggle("text-muted", !isValid);
                 if (error) {
                     if (input.value.length > 0 && !isValid) {
                         error.classList.remove("d-none");
-                    }
-                    else {
+                    } else {
                         error.classList.add("d-none");
                     }
                 }
@@ -152,7 +150,6 @@
         validateInput("email", /^[^\s@]+@[^\s@]+\.[^\s@]+$/);
         validateInput("password", /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/, "password-error");
     });
-
 </script>
 
 
