@@ -32,6 +32,8 @@
     <link rel="stylesheet" type="text/css" href="../assets/css/vendors/slick-theme.css">
     <link rel="stylesheet" type="text/css" href="../assets/css/vendors/scrollbar.css">
     <link rel="stylesheet" type="text/css" href="../assets/css/vendors/animate.css">
+    <link rel="stylesheet" type="text/css" href="../assets/css/vendors/datatables.css">
+
     <!-- Plugins css Ends-->
     <!-- Bootstrap css-->
     <link rel="stylesheet" type="text/css" href="../assets/css/vendors/bootstrap.css">
@@ -64,12 +66,15 @@
         <!-- Page Header Start-->
         @include('layouts.header')
         <!-- Page Header Ends                              -->
+
         <!-- Page Body Start-->
         <div class="page-body-wrapper">
             <!-- Page Sidebar Start-->
             @include('layouts.sidebar')
             <!-- Page Sidebar Ends-->
-            @yield('content')
+            <div class="page-body">
+                @yield('content')
+            </div>
             <!-- footer start-->
             @include('layouts.footer')
             <!-- footer end-->
@@ -107,6 +112,8 @@
     <script src="../assets/js/typeahead-search/typeahead-custom.js"></script>
     <script src="../assets/js/height-equal.js"></script>
     <script src="../assets/js/animation/wow/wow.min.js"></script>
+        <script src="../assets/js/datatable/datatables/jquery.dataTables.min.js"></script>
+    <script src="../assets/js/datatable/datatables/datatable.custom.js"></script>
     <!-- Plugins JS Ends-->
     <!-- Theme js-->
     <script src="../assets/js/script.js"></script>

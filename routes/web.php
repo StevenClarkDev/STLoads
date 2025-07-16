@@ -32,5 +32,6 @@ Route::middleware('guest')->group(function () {
     
     Route::get('/dashboard', [DashboardController::class, 'dashboard'])->name('dashboard');
     Route::get('/user_approval', [AdminController::class, 'userApproval'])->name('user_approval');
+    Route::get('/user_profile/{user}', [AdminController::class, 'userProfile'])->name('user.profile');
     Route::post('/logout',   [AuthController::class, 'logout'])->name('logout');
 });
