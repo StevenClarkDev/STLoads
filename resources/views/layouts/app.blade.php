@@ -65,7 +65,7 @@
     <div class="page-wrapper compact-wrapper" id="pageWrapper">
         <!-- Page Header Start-->
         @include('layouts.header')
-        <!-- Page Header Ends                              -->
+        <!-- Page Header Ends -->
 
         <!-- Page Body Start-->
         <div class="page-body-wrapper">

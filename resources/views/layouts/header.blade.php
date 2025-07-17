@@ -19,7 +19,7 @@
             <div class="toggle-sidebar"><i class="status_toggle middle sidebar-toggle" data-feather="align-center"></i>
             </div>
         </div>
-        <div class="left-header col-xxl-5 col-xl-6 col-lg-5 col-md-4 col-sm-3 p-0">
+        <!-- <div class="left-header col-xxl-5 col-xl-6 col-lg-5 col-md-4 col-sm-3 p-0">
             <div class="notification-slider">
                 <div class="d-flex h-100"> <img src="../assets/images/giftools.gif" alt="gif">
                     <h6 class="mb-0 f-w-400"><span class="font-primary">Don't Miss Out! </span><span class="f-light">Out
@@ -30,10 +30,10 @@
                         class="ms-1" href="https://1.envato.market/3GVzd" target="_blank">Buy now !</a>
                 </div>
             </div>
-        </div>
+        </div> -->
         <div class="nav-right col-xxl-7 col-xl-6 col-md-7 col-8 pull-right right-header p-0 ms-auto">
             <ul class="nav-menus">
-                <li class="language-nav">
+                <!-- <li class="language-nav">
                     <div class="translate_wrapper">
                         <div class="current_lang">
                             <div class="lang"><i class="flag-icon flag-icon-us"></i><span class="lang-txt">EN </span>
@@ -56,12 +56,12 @@
                                     class="lang-txt">لعربية <span> (ae)</span></span></div>
                         </div>
                     </div>
-                </li>
+                </li> -->
                 <li> <span class="header-search">
                         <svg>
                             <use href="../assets/svg/icon-sprite.svg#search"></use>
                         </svg></span></li>
-                <li class="onhover-dropdown">
+                <!-- <li class="onhover-dropdown">
                     <svg>
                         <use href="../assets/svg/icon-sprite.svg#star"></use>
                     </svg>
@@ -111,7 +111,7 @@
                             </div>
                         </div>
                     </div>
-                </li>
+                </li> -->
                 <li>
                     <div class="mode">
                         <svg>
@@ -119,7 +119,7 @@
                         </svg>
                     </div>
                 </li>
-                <li class="cart-nav onhover-dropdown">
+                <!-- <li class="cart-nav onhover-dropdown">
                     <div class="cart-box">
                         <svg>
                             <use href="../assets/svg/icon-sprite.svg#stroke-ecommerce"></use>
@@ -136,16 +136,16 @@
                                             <div class="input-group"><span class="input-group-prepend">
                                                     <button class="btn quantity-left-minus" type="button"
                                                         data-type="minus" data-field="">-</button></span>
-                                                <input class="form-control input-number" type="text"
-                                                    name="quantity" value="1"><span class="input-group-prepend">
+                                                <input class="form-control input-number" type="text" name="quantity"
+                                                    value="1"><span class="input-group-prepend">
                                                     <button class="btn quantity-right-plus" type="button"
                                                         data-type="plus" data-field="">+</button></span>
                                             </div>
                                         </div>
                                         <h6 class="font-primary">$500</h6>
                                     </div>
-                                    <div class="close-circle"><a class="bg-danger" href="#"><i
-                                                data-feather="x"></i></a></div>
+                                    <div class="close-circle"><a class="bg-danger" href="#"><i data-feather="x"></i></a>
+                                    </div>
                                 </div>
                             </li>
                             <li>
@@ -156,16 +156,16 @@
                                             <div class="input-group"><span class="input-group-prepend">
                                                     <button class="btn quantity-left-minus" type="button"
                                                         data-type="minus" data-field="">-</button></span>
-                                                <input class="form-control input-number" type="text"
-                                                    name="quantity" value="1"><span class="input-group-prepend">
+                                                <input class="form-control input-number" type="text" name="quantity"
+                                                    value="1"><span class="input-group-prepend">
                                                     <button class="btn quantity-right-plus" type="button"
                                                         data-type="plus" data-field="">+</button></span>
                                             </div>
                                         </div>
                                         <h6 class="font-primary">$500.00</h6>
                                     </div>
-                                    <div class="close-circle"><a class="bg-danger" href="#"><i
-                                                data-feather="x"></i></a></div>
+                                    <div class="close-circle"><a class="bg-danger" href="#"><i data-feather="x"></i></a>
+                                    </div>
                                 </div>
                             </li>
                             <li class="total">
@@ -176,7 +176,7 @@
                                     href="checkout.html">Checkout</a></li>
                         </ul>
                     </div>
-                </li>
+                </li> -->
                 <li class="onhover-dropdown">
                     <div class="notification-box">
                         <svg>
@@ -206,8 +206,8 @@
                     <div class="media profile-media">
                         <img class="b-r-10" src="../assets/images/dashboard/profile.png" alt="">
                         <div class="media-body">
-                            <span>Emay Walter</span>
-                            <p class="mb-0">Admin <i class="middle fa fa-angle-down"></i></p>
+                            <span>{{ Auth::user()->name }}</span>
+                            <p class="mb-0">{{ Auth::user()->role ?? 'User' }} <i class="middle fa fa-angle-down"></i></p>
                         </div>
                     </div>
                     <ul class="profile-dropdown onhover-show-div">
@@ -218,8 +218,7 @@
 
                         <!-- 🔥 Logout Link as a form trigger -->
                         <li>
-                            <form id="logout-form" action="{{ route('logout') }}" method="POST"
-                                style="display: none;">
+                            <form id="logout-form" action="{{ route('logout') }}" method="POST" style="display: none;">
                                 @csrf
                             </form>
                             <a href="#"
@@ -240,6 +239,7 @@
             </div>
             </div>
           </script>
-        <script class="empty-template" type="text/x-handlebars-template"><div class="EmptyMessage">Your search turned up 0 results. This most likely means the backend is down, yikes!</div></script>
+        <script class="empty-template"
+            type="text/x-handlebars-template"><div class="EmptyMessage">Your search turned up 0 results. This most likely means the backend is down, yikes!</div></script>
     </div>
 </div>

@@ -8,9 +8,6 @@ use App\Http\Controllers\AdminController;
 /* ───────────────  GUEST‑ONLY ROUTES  ─────────────── */
 Route::middleware('guest')->group(function () {
     // Login
-    Route::get('/',            [AuthController::class, 'login'])->name('login');
-    Route::post('/login',      [AuthController::class, 'verify'])->name('login.post');
-
     Route::get('/login', [AuthController::class, 'login'])->name('login');
     Route::post('/login', [AuthController::class, 'verify'])->name('login.post');
 
@@ -33,5 +30,6 @@ Route::middleware('guest')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'dashboard'])->name('dashboard');
     Route::get('/user_approval', [AdminController::class, 'userApproval'])->name('user_approval');
     Route::get('/user_profile/{user}', [AdminController::class, 'userProfile'])->name('user.profile');
+    
     Route::post('/logout',   [AuthController::class, 'logout'])->name('logout');
 });

@@ -213,33 +213,29 @@
                                             </td>
                                             <td>{{ $user->email }}</td>
                                             <!-- <td>
-                                                                                                                                                        @php
-                                                                                                                                                            $roleColors = [
-                                                                                                                                                                'carrier' => 'badge-primary',
-                                                                                                                                                                'brooker' => 'badge-info',
-                                                                                                                                                                'shipper' => 'badge-success',
-                                                                                                                                                                'freight forwarder' => 'badge-warning',
-                                                                                                                                                            ];
-                                                                                                                                                            $role = strtolower($user->role);
-                                                                                                                                                            $badgeClass = $roleColors[$role] ?? 'badge-secondary';
-                                                                                                                                                        @endphp
-                                                                                                                                                        <span class="badge {{ $badgeClass }}">
-                                                                                                                                                            {{ ucfirst($user->role) }}
-                                                                                                                                                        </span>
-                                                                                                                                                    </td> -->
+                                                                                                                                                                                        @php
+                                                                                                                                                                                            $roleColors = [
+                                                                                                                                                                                                'carrier' => 'badge-primary',
+                                                                                                                                                                                                'brooker' => 'badge-info',
+                                                                                                                                                                                                'shipper' => 'badge-success',
+                                                                                                                                                                                                'freight forwarder' => 'badge-warning',
+                                                                                                                                                                                            ];
+                                                                                                                                                                                            $role = strtolower($user->role);
+                                                                                                                                                                                            $badgeClass = $roleColors[$role] ?? 'badge-secondary';
+                                                                                                                                                                                        @endphp
+                                                                                                                                                                                        <span class="badge {{ $badgeClass }}">
+                                                                                                                                                                                            {{ ucfirst($user->role) }}
+                                                                                                                                                                                        </span>
+                                                                                                                                                                                    </td> -->
                                             <td>User Role</td>
                                             <td>7th July 2025</td>
                                             <td>
-                                                <a href="{{ route('user.profile', $user->id) }}" class="btn btn-info btn-sm"
-                                                    style="margin-bottom:4px;">Profile</a>
-                                                <form action="#" method="POST" style="display:inline;">
-                                                    @csrf
-                                                    <button type="submit" class="btn btn-success btn-sm" {{ $user->status == 'approved' ? 'disabled' : '' }}>Approve</button>
-                                                </form>
-                                                <form action="#" method="POST" style="display:inline;">
-                                                    @csrf
-                                                    <button type="submit" class="btn btn-danger btn-sm" {{ $user->status == 'rejected' ? 'disabled' : '' }}>Reject</button>
-                                                </form>
+                                                <a href="{{ route('user.profile', $user->id) }}" class="btn btn-info btn-sm">Profile</a>
+                                                <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal"
+                                                    data-bs-target="#approveModal" {{ $user->status == 'approved' ? 'disabled' : '' }}>Approve</button>
+
+                                                <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal"
+                                                    data-bs-target="#rejectModal" {{ $user->status == 'rejected' ? 'disabled' : '' }}>Reject</button>
                                             </td>
                                         </tr>
                                     @endforeach
@@ -251,4 +247,93 @@
             </div>
         </div>
     </div>
+
+    <!-- Approve Modal -->
+    <div class="modal fade" id="approveModal" tabindex="-1" aria-labelledby="approveModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border border-primary">
+                <div class="modal-header">
+                    <h5 class="modal-title">Approval Confirmation</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to approve this user?</p>
+                    <ul class="list-group list-group-flush mb-3">
+                        <li class="list-group-item"><strong>User ID:</strong> {{ $user->id }}</li>
+                        <li class="list-group-item"><strong>Email:</strong> {{ $user->email }}</li>
+                        <li class="list-group-item"><strong>Role:</strong> {{ $user->role }}</li>
+                        <li class="list-group-item"><strong>Date:</strong> {{ now()->format('Y-m-d') }}</li>
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" onclick="approveUser({{ $user->id }})">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reject Modal -->
+    <div class="modal fade" id="rejectModal" tabindex="-1" aria-labelledby="rejectModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border border-primary">
+                <div class="modal-header">
+                    <h5 class="modal-title">Rejection Confirmation</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to reject this user?</p>
+                    <ul class="list-group list-group-flush mb-3">
+                        <li class="list-group-item"><strong>User ID:</strong> {{ $user->id }}</li>
+                        <li class="list-group-item"><strong>Email:</strong> {{ $user->email }}</li>
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" onclick="rejectUser({{ $user->id }})">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <script>
+        function approveUser(userId) {
+            // Close modal
+            $('#approveModal').modal('hide');
+
+            // Simulate success with SweetAlert
+            setTimeout(() => {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'User Approved',
+                    text: 'The user has been successfully approved!',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+
+                // TODO: make actual approval request here (via form or AJAX)
+            }, 500);
+        }
+
+        function rejectUser(userId) {
+            $('#rejectModal').modal('hide');
+
+            setTimeout(() => {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'User Rejected',
+                    text: 'The user has been rejected.',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+
+                // TODO: make actual rejection request here (via form or AJAX)
+            }, 500);
+        }
+    </script>
+
 @endsection
