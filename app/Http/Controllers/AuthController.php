@@ -127,6 +127,7 @@ class AuthController extends Controller
             return back()->withErrors(['otp' => 'Invalid OTP. Please try again.']);
         }
     }
+    
     public function sendOtp(Request $request, LogsController $logsController)
     {
         try {

@@ -50,7 +50,7 @@
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label">DOB</label>
-                                <input class="form-control" type="date" value="+92 300 1234567" readonly>
+                                <input class="form-control" type="date" value="1995-05-10" readonly>
                             </div>
                             <div class="col-sm-6">
                                 <label class="form-label">Gender</label>

@@ -1,18 +1,18 @@
 <div class="sidebar-wrapper" sidebar-layout="stroke-svg">
   <div>
-    <div class="logo-wrapper"><a href="index.html"><img class="img-fluid for-light"
+    <div class="logo-wrapper"><a href="/dashboard"><img class="img-fluid for-light"
           src="../assets/images/logo/transparent.png" alt=""><img class="img-fluid for-dark"
           src="../assets/images/logo/transparent.png" alt=""></a>
       <div class="back-btn"><i class="fa fa-angle-left"></i></div>
       <div class="toggle-sidebar"><i class="status_toggle middle sidebar-toggle" data-feather="grid"> </i></div>
     </div>
-    <div class="logo-icon-wrapper"><a href="index.html"><img class="img-fluid" src="../assets/images/logo/logo-icon.png"
+    <div class="logo-icon-wrapper"><a href="/dashboard"><img class="img-fluid" src="../assets/images/logo/logo-icon.png"
           alt=""></a></div>
     <nav class="sidebar-main">
       <div class="left-arrow" id="left-arrow"><i data-feather="arrow-left"></i></div>
       <div id="sidebar-menu">
         <ul class="sidebar-links" id="simple-bar">
-          <li class="back-btn"><a href="index.html"><img class="img-fluid" src="../assets/images/logo/logo-icon.png"
+          <li class="back-btn"><a href="/dashboard"><img class="img-fluid" src="../assets/images/logo/logo-icon.png"
                 alt=""></a>
             <div class="mobile-back text-end"><span>Back</span><i class="fa fa-angle-right ps-2" aria-hidden="true"></i>
             </div>

@@ -119,7 +119,7 @@
 
             {{-- Submit --}}
             <div class="col-12 text-center mt-4">
-                <a href="{{ route('otp') }}" class="btn btn-primary w-50">Sign Up</a>
+                <button type="submit" class="btn btn-primary w-50">Sign Up</button>
                 <p class="mt-3 text-muted">Already have an account? <a href="{{ route('login') }}">Sign In</a>
                 </p>
             </div>
