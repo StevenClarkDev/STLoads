@@ -32,6 +32,10 @@ Route::middleware('guest')->group(function () {
     Route::resource('users', UserController::class);
     Route::get('/dashboard', [DashboardController::class, 'dashboard'])->name('dashboard');
     Route::get('/user_approval', [AdminController::class, 'userApproval'])->name('user_approval');
+    Route::get('/carriers', [AdminController::class, 'carriers'])->name('carriers');
+    Route::get('/brookers', [AdminController::class, 'brookers'])->name('brookers');
+    Route::get('/shippers', [AdminController::class, 'shippers'])->name('shippers');
+    Route::get('/freight_forwarders', [AdminController::class, 'freightForwarders'])->name('freight_forwarders');
     Route::get('/user_profile/{user}', [AdminController::class, 'userProfile'])->name('user.profile');
     
     Route::post('/logout',   [AuthController::class, 'logout'])->name('logout');

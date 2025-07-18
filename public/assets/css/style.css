@@ -50808,3 +50808,15 @@ html[dir=rtl] body.dark-only .page-wrapper .page-body-wrapper .page-body .card:n
 /**=====================
   5.9 Box-layout CSS Ends
 ==========================**/
+
+/**=====================
+  5.10 Additonal CSS start
+==========================**/
+.centered-container {
+  background-size: cover;
+  background-position: center;
+}
+
+/**=====================
+  5.10 Additonal CSS Ends
+==========================**/

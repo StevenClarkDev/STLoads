@@ -44,42 +44,14 @@
     <link rel="stylesheet" type="text/css" href="../assets/css/responsive.css">
 </head>
 
-<body onload="startTime()">
-    <!-- loader starts-->
-    <div class="loader-wrapper">
-        <div class="loader-index"> <span></span></div>
-        <svg>
-            <defs></defs>
-            <filter id="goo">
-                <fegaussianblur in="SourceGraphic" stddeviation="11" result="blur"></fegaussianblur>
-                <fecolormatrix in="blur" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -9" result="goo">
-                </fecolormatrix>
-            </filter>
-        </svg>
-    </div>
-    <!-- loader ends-->
-    <!-- tap on top starts-->
-    <div class="tap-top"><i data-feather="chevrons-up"></i></div>
-    <!-- tap on tap ends-->
-    <!-- page-wrapper Start-->
-    <div class="page-wrapper compact-wrapper" id="pageWrapper">
-        <!-- Page Header Start-->
-        @include('layouts.header')
-        <!-- Page Header Ends -->
-
-        <!-- Page Body Start-->
-        <div class="page-body-wrapper">
-            <!-- Page Sidebar Start-->
-            @include('layouts.sidebar')
-            <!-- Page Sidebar Ends-->
-            <div class="page-body">
-                @yield('content')
-            </div>
-            <!-- footer start-->
-            @include('layouts.footer')
-            <!-- footer end-->
+<body>
+    <div class="container-fluid p-0"
+        style="background-image: url('../assets/images/login/texture-bg.jpg'); background-size: cover; background-position: center; min-height: 100vh;">
+        <div class="d-flex align-items-center justify-content-center" style="min-height: 100vh;">
+            @yield('content')
         </div>
     </div>
+
     <!-- latest jquery-->
     <script src="../assets/js/jquery.min.js"></script>
     <!-- Bootstrap js-->
@@ -112,7 +84,7 @@
     <script src="../assets/js/typeahead-search/typeahead-custom.js"></script>
     <script src="../assets/js/height-equal.js"></script>
     <script src="../assets/js/animation/wow/wow.min.js"></script>
-        <script src="../assets/js/datatable/datatables/jquery.dataTables.min.js"></script>
+    <script src="../assets/js/datatable/datatables/jquery.dataTables.min.js"></script>
     <script src="../assets/js/datatable/datatables/datatable.custom.js"></script>
     <!-- Plugins JS Ends-->
     <!-- Theme js-->
