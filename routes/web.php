@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\RoleController;
 use App\Http\Controllers\AdminController;
 
 /* ───────────────  GUEST‑ONLY ROUTES  ─────────────── */
@@ -26,7 +27,9 @@ Route::middleware('guest')->group(function () {
 
     // 🔒 Auth-only routes
     Route::middleware('auth')->group(function () {
-    
+
+    Route::resource('roles', RoleController::class);
+    Route::resource('users', UserController::class);
     Route::get('/dashboard', [DashboardController::class, 'dashboard'])->name('dashboard');
     Route::get('/user_approval', [AdminController::class, 'userApproval'])->name('user_approval');
     Route::get('/user_profile/{user}', [AdminController::class, 'userProfile'])->name('user.profile');

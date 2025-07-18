@@ -58,17 +58,17 @@
             </a>
             <ul class="sidebar-submenu">
               <li>
-                <a href=" {{ route('user_approval') }}">Carrier</a>
+                <a href=" {{ route('user_approval') }}">Users</a>
               </li>
               <li>
-                <a href=" {{ route('user_approval') }}">Brooker</a>
-              </li>
+                <a href=" {{route('roles.index') }}">Roles</a>
+              <!-- </li>
               <li>
                 <a href=" {{ route('user_approval') }}">Shipper</a>
               </li>
               <li>
                 <a href=" {{ route('user_approval') }}">Freight Forwarder</a>
-              </li>
+              </li> -->
             </ul>
           </li>
 
