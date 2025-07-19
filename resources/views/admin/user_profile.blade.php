@@ -27,9 +27,9 @@
 
             <!-- Profile Card -->
             <div class="col-md-12">
-                <div class="card">
+                <div class="card mx-4">
                     <div class="card-body">
-                        <div class="row gy-4">
+                        <div class="row gy-4 px-4">
                             <!-- Left Column -->
                             <div class="col-xl-8">
                                 <h5 class="mb-3">User Information</h5>
@@ -113,15 +113,15 @@
             </div>
 
             <div class="col-md-12">
-                <div class="card">
+                <div class="card px-4 mx-4">
                     <div class="card-header">
-                        <h5 class="mb-3">Projects History</h5>
+                        <h5 class="mb-2">Projects History</h5>
                         <div class="card-options"><a class="card-options-collapse" href="#"
                                 data-bs-toggle="card-collapse"><i class="fe fe-chevron-up"></i></a><a
                                 class="card-options-remove" href="#" data-bs-toggle="card-remove"><i
                                     class="fe fe-x"></i></a></div>
                     </div>
-                    <div class="table-responsive add-project rounded-4">
+                    <div class="table-responsive add-project rounded-4 px-4">
                         <table class="table card-table table-vcenter text-nowrap">
                             <thead>
                                 <tr>
@@ -129,7 +129,7 @@
                                     <th>Date</th>
                                     <th>Status</th>
                                     <th>Price</th>
-                                    <th></th>
+                                    <th class="text-center">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -138,7 +138,7 @@
                                     <td>28 May 2018</td>
                                     <td><span class="status-icon bg-success"></span> Completed</td>
                                     <td>$56,908</td>
-                                    <td class="text-end"><a class="icon" href="javascript:void(0)"></a><a
+                                    <td class="text-center"><a class="icon" href="javascript:void(0)"></a><a
                                             class="btn btn-primary btn-sm" href="javascript:void(0)"><i
                                                 class="fa fa-pencil"></i> Edit</a>
                                         <a class="icon" href="javascript:void(0)"></a><a class="icon"
@@ -152,7 +152,7 @@
                                     <td>12 June 2018</td>
                                     <td><span class="status-icon bg-danger"></span> On going</td>
                                     <td>$45,087</td>
-                                    <td class="text-end"><a class="icon" href="javascript:void(0)"></a><a
+                                    <td class="text-center"><a class="icon" href="javascript:void(0)"></a><a
                                             class="btn btn-primary btn-sm" href="javascript:void(0)"><i
                                                 class="fa fa-pencil"></i> Edit</a>
                                         <a class="icon" href="javascript:void(0)"></a><a class="icon"
@@ -166,7 +166,7 @@
                                     <td>12 July 2018</td>
                                     <td><span class="status-icon bg-warning"></span> Pending</td>
                                     <td>$60,123</td>
-                                    <td class="text-end"><a class="icon" href="javascript:void(0)"></a><a
+                                    <td class="text-center"><a class="icon" href="javascript:void(0)"></a><a
                                             class="btn btn-primary btn-sm" href="javascript:void(0)"><i
                                                 class="fa fa-pencil"></i> Edit</a>
                                         <a class="icon" href="javascript:void(0)"></a><a class="icon"
@@ -180,7 +180,7 @@
                                     <td>14 June 2018</td>
                                     <td><span class="status-icon bg-warning"></span> Pending</td>
                                     <td>$70,435</td>
-                                    <td class="text-end"><a class="icon" href="javascript:void(0)"></a><a
+                                    <td class="text-center"><a class="icon" href="javascript:void(0)"></a><a
                                             class="btn btn-primary btn-sm" href="javascript:void(0)"><i
                                                 class="fa fa-pencil"></i> Edit</a>
                                         <a class="icon" href="javascript:void(0)"></a><a class="icon"
@@ -194,7 +194,7 @@
                                     <td>25 June 2018</td>
                                     <td><span class="status-icon bg-success"></span> Completed</td>
                                     <td>$15,987</td>
-                                    <td class="text-end"><a class="icon" href="javascript:void(0)"></a><a
+                                    <td class="text-center"><a class="icon" href="javascript:void(0)"></a><a
                                             class="btn btn-primary btn-sm" href="javascript:void(0)"><i
                                                 class="fa fa-pencil"></i> Edit</a>
                                         <a class="icon" href="javascript:void(0)"></a><a class="icon"

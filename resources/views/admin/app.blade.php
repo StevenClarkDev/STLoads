@@ -42,15 +42,29 @@
     <link id="color" rel="stylesheet" href="../assets/css/color-1.css" media="screen">
     <!-- Responsive css-->
     <link rel="stylesheet" type="text/css" href="../assets/css/responsive.css">
+    <!-- Latest Font Awesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+        integrity="sha512-ud4Xw6Z7YP0fH49YHefBGurHkD5xO2YrYug0St+e3QLCUvBLvNJS2E0RzRPRbJcqfZtCvCoz6rSPc6goEASn3w=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+
 </head>
 
 <body>
     <div class="container-fluid p-0"
         style="background-image: url('../assets/images/login/texture-bg.jpg'); background-size: cover; background-position: center; min-height: 100vh;">
-        <div class="d-flex align-items-center justify-content-center" style="min-height: 100vh;">
+
+        <!-- Logo Section -->
+        <div class="d-flex justify-content-center align-items-start pt-4" style="height: 100px;">
+            <img src="../assets/images/logo/logo-white.png" alt="Logo" style="height: 100px;">
+        </div>
+
+        <!-- Content Section -->
+        <div class="d-flex align-items-start justify-content-center mt-4" style="min-height: calc(100vh - 100px);">
             @yield('content')
         </div>
+
     </div>
+
 
     <!-- latest jquery-->
     <script src="../assets/js/jquery.min.js"></script>
