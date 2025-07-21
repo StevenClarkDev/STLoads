@@ -10,16 +10,55 @@ class AdminController extends Controller
     public function userApproval(LogsController $logsController)
     {
         try {
+            $users = User::where('status', 3)->get();
+            $usersCount = User::where('status', 3)->count();
+            $usersCountToday = User::where('status', 3)
+                ->whereDate('created_at', \Carbon\Carbon::today())
+                ->count();
+            $totalShipperApproved = User::where('status', 1)
+                ->whereHas('roles', function ($query) {
+                    $query->where('id', 2);
+                })
+                ->count();
+            $totalCarriersApproved = User::where('status', 1)
+                ->whereHas('roles', function ($query) {
+                    $query->where('id', 3);
+                })
+                ->count();
+            $totalBrookersApproved = User::where('status', 1)
+                ->whereHas('roles', function ($query) {
+                    $query->where('id', 4);
+                })
+                ->count();
+            $totalFreightForwardersApproved = User::where('status', 1)
+                ->whereHas('roles', function ($query) {
+                    $query->where('id', 5);
+                })
+                ->count();
+            $totalUsersApproved = User::where('status', 1)->count();
+            $totalUsersApprovedThisMonth = User::where('status', 1)
+                ->whereBetween('approved_at', [
+                    \Carbon\Carbon::now()->startOfMonth(),
+                    \Carbon\Carbon::now()->endOfMonth()
+                ])->count();
+            $totalUsersApprovedThisMonthPercentage = $totalUsersApproved > 0
+                ? round(($totalUsersApprovedThisMonth / $totalUsersApproved) * 100, 2)
+                : 0;
+            $totalUsersRejected = User::where('status', 2)->count();
+            $totalUsersRejectedThisMonth = User::where('status', 2)
+                ->whereBetween('rejected_at', [
+                    \Carbon\Carbon::now()->startOfMonth(),
+                    \Carbon\Carbon::now()->endOfMonth()
+                ])->count();
+            $totalUsersRejectedThisMonthPercentage = $totalUsersRejected > 0
+                ? round(($totalUsersRejectedThisMonth / $totalUsersRejected) * 100, 2)
+                : 0;
             $logsController->createLog(__METHOD__, 'success', 'Admin is attempting to Approve Users', null, null);
-            $users = User::all();
-            return view('admin.user_approval', compact('users'));
+            return view('admin.user_approval', compact('users', 'totalUsersApprovedThisMonthPercentage', 'totalUsersRejectedThisMonthPercentage', 'usersCount', 'usersCountToday', 'totalShipperApproved', 'totalCarriersApproved', 'totalBrookersApproved', 'totalFreightForwardersApproved', 'totalUsersApproved', 'totalUsersRejected'));
         } catch (\Exception $e) {
-            // Handle the exception, log it, or return an error response
             $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
             return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
         }
-        // Create a log entry for the login attempt
-
     }
 
     public function carriers(LogsController $logsController)
@@ -78,10 +117,10 @@ class AdminController extends Controller
         // Create a log entry for the login attempt
 
     }
-        public function userProfile(User $user, LogsController $logsController)
+    public function userProfile(User $user, LogsController $logsController)
     {
         try {
-            $logsController->createLog(__METHOD__, 'success', 'Admin is attempting to Approve Users', null, null);
+            $logsController->createLog(__METHOD__, 'success', 'Admin is viewing ' . $user . ' profile', null, null);
             return view('admin.user_profile', compact('user'));
         } catch (\Exception $e) {
             // Handle the exception, log it, or return an error response
@@ -91,5 +130,4 @@ class AdminController extends Controller
         // Create a log entry for the login attempt
 
     }
-   
 }

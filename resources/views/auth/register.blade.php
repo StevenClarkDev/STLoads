@@ -3,7 +3,7 @@
     <div class="card p-5 rounded shadow my-4" style="max-width: 1100px; width: 100%;">
         <div class="text-center mb-4"> <img src="../assets/images/stloads/logo-bg_none-small.png" alt="Load Board Logo"
                 style="max-width: 30%;"> </div>
-        <form class="row g-3" action="{{ route('register') }}" method="POST">
+        <form class="row g-3" action="{{ route('register') }}" method="POST" enctype="multipart/form-data">
             @csrf
 
             <h4>Sign Up</h4>
@@ -24,8 +24,8 @@
             <div class="col-md-6 position-relative">
                 <label>Name</label>
                 <div class="input-group">
-                    <input id="name" class="form-control pe-5 rounded-2" type="text" name="name" placeholder="Full Name"
-                        required>
+                    <input id="name" class="form-control pe-5 rounded-2" type="text" name="name"
+                        placeholder="Full Name" required>
                     <i id="name-icon"
                         class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                 </div>
@@ -45,16 +45,16 @@
             </div>
 
             {{-- Role --}}
-            <div class="col-md-6 position-relative">
+            {{-- <div class="col-md-6 position-relative">
                 <label>Role</label>
                 <select id="role" class="form-control pe-5 rounded-2 text-muted" name="role" required>
                     <option disabled selected>Select Role</option>
-                    <option>Carrier</option>
-                    <option>Shipper</option>
-                    <option>Broker</option>
-                    <option>Fright Forwarder</option>
+                    <option value="2" {{ $id == 2 ? 'selected' }}>Shipper</option>
+                    <option value="3" {{ $id == 3 ? 'selected' }}>Carrier</option>
+                    <option value="4" {{ $id == 4 ? 'selected' }}>Broker</option>
+                    <option value="5" {{ $id == 5 ? 'selected' }}>Fright Forwarder</option>
                 </select>
-            </div>
+            </div> --}}
 
             {{-- Confirm Password --}}
             <div class="col-md-6 position-relative"> <label>Confirm Password</label>
@@ -63,42 +63,41 @@
                         class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                 </div>
             </div>
+
+            <div class="col-md-6 position-relative">
+                <label>Role</label>
+                <input class="form-control" type="text" name="role" value="{{ $role_name }}" readonly>
+                <input type="hidden" name="role_id" value="{{ $id }}">
+            </div>
+
             {{-- DOB + Gender --}}
             <div class="col-md-6 d-flex gap-2">
                 <div class="flex-fill position-relative">
                     <label>Date of Birth</label>
-                    <input class="form-control pe-5 rounded-2 text-muted" type="date" name="dob" required>
+                    <input class="form-control pe-5 rounded-2" type="date" name="dob" required>
                 </div>
                 {{-- Gender Dropdown --}}
                 <div class="flex-fill">
                     <label>Gender</label>
                     <select id="gender" class="form-control pe-5 rounded-2 text-muted" name="gender" required>
                         <option disabled selected>Select Gender</option>
-                        <option>Male</option>
-                        <option>Female</option>
-                        <option>Other</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
                     </select>
                 </div>
             </div>
 
             <div class="col-md-6 d-flex gap-3">
-                <!-- CNIC Upload -->
-                <div class="flex-fill">
-                    <label>CNIC Upload</label>
-                    <div class="d-flex align-items-center border rounded-2 p-1">
-                        <button type="button" class="btn d-flex align-items-center px-2"
-                            onclick="document.getElementById('cnic_upload').click()">
-                            <i class="fas fa-upload"></i>
-                        </button>
-                        <span id="cnic_file_name" class="ms-3 text-muted small">No file chosen</span>
-                        <input type="file" id="cnic_upload" name="cnic_upload" accept="image/*,.pdf" class="d-none"
-                            required>
-                    </div>
+                <!-- CNIC # -->
+                <div class="flex-fill position-relative">
+                    <label>CNIC #</label>
+                    <input class="form-control" type="text" name="cnic_no" placeholder="00000-0000000-0" required>
                 </div>
 
                 <!-- User Image Upload -->
                 <div class="flex-fill">
-                    <label>Image Upload</label>
+                    <label>Profile Upload</label>
                     <div class="d-flex align-items-center border rounded-2 p-1">
                         <button type="button" class="btn d-flex align-items-center px-2"
                             onclick="document.getElementById('user_image').click()">
@@ -140,15 +139,14 @@
     </div>
 
     <script>
-        document.getElementById('cnic_upload').addEventListener('change', function () {
+        document.getElementById('cnic_upload').addEventListener('change', function() {
             const fileName = this.files[0]?.name || 'No file chosen';
             document.getElementById('cnic_file_name').textContent = fileName;
         });
 
-        document.getElementById('user_image').addEventListener('change', function () {
+        document.getElementById('user_image').addEventListener('change', function() {
             const fileName = this.files[0]?.name || 'No file chosen';
             document.getElementById('user_image_name').textContent = fileName;
         });
     </script>
-
 @endsection

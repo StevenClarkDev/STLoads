@@ -1,4 +1,4 @@
-@extends('admin.layout.app')
+@extends('layout.app')
 @section('content')
     <!-- Main Content Column -->
     <div class="col-xl-9 box-col-6 p-3">
@@ -6,7 +6,7 @@
             <div class="card-body p-0">
                 <div class="card">
                     <div class="card-header pb-0 card-no-border">
-                        <h4>Shippers List</h4>
+                        <h4>{{ $role->name }}s List</h4>
                         <span>See registered users below.</span>
                     </div>
                     <div class="card-body">
@@ -23,9 +23,9 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach ($users as $user)
+                                    @foreach ($users as $index => $user)
                                         <tr>
-                                            <td>{{ $user->id }}</td>
+                                            <td>{{ $index+1 }}</td>
                                             <td>
                                                 @if ($user->avatar)
                                                     <img class="img-fluid table-avtar"
@@ -35,8 +35,14 @@
                                                 {{ $user->name }}
                                             </td>
                                             <td>{{ $user->email }}</td>
-                                            <td>User Role</td>
-                                            <td>7th July 2025</td>
+                                            <td>
+                                                @if (!empty($user->getRoleNames()))
+                                                    @foreach ($user->getRoleNames() as $v)
+                                                        {{ $v }}
+                                                    @endforeach
+                                                @endif
+                                            </td>
+                                            <td>{{ $user->created_at->format('jS F Y') }}</td>
                                             <td class="d-flex gap-2">
                                                 <a href="{{ route('user.profile', $user->id) }}"
                                                     class="btn btn-info btn-sm flex-grow-1">Profile</a>
@@ -54,7 +60,6 @@
         </div>
     </div>
 @endsection
-
 <!-- Contact Modal -->
 <div class="modal fade" id="contactModal" tabindex="-1" aria-labelledby="contactModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -102,7 +107,6 @@
         </div>
     </div>
 </div>
-</div>
 
 <!-- Service Unavailable Modal -->
 <div class="modal fade" id="serviceUnavailableModal" tabindex="-1" aria-labelledby="serviceUnavailableLabel"
@@ -124,5 +128,10 @@
 </div>
 
 @push('styles')
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+        integrity="sha512-..." crossorigin="anonymous" referrerpolicy="no-referrer" />
 @endpush
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
+    integrity="sha512-dyZt9u+0A2ZyWOKGqhg9Ulmgwv9z5s8EKz6eS8dDXCzZsAJ2w5PZg6SLYmcm+3b0q6Iq2nX9mthV9Ic2uZlUgQ=="
+    crossorigin="anonymous" referrerpolicy="no-referrer" />

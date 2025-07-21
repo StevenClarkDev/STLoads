@@ -5,38 +5,42 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\UserController;
 
 /* ───────────────  GUEST‑ONLY ROUTES  ─────────────── */
+
 Route::middleware('guest')->group(function () {
     // Login
     Route::get('/login', [AuthController::class, 'login'])->name('login');
+    Route::get('/admin/login', [AuthController::class, 'adminLogin'])->name('admin.login');
     Route::post('/login', [AuthController::class, 'verify'])->name('login.post');
+    Route::post('/admin/login', [AuthController::class, 'adminVerify'])->name('admin.login.post');
 
     Route::get('/register', [AuthController::class, 'registerForm'])->name('register.form');
-    Route::post('/register', [AuthController::class, 'sendOtp'])->name('register'); // Keep commented for OTP flow
+    Route::post('/register', [AuthController::class, 'sendOtp'])->name('register');
+    Route::post('/verify-otp', [AuthController::class, 'verifyOTP'])->name('verify-otp');
 
     Route::get('/forget-password', [AuthController::class, 'forgetPassword'])->name('forget-password');
     Route::get('/new-password', [AuthController::class, 'newPassword'])->name('new-password');
 
     Route::get('/otp', [AuthController::class, 'otp'])->name('otp');
-    Route::post('/send-otp', [AuthController::class, 'sendOtp'])->name('otp.send');
-    Route::post('/verify-otp', [AuthController::class, 'verifyOtp'])->name('otp.verify');
+    // Route::post('/send-otp', [AuthController::class, 'sendOtp'])->name('otp.send');
+    // Route::post('/verify-otp', [AuthController::class, 'verifyOtp'])->name('otp.verify');
 });
 
-    Route::get('/', [AuthController::class, 'role'])->name('role');
+Route::get('/', [AuthController::class, 'role'])->name('role');
+Route::get('/onboarding/{user}', [AuthController::class, 'onboardingForm'])->name('onboarding-form');
+Route::post('/onboarding/{user}', [AuthController::class, 'onboardingFormSave'])->name('onboarding-form-save');
 
-    // 🔒 Auth-only routes
-    Route::middleware('auth')->group(function () {
+// 🔒 Auth-only routes
+Route::middleware('auth')->group(function () {
 
     Route::resource('roles', RoleController::class);
     Route::resource('users', UserController::class);
     Route::get('/dashboard', [DashboardController::class, 'dashboard'])->name('dashboard');
     Route::get('/user_approval', [AdminController::class, 'userApproval'])->name('user_approval');
-    Route::get('/carriers', [AdminController::class, 'carriers'])->name('carriers');
-    Route::get('/brookers', [AdminController::class, 'brookers'])->name('brookers');
-    Route::get('/shippers', [AdminController::class, 'shippers'])->name('shippers');
-    Route::get('/freight_forwarders', [AdminController::class, 'freightForwarders'])->name('freight_forwarders');
+    Route::get('/users_by_role/{id}', [UserController::class, 'usersByRole'])->name('users_by_role');
     Route::get('/user_profile/{user}', [AdminController::class, 'userProfile'])->name('user.profile');
-    
+
     Route::post('/logout',   [AuthController::class, 'logout'])->name('logout');
 });

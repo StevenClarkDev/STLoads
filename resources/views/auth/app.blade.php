@@ -13,7 +13,7 @@
     <link rel="icon" href="{{ url('assets/images/favicon.png') }}" type="image/x-icon">
     <link rel="shortcut icon" href="{{ url('assets/images/favicon.png') }}" type="image/x-icon">
     <title>LoadBoard - Signup</title>
-     <!-- Google font-->
+    <!-- Google font-->
     <link href="https://fonts.googleapis.com/css?family=Rubik:400,400i,500,500i,700,700i&amp;display=swap"
         rel="stylesheet">
     <link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,500,500i,700,700i,900&amp;display=swap"
@@ -46,9 +46,11 @@
             @yield('content')
         </div>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 
     <script>
-        document.addEventListener("DOMContentLoaded", function () {
+        document.addEventListener("DOMContentLoaded", function() {
             // Helper function
             function validateInput(id, regex, errorId = null) {
                 const input = document.getElementById(id);
@@ -57,7 +59,7 @@
 
                 if (!input || !icon) return;
 
-                input.addEventListener("input", function () {
+                input.addEventListener("input", function() {
                     const isValid = regex.test(input.value);
 
                     // Tick icon color
@@ -96,8 +98,57 @@
                 confirm.addEventListener("input", checkMatch);
                 password.addEventListener("input", checkMatch);
             }
-        });
-        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+        }); <
+        script src = "https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" >
+    </script>
+    @if (session('status'))
+        <script>
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'success',
+                title: {!! json_encode(session('status')) !!},
+                showConfirmButton: false,
+                timer: 2500
+            }).then(() => {
+                @php
+                    session(['success' => null]);
+                @endphp
+            });
+        </script>
+    @endif
+
+    @if ($errors->any())
+        <script>
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'error',
+                title: {!! json_encode($errors->first()) !!},
+                showConfirmButton: false,
+                timer: 2500
+            });
+        </script>
+    @endif
+
+    @if (session('error'))
+        <script>
+            Swal.fire({
+                position: 'center',
+                icon: 'error',
+                title: {!! json_encode(session('error')) !!},
+                showConfirmButton: false,
+                showCloseButton: true,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                backdrop: true,
+            }).then(() => {
+                @php
+                    session(['error' => null]);
+                @endphp
+            });
+        </script>
+    @endif
 </body>
 
 </html>

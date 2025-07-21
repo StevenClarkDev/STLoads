@@ -1,4 +1,4 @@
-@extends('admin.app')
+@extends('admin.layout.app')
 @section('content')
     <div class="container-fluid p-0 m-0 min-vh-100 d-flex">
         <div class="row g-0 flex-grow-1 mt-3">

@@ -58,7 +58,7 @@
             </a>
             <ul class="sidebar-submenu">
               <li>
-                <a href=" {{ route('user_approval') }}">Users</a>
+                <a href=" {{ route('users.index') }}">Users</a>
               </li>
               <li>
                 <a href=" {{route('roles.index') }}">Roles</a>

@@ -1,32 +1,7 @@
-@extends('admin.app')
+@extends('layout.app')
 
 @section('content')
-    <div class="centered-container d-flex align-items-center justify-content-center min-vh-100 p-3">
-        <div class="row mt-4">
-            <!-- Page Title -->
-            <!-- <div class="page-title mb-4">
-                        <div class="row align-items-center">
-                            <div class="col-6">
-                                <h4>User Profile</h4>
-                            </div>
-                            <div class="col-6 text-end">
-                                <ol class="breadcrumb justify-content-end">
-                                    <li class="breadcrumb-item">
-                                        <a href="{{ route('dashboard') }}">
-                                            <svg class="stroke-icon">
-                                                <use href="../assets/svg/icon-sprite.svg#stroke-home"></use>
-                                            </svg>
-                                        </a>
-                                    </li>
-                                    <li class="breadcrumb-item">User Approval</li>
-                                    <li class="breadcrumb-item active">User Profile</li>
-                                </ol>
-                            </div>
-                        </div>
-                    </div> -->
-
-            <!-- Profile Card -->
-            <div class="col-md-12">
+            <div class="col-xl-9 box-col-6 p-3">
                 <div class="card mx-4">
                     <div class="card-body">
                         <div class="row gy-4 px-4">
@@ -35,33 +10,33 @@
                                 <h5 class="mb-3">User Information</h5>
                                 <div class="row g-3">
                                     <div class="col-sm-6">
-                                        <label class="form-label">First Name</label>
-                                        <input class="form-control" type="text" value="John" readonly>
+                                        <label class="form-label">Name</label>
+                                        <input class="form-control" type="text" value="{{ $user->name }}" readonly>
                                     </div>
-                                    <div class="col-sm-6">
+                                    {{-- <div class="col-sm-6">
                                         <label class="form-label">Last Name</label>
                                         <input class="form-control" type="text" value="Doe" readonly>
-                                    </div>
+                                    </div> --}}
                                     <div class="col-sm-6">
                                         <label class="form-label">Role</label>
-                                        <input class="form-control" type="text" value="Carrier" readonly>
+                                        <input class="form-control" type="text" value="{{ $user->getRoleNames()->implode(', ') }}" readonly>
                                     </div>
                                     <div class="col-sm-6">
                                         <label class="form-label">Email</label>
-                                        <input class="form-control" type="email" value="johndoe@example.com" readonly>
+                                        <input class="form-control" type="email" value="{{ $user->email }}" readonly>
                                     </div>
                                     <div class="col-sm-6">
                                         <label class="form-label">DOB</label>
-                                        <input class="form-control" type="date" value="1995-05-10" readonly>
+                                        <input class="form-control" type="date" value="{{ $user->dob }}" readonly>
                                     </div>
                                     <div class="col-sm-6">
                                         <label class="form-label">Gender</label>
-                                        <input class="form-control" type="text" value="Male" readonly>
+                                        <input class="form-control" type="text" value="{{ $user->gender }}" readonly>
                                     </div>
                                     <div class="col-12">
                                         <label class="form-label">Address</label>
                                         <input class="form-control" type="text"
-                                            value="123 Street Name, Model Town, Lahore Pakistan." readonly>
+                                            value="{{ $user->address }}" readonly>
                                     </div>
                                 </div>
                             </div>
@@ -78,10 +53,10 @@
                                             </div>
                                         </div>
                                         <div class="social-details text-white">
-                                            <h5 class="mb-1 text-white"><a href="social-app.html" class="text-white">John
-                                                    Doe</a>
+                                            <h5 class="mb-1 text-white">
+                                                {{ $user->name }}
                                             </h5>
-                                            <span class="text-light mb-4">johndoe@example.com</span>
+                                            <span class="text-light mb-4">{{ $user->email }}</span>
 
                                             <ul
                                                 class="social-follow list-unstyled d-flex justify-content-between mt-4 mb-2 p-2">

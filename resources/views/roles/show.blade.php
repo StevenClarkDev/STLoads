@@ -1,33 +1,27 @@
-@extends('layouts.app')
+@extends('layout.app')
 
 @section('content')
-<div class="row">
-    <div class="col-lg-12 margin-tb">
-        <div class="pull-left">
-            <h2> Show Role</h2>
-        </div>
-        <div class="pull-right">
-            <a class="btn btn-primary" href="{{ route('roles.index') }}"> Back</a>
-        </div>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-xs-12 col-sm-12 col-md-12">
-        <div class="form-group">
-            <strong>Name:</strong>
-            {{ $role->name }}
-        </div>
-    </div>
-    <div class="col-xs-12 col-sm-12 col-md-12">
-        <div class="form-group">
-            <strong>Permissions:</strong>
-            @if(!empty($rolePermissions))
-                @foreach($rolePermissions as $v)
-                    <label class="label label-success">{{ $v->name }},</label>
-                @endforeach
-            @endif
+    <div class="col-xl-9 box-col-6 p-3">
+        <div class="card mx-4">
+            <div class="card-body">
+                <div class="row gy-4 px-4">
+                    {{-- <h5 class="mb-3">User Information</h5> --}}
+                    <div class="row g-3">
+                        <div class="col-sm-12">
+                            <strong>Name:</strong>
+                            {{ $role->name }}
+                        </div>
+                        <div class="col-sm-12">
+                            <strong>Permissions:</strong>
+                            @if (!empty($rolePermissions))
+                                @foreach ($rolePermissions as $v)
+                                    <label class="form-label">{{ $v->name }},</label>
+                                @endforeach
+                            @endif
+                        </div>
+                    </div>
+                </div> <!-- end row -->
+            </div>
         </div>
     </div>
-</div>
 @endsection

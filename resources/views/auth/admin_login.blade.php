@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="icon" href="{{ url('assets/images/favicon.png') }}" type="image/x-icon">
+    <link rel="icon" href="{{ url('assets/images/favicon.png') }}" type="image/x-icon">
     <link rel="shortcut icon" href="{{ url('assets/images/favicon.png') }}" type="image/x-icon">
     <title>LoadBoard - Role Select</title>
     <!-- Google Fonts -->
@@ -212,10 +212,10 @@
                     <nav class="navbar navbar-expand">
                         <ul class="navbar-nav ms-auto">
                             <li class="nav-item">
-                                <a class="nav-link active" href="#">Home</a>
+                                <a class="nav-link" href="{{ route('role') }}">Home</a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link" href="{{ route('admin.login') }}">Admin</a>
+                                <a class="nav-link active" href="#">Admin</a>
                             </li>
                             <li class="nav-item">
                                 <a class="nav-link" href="https://stloads.com/about-us">About</a>
@@ -230,60 +230,40 @@
                     </nav>
                 </div>
 
-                <!-- Headings -->
-                <div class="text-center my-5">
-                    <h2 class="welcome-title mb-2">Welcome to LoadBoard – Where Smart Logistics Begin.</h2>
-                    <h5 class="welcome-subtitle mt-3">Select your role</h5>
-                    <p class="welcome-description">To start your project we need to customize your preferences.</p>
-                </div>
-
                 <!-- Role Cards -->
                 <div class="row g-4">
-                    <div class="col-md-6 col-lg-3">
-                        <div class="role-card">
-                            <div class="role-content">
-                                <i class="fas fa-boxes role-icon"></i>
-                                <h3 class="role-title">Shipper</h3>
-                                <p class="role-count">Count 40</p>
-                                <a href="{{ route('login', ['id' => 2]) }}">
-                                    <i class="fas fa-arrow-right role-arrow"></i>
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6 col-lg-3">
-                        <div class="role-card">
-                            <div class="role-content">
-                                <i class="fas fa-truck-fast role-icon"></i>
-                                <h3 class="role-title">Carrier</h3>
-                                <p class="role-count">Count 40</p>
-                                <a href="{{ route('login', ['id' => 3]) }}">
-                                    <i class="fas fa-arrow-right role-arrow"></i>
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6 col-lg-3">
-                        <div class="role-card">
-                            <div class="role-content">
-                                <i class="fas fa-handshake-angle role-icon"></i>
-                                <h3 class="role-title">Broker</h3>
-                                <p class="role-count">Count 40</p>
-                                <a href="{{ route('login', ['id' => 4]) }}">
-                                    <i class="fas fa-arrow-right role-arrow"></i>
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6 col-lg-3">
-                        <div class="role-card">
-                            <div class="role-content">
-                                <i class="fas fa-ship role-icon"></i>
-                                <h3 class="role-title">Freight Forwarder</h3>
-                                <p class="role-count">Count 40</p>
-                                <a href="{{ route('login', ['id' => 5]) }}">
-                                    <i class="fas fa-arrow-right role-arrow"></i>
-                                </a>
+                    <div class="login-card login-dark">
+                        <div>
+                            <div class="login-main">
+                                <form class="theme-form" action="{{ route('admin.login.post') }}" method="post">
+                                    @csrf
+                                    <h4>Sign in to account</h4>
+                                    <p>Enter your email & password to login</p>
+                                    <div class="row align-items-end">
+                                        {{-- Email --}}
+                                        <div class="col-md-5 mb-3 mb-md-0">
+                                            <label class="col-form-label">Email Address</label>
+                                            <div class="input-group">
+                                                <input id="email" class="form-control pe-5 rounded-2" type="email"
+                                                    name="email" required placeholder="Test@gmail.com">
+                                                <input type="hidden" name="id" value="{{ $id ?? '' }}">
+                                                <i id="email-icon"
+                                                    class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
+                                            </div>
+                                        </div>
+                                        {{-- Password --}}
+                                        <div class="col-md-5 mb-3 mb-md-0">
+                                            <label class="col-form-label">Password</label>
+                                            <div class="form-input position-relative">
+                                                <input id="password" class="form-control pe-5" type="password"
+                                                    name="password" required placeholder="*********">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-2">
+                                            <button class="btn btn-primary btn-sm w-100" type="submit">Sign in</button>
+                                        </div>
+                                    </div>
+                                </form>
                             </div>
                         </div>
                     </div>
@@ -294,6 +274,55 @@
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    @if (session('status'))
+        <script>
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'success',
+                title: {!! json_encode(session('status')) !!},
+                showConfirmButton: false,
+                timer: 2500
+            }).then(() => {
+                @php
+                    session(['success' => null]);
+                @endphp
+            });
+        </script>
+    @endif
+
+    @if ($errors->any())
+        <script>
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'error',
+                title: {!! json_encode($errors->first()) !!},
+                showConfirmButton: false,
+                timer: 2500
+            });
+        </script>
+    @endif
+
+    @if (session('error'))
+        <script>
+            Swal.fire({
+                position: 'center',
+                icon: 'error',
+                title: {!! json_encode(session('error')) !!},
+                showConfirmButton: false,
+                showCloseButton: true,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                backdrop: true,
+            }).then(() => {
+                @php
+                    session(['error' => null]);
+                @endphp
+            });
+        </script>
+    @endif
 </body>
 
 </html>

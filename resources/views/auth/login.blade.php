@@ -69,6 +69,7 @@
                                     <div class="input-group">
                                         <input id="email" class="form-control pe-5 rounded-2" type="email"
                                             name="email" required placeholder="Test@gmail.com">
+                                            <input type="hidden" name="id" value="{{ $id ?? '' }}">
                                         <i id="email-icon"
                                             class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                                     </div>
@@ -99,7 +100,7 @@
                                     </a>
                                 </div>
                                 <p class="mt-4 mb-0 text-center">Don't have account?<a class="ms-2"
-                                        href={{ route('register.form') }}>Create Account</a></p>
+                                        href={{ route('register.form', ['id' => $id]) }}>Create Account</a></p>
                             </form>
                         </div>
                     </div>
@@ -124,8 +125,58 @@
         <!-- Plugins JS Ends-->
         <!-- Theme js-->
         <script src="../assets/js/script.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </div>
+     @if (session('status'))
+        <script>
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'success',
+                title: {!! json_encode(session('status')) !!},
+                showConfirmButton: false,
+                timer: 2500
+            }).then(() => {
+                @php
+                    session(['success' => null]);
+                @endphp
+            });
+        </script>
+    @endif
+
+    @if ($errors->any())
+        <script>
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'error',
+                title: {!! json_encode($errors->first()) !!},
+                showConfirmButton: false,
+                timer: 2500
+            });
+        </script>
+    @endif
+
+    @if (session('error'))
+        <script>
+            Swal.fire({
+                position: 'center',
+                icon: 'error',
+                title: {!! json_encode(session('error')) !!},
+                showConfirmButton: false,
+                showCloseButton: true,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                backdrop: true,
+            }).then(() => {
+                @php
+                    session(['error' => null]);
+                @endphp
+            });
+        </script>
+    @endif
 </body>
+
 
 <script>
     document.addEventListener("DOMContentLoaded", function() {
