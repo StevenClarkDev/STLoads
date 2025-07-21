@@ -92,13 +92,13 @@
                                             in</button>
                                     </div>
                                 </div>
-                                <h6 class="text-muted mt-4 or">Or Sign in with</h6>
+                                <!-- <h6 class="text-muted mt-4 or">Or Sign in with</h6>
                                 <div class="social mt-4">
                                     <a href="{{ url('/auth/google') }}" target="_blank"
                                         class="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center gap-2">
                                         <i class="fab fa-google me-2"></i> Sign in with Google
                                     </a>
-                                </div>
+                                </div> -->
                                 <p class="mt-4 mb-0 text-center">Don't have account?<a class="ms-2"
                                         href={{ route('register.form', ['id' => $id]) }}>Create Account</a></p>
                             </form>

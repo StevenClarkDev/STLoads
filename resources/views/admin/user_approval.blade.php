@@ -2,7 +2,7 @@
 @section('content')
     <!-- Sidebar Column -->
     <!-- Main Content Column -->
-    <div class="col-xl-9 box-col-6 p-3">
+    <div class="col-xl-12 box-col-6 p-3">
         <div class="file-content">
             <div class="card">
                 <div class="container-fluid">
@@ -40,7 +40,7 @@
                                                         <span class="font-primary d-flex align-items-center">
                                                             <i class="icon-arrow-up icon-rotate me-1"></i>
                                                             <span
-                                                                class="f-w-500">+{{ $totalUsersApprovedThisMonthPercentage }}</span>
+                                                                class="f-w-500">+{{ $totalUsersApprovedThisMonthPercentage }}%</span>
                                                         </span>
                                                     </div>
                                                 </li>
@@ -55,7 +55,7 @@
                                                         <span class="font-danger d-flex align-items-center">
                                                             <i class="icon-arrow-down icon-rotate me-1"></i>
                                                             <span class="f-w-500">-
-                                                                {{ $totalUsersRejectedThisMonthPercentage }}</span>
+                                                                {{ $totalUsersRejectedThisMonthPercentage }}%</span>
                                                         </span>
                                                     </div>
                                                 </li>
@@ -151,12 +151,9 @@
                                                         <div>
                                                             <h4 class="mb-0">{{ $usersCount }}</h4>
                                                             <span class="f-light">Pending Requests</span>
-                                                            @if ($usersCountToday > 0)
-                                                                <span
-                                                                    class="badge bg-primary text-white my-3 p-2 rounded-4">
-                                                                    {{ $usersCountToday }} new requests today
-                                                                </span>
-                                                            @endif
+                                                            <span class="badge bg-primary text-white my-3 p-2 rounded-4">
+                                                                {{ $usersCountToday ?? 0 }} new requests today
+                                                            </span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -196,15 +193,19 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
+                                                @if ($users->isEmpty())
+                                                    <tr>
+                                                        <td colspan="6" class="text-center">No data available.</td>
+                                                    </tr>
+                                                @endif
                                                 @foreach ($users as $user)
                                                     <tr>
                                                         <td>{{ $user->id }}</td>
                                                         <td>
                                                             {{-- @if ($user->avatar)
-                                                                <img class="img-fluid table-avtar"
-                                                                    src="{{ asset('storage/' . $user->avatar) }}"
-                                                                    alt=""
-                                                                    style="width:32px;height:32px;border-radius:50%;margin-right:8px;">
+                                                            <img class="img-fluid table-avtar"
+                                                                src="{{ asset('storage/' . $user->avatar) }}" alt=""
+                                                                style="width:32px;height:32px;border-radius:50%;margin-right:8px;">
                                                             @endif --}}
                                                             {{ ucwords($user->name) }}
                                                         </td>
@@ -268,7 +269,8 @@
                 </ul>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" {{-- onclick="approveUser({{ $user->id }})" --}}>Confirm</button>
+                <button type="button" class="btn btn-secondary" {{-- onclick="approveUser({{ $user->id }})"
+                    --}}>Confirm</button>
                 <button type="button" class="btn btn-dark" data-bs-dismiss="modal">Cancel</button>
             </div>
         </div>
@@ -294,7 +296,8 @@
                 </ul>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-danger" {{-- onclick="rejectUser({{ $user->id }})" --}}>Confirm</button>
+                <button type="button" class="btn btn-danger" {{-- onclick="rejectUser({{ $user->id }})"
+                    --}}>Confirm</button>
                 <button type="button" class="btn btn-dark" data-bs-dismiss="modal">Cancel</button>
             </div>
         </div>

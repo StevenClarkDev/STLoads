@@ -50,26 +50,33 @@
 </head>
 
 <body>
-<div class="container-fluid p-0"
-    style="background-image: url('{{ url('assets/images/login/texture-bg.jpg') }}'); background-size: cover; background-position: center; min-height: 100vh;">
+    <div class="container-fluid p-0"
+        style="background-image: url('{{ url('assets/images/login/texture-bg.jpg') }}'); background-size: cover; background-position: center; height: 100vh; display: flex; flex-direction: column;">
 
         <!-- Logo Section -->
-        <div class="d-flex justify-content-center align-items-start pt-4" style="height: 100px;">
+        <div class="d-flex justify-content-center align-items-start pt-4" style="height: 100px; flex-shrink: 0;">
             <img src="{{ url('assets/images/logo/logo-white.png') }}" alt="Logo" style="height: 100px;">
         </div>
 
-        <!-- Content Section -->
-        <div class="d-flex align-items-start justify-content-center mt-4" style="min-height: calc(100vh - 100px);">
-            <div class="container-fluid p-0 m-0 min-vh-100 d-flex">
-                <div class="row g-0 flex-grow-1 mt-3 w-100">
+        <!-- Main Content Area -->
+        <div class="flex-grow-1 overflow-hidden mt-4">
+            <div class="container-fluid h-100">
+                <div class="row h-100 g-0">
+
+                    <!-- Sidebar -->
                     @include('layout.sidebar')
 
-                    @yield('content')
+                    <!-- Page Content with Scroll if Needed -->
+                    <div class="col overflow-auto">
+                        @yield('content')
+                    </div>
+
                 </div>
             </div>
         </div>
-
     </div>
+
+
 
 
     <!-- latest jquery-->
