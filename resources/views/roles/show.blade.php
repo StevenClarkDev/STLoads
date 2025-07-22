@@ -5,13 +5,16 @@
         <div class="card mx-4 shadow-sm border-0">
             <div class="card-body p-4" style="height: 380px;">
                 <div class="d-flex align-items-center mb-4">
-                    <div id="card-icon" data-feather="user" class="me-3 bg-primary" style="width: 50px; height: 50px; border-radius: 50px; padding: 8px;">
+                    <div class="me-3 d-flex align-items-center justify-content-center bg-primary rounded-circle"
+                        style="width: 50px; height: 50px;">
+                        <i id="card-icon" data-feather="" style="width: 30px; height: 30px; color: white;"></i>
                     </div>
                     <div>
                         <h4 class="card-title mb-0" id="card-title">{{ ucfirst($role->name) }}</h4>
                         <small class="text-muted">Role Overview</small>
                     </div>
                 </div>
+
 
                 <hr>
 
@@ -26,7 +29,7 @@
                         @if (!empty($rolePermissions))
                             <div class="d-flex flex-wrap gap-2">
                                 @foreach ($rolePermissions as $v)
-                                    <span class="badge bg-primary text-light">{{ $v->name }}</span>
+                                    <span class="badge rounded-pill badge-primary">{{ $v->name }}</span>
                                 @endforeach
                             </div>
                         @else
@@ -40,6 +43,9 @@
                 <div>
                     <h6 class="text-uppercase mb-2">Role Details</h6>
                     <p id="card-desc" class="mb-0 text-muted small">Loading description...</p>
+                </div>
+                <div class="d-flex flex-row-reverse gap-1 mt-2">
+                    <a href="{{ route('roles.index') }}" type="back" class="btn btn-outline-secondary">Back</a>
                 </div>
             </div>
         </div>
@@ -69,6 +75,11 @@
                     title: "Broker",
                     icon: "shuffle",
                     desc: "Flexible multi-leg routing with AI path suggestions based on costs and port delays."
+                },
+                admin: {
+                    title: "Admin",
+                    icon: "settings",
+                    desc: "Full access to manage users, roles, permissions, and system settings. Oversee platform operations and view analytics dashboards."
                 }
             };
 

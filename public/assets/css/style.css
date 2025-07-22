@@ -27064,10 +27064,10 @@ footer.blockquote-footer {
 }
 
 .faq-widgets .media-body p {
-  padding-right: 20px;
+  /* padding-right: 20px; */
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 10;
+  -webkit-line-clamp: 12;
   overflow: hidden;
   text-overflow: ellipsis;
 }

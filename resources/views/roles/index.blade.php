@@ -47,31 +47,6 @@
                                                 </td>
                                             </tr>
                                         @endforeach
-                                        @foreach ($roles as $key => $role)
-                                            <tr>
-                                                <td>{{ ++$i }}</td>
-                                                <td>{{ $role->name }}</td>
-                                                <td><span class="badge rounded-pill bg-secondary py-2 px-3"> {{ $role->users->count() }}</span></td>
-                                                <td>
-                                                    <a class="btn btn-info btn-sm" href="{{ route('roles.show', $role->id) }}"><i
-                                                            class="fa fa-list"></i> Show</a>
-                                                    @can('role-edit')
-                                                        <a class="btn btn-primary btn-sm"
-                                                            href="{{ route('roles.edit', $role->id) }}"><i
-                                                                class="fa fa-pencil"></i> Edit</a>
-                                                    @endcan
-                                                    {{-- @can('role-delete')
-                                                        <form method="POST" action="{{ route('roles.destroy', $role->id) }}"
-                                                            style="display:inline">
-                                                            @csrf
-                                                            @method('DELETE')
-                                                            <button type="submit" class="btn btn-danger btn-sm"><i
-                                                                    class="fa-solid fa-trash"></i> Delete</button>
-                                                        </form>
-                                                    @endcan --}}
-                                                </td>
-                                            </tr>
-                                        @endforeach
                                         </tbody>
                                 </table>
                             </div>

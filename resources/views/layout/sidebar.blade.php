@@ -57,8 +57,8 @@
                                                     <li>
                                                         <a href="{{ url('roles') }}">
                                                             <div
-                                                                class="btn btn-{{ $currentRoute == 'roles.index' ? 'primary' : 'light' }}">
-                                                                <i data-feather="shield"></i>Roles
+                                                                class="btn btn-{{ Str::startsWith($currentRoute, 'roles.') ? 'primary' : 'light' }}">
+                                                                <i data-feather="shield"></i> Roles
                                                             </div>
                                                         </a>
                                                     </li>
@@ -86,7 +86,8 @@
                                                         <form method="POST" action="{{ route('logout') }}"
                                                             style="display:inline">
                                                             @csrf
-                                                            <button type="submit" class="btn btn-outline-primary w-100 display-flex align-items-center justify-content-center">
+                                                            <button type="submit"
+                                                                class="btn btn-outline-primary w-100 display-flex align-items-center justify-content-center">
                                                                 <i data-feather="log-out"></i> Logout
                                                             </button>
                                                         </form>
