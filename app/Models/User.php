@@ -29,6 +29,8 @@ class User extends Authenticatable
         'address',
         'otp',
         'otp_expires_at',
+        'otp_resend_count',
+        'last_otp_resend_at',
         'image',
         'email_verified_at',
         'status'

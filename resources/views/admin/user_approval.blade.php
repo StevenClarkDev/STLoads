@@ -263,14 +263,15 @@
                     <li class="list-group-item"><strong>Email:</strong> <span
                             class="user-email">{{ $user->email ?? '' }}</span></li>
                     <li class="list-group-item"><strong>Role:</strong> <span
-                            class="user-role">{{ $user->role ?? '' }}</span></li>
+                            class="user-role">{{ isset($user) ? $user->getRoleNames()->implode(', ') : '' }}</span>
+                    </li>
                     <li class="list-group-item"><strong>Date:</strong> <span
                             class="current-date">{{ now()->format('Y-m-d') }}</span></li>
                 </ul>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" {{-- onclick="approveUser({{ $user->id }})"
-                    --}}>Confirm</button>
+                <button type="button" class="btn btn-secondary"
+                    onclick="approveUser({{ isset($user) ? $user->id : '1' }})">Confirm</button>
                 <button type="button" class="btn btn-dark" data-bs-dismiss="modal">Cancel</button>
             </div>
         </div>
@@ -293,54 +294,120 @@
                             class="user-id">{{ $user->id ?? '' }}</span></li>
                     <li class="list-group-item"><strong>Email:</strong> <span
                             class="user-email">{{ $user->email ?? '' }}</span></li>
+                    <li class="list-group-item"><strong>Role:</strong> <span
+                            class="user-role">{{ isset($user) ? $user->getRoleNames()->implode(', ') : '' }}</span>
+                    </li>
+                    <li class="list-group-item"><strong>Date:</strong> <span
+                            class="current-date">{{ now()->format('Y-m-d') }}</span></li>
                 </ul>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-danger" {{-- onclick="rejectUser({{ $user->id }})"
-                    --}}>Confirm</button>
+                <button type="button" class="btn btn-danger"
+                    onclick="rejectUser({{ isset($user) ? $user->id : '1' }})">Confirm</button>
                 <button type="button" class="btn btn-dark" data-bs-dismiss="modal">Cancel</button>
             </div>
         </div>
     </div>
 </div>
 
-@push('styles')
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-@endpush
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
     function approveUser(userId) {
-        // Close modal
+        // Close the modal immediately
         $('#approveModal').modal('hide');
 
-        // Simulate success with SweetAlert
-        setTimeout(() => {
-            Swal.fire({
-                icon: 'success',
-                title: 'User Approved',
-                text: 'The user has been successfully approved!',
-                timer: 2000,
-                showConfirmButton: false
-            });
+        fetch('/approve-user', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}' // Laravel CSRF token
+                },
+                body: JSON.stringify({
+                    user_id: userId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
 
-            // TODO: make actual approval request here (via form or AJAX)
-        }, 500);
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'User Approved',
+                        text: data.message || 'The user has been successfully approved!',
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2100);
+
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Approval Failed',
+                        text: data.message || 'Something went wrong while approving the user.',
+                    });
+                }
+            })
+            .catch(error => {
+
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Server Error',
+                    text: 'An error occurred. Please try again later.',
+                });
+                console.error('Approval error:', error);
+            });
     }
 
     function rejectUser(userId) {
         $('#rejectModal').modal('hide');
 
-        setTimeout(() => {
-            Swal.fire({
-                icon: 'warning',
-                title: 'User Rejected',
-                text: 'The user has been rejected.',
-                timer: 2000,
-                showConfirmButton: false
-            });
+        fetch('/reject-user', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}' // Laravel CSRF token
+                },
+                body: JSON.stringify({
+                    user_id: userId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
 
-            // TODO: make actual rejection request here (via form or AJAX)
-        }, 500);
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'User Rejected',
+                        text: data.message || 'The user has been successfully rejected!',
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2100);
+
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Rejection Failed',
+                        text: data.message || 'Something went wrong while rejecting the user.',
+                    });
+                }
+            })
+            .catch(error => {
+
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Server Error',
+                    text: 'An error occurred. Please try again later.',
+                });
+                console.error('Rejecting error:', error);
+            });
     }
 </script>

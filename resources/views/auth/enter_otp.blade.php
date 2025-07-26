@@ -7,7 +7,7 @@
                 style="max-width: 40%;">
         </div>
 
-        <form action="{{ route('verify-otp') }}" method="POST" class="text-center">
+        <form action="{{ route('verify-otp') }}" method="POST" class="text-center" id="otpForm">
             @csrf
 
             <h4>Enter OTP</h4>
@@ -15,9 +15,8 @@
 
             <div class="d-flex justify-content-between gap-2 my-4">
                 <input type="hidden" name="email" value="{{ $to }}">
-                {{-- OTP Inputs --}}
                 @for ($i = 0; $i < 6; $i++)
-                    <input type="text" name="otp[]" class="form-control text-center" maxlength="1" required
+                    <input type="text" name="otp[]" class="form-control text-center otp-input" maxlength="1" required
                         style="width: 40px;">
                 @endfor
             </div>
@@ -25,51 +24,84 @@
             <div id="verify-section">
                 <button type="submit" class="btn btn-primary w-50" id="verifyBtn">
                     Verify <span id="timer" class="ms-2">
-                        <i class="fa fa-clock fa-spin"></i> <span id="time">60</span>s
+                        <i class="fa fa-clock fa-spin"></i> <span id="time">300</span>s
                     </span>
                 </button>
             </div>
 
             <div id="resend-section" class="d-none">
-                {{-- <a href="{{ route('otp.resend') }}" class="btn btn-outline-primary w-50 mt-2">Resend OTP</a> --}}
+                <button type="button" class="btn btn-outline-primary w-50 mt-2" id="resendOtpBtn">Resend OTP</button>
                 <p class="mt-2 text-danger">OTP expired. Click to resend.</p>
             </div>
         </form>
     </div>
-@endsection
 
-@section('scripts')
     <script>
-        let seconds = 300;
-        const timer = document.getElementById("time");
-        const verifySection = document.getElementById("verify-section");
-        const resendSection = document.getElementById("resend-section");
+        document.addEventListener("DOMContentLoaded", function() {
+            let seconds = 300;
+            const timer = document.getElementById("time");
+            const verifySection = document.getElementById("verify-section");
+            const resendSection = document.getElementById("resend-section");
 
-        const countdown = setInterval(() => {
-            seconds--;
-            timer.textContent = seconds;
-            if (seconds <= 0) {
-                clearInterval(countdown);
-                verifySection.classList.add("d-none");
-                resendSection.classList.remove("d-none");
-            }
-        }, 1000);
+            let countdown = setInterval(updateTimer, 1000);
 
-        // Auto focus next input
-        const inputs = document.querySelectorAll('input[maxlength="1"]');
-        inputs.forEach((input, i) => {
-            input.addEventListener("input", () => {
-                if (input.value && i < inputs.length - 1) {
-                    inputs[i + 1].focus();
+            function updateTimer() {
+                seconds--;
+                timer.textContent = seconds;
+                if (seconds <= 0) {
+                    clearInterval(countdown);
+                    verifySection.classList.add("d-none");
+                    resendSection.classList.remove("d-none");
                 }
+            }
+
+            // Auto focus next input
+            const inputs = document.querySelectorAll('.otp-input');
+
+            inputs.forEach((input, i) => {
+                input.addEventListener("input", (e) => {
+                    const value = e.target.value.replace(/\D/g, '');
+                    e.target.value = value;
+
+                    if (value && i < inputs.length - 1) {
+                        inputs[i + 1].focus();
+                    }
+                });
+
+                input.addEventListener("keydown", (e) => {
+                    if (e.key === "Backspace" && !input.value && i > 0) {
+                        inputs[i - 1].focus();
+                    }
+                });
             });
 
-            input.addEventListener("keydown", (e) => {
-                if (e.key === "Backspace" && !input.value && i > 0) {
-                    inputs[i - 1].focus();
-                }
+            // Resend OTP
+            document.getElementById("resendOtpBtn").addEventListener("click", function() {
+                fetch("{{ route('otp.resend') }}", {
+                        method: "POST",
+                        headers: {
+                            "X-CSRF-TOKEN": "{{ csrf_token() }}",
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                            email: "{{ $to }}"
+                        }),
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire("OTP Sent!", "A new OTP has been sent to your email.", "success");
+
+                            // Reset timer
+                            seconds = 300;
+                            verifySection.classList.remove("d-none");
+                            resendSection.classList.add("d-none");
+                            countdown = setInterval(updateTimer, 1000);
+                        } else {
+                            Swal.fire("Error", data.message || "Unable to resend OTP.", "error");
+                        }
+                    });
             });
         });
     </script>
-
 @endsection

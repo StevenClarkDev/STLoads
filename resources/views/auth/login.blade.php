@@ -69,7 +69,7 @@
                                     <div class="input-group">
                                         <input id="email" class="form-control pe-5 rounded-2" type="email"
                                             name="email" required placeholder="Test@gmail.com">
-                                            <input type="hidden" name="id" value="{{ $id ?? '' }}">
+                                        <input type="hidden" name="id" value="{{ $id ?? '' }}">
                                         <i id="email-icon"
                                             class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                                     </div>
@@ -78,8 +78,8 @@
                                 <div class="form-group position-relative">
                                     <label class="col-form-label">Password</label>
                                     <div class="form-input position-relative">
-                                        <input id="password" class="form-control pe-5" type="password" name="password"
-                                            required placeholder="*********">
+                                        <input id="password" class="form-control pe-5" type="password"
+                                            name="password" required placeholder="*********">
                                     </div>
                                 </div>
                                 <div class="form-group mb-0">
@@ -87,9 +87,10 @@
                                         <input id="checkbox1" type="checkbox">
                                         <label class="text-muted" for="checkbox1">Remember Me</label>
                                     </div><a class="link" href="{{ route('forget-password') }}">Forgot password?</a>
-                                    <div class="text-end mt-3">
-                                        <button class="btn btn-primary btn-block w-100" type="submit">Sign
+                                    <div class="d-flex justify-content-between align-items-center mt-3">
+                                        <button class="btn btn-primary btn-block w-40" type="submit">Sign
                                             in</button>
+                                        <a href="{{ route('role') }}" class="btn btn-secondary w-40">Back</a>
                                     </div>
                                 </div>
                                 <!-- <h6 class="text-muted mt-4 or">Or Sign in with</h6>
@@ -125,9 +126,9 @@
         <!-- Plugins JS Ends-->
         <!-- Theme js-->
         <script src="../assets/js/script.js"></script>
-            <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </div>
-     @if (session('status'))
+    @if (session('status'))
         <script>
             Swal.fire({
                 toast: true,

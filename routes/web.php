@@ -19,6 +19,8 @@ Route::middleware('guest')->group(function () {
     Route::get('/register', [AuthController::class, 'registerForm'])->name('register.form');
     Route::post('/register', [AuthController::class, 'sendOtp'])->name('register');
     Route::post('/verify-otp', [AuthController::class, 'verifyOTP'])->name('verify-otp');
+    Route::post('/otp/resend', [AuthController::class, 'resendOtp'])->name('otp.resend');
+
 
     Route::get('/forget-password', [AuthController::class, 'forgetPassword'])->name('forget-password');
     Route::get('/new-password', [AuthController::class, 'newPassword'])->name('new-password');
@@ -41,6 +43,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/user_approval', [AdminController::class, 'userApproval'])->name('user_approval');
     Route::get('/users_by_role/{id}', [UserController::class, 'usersByRole'])->name('users_by_role');
     Route::get('/user_profile/{user}', [AdminController::class, 'userProfile'])->name('user.profile');
+
+    Route::post('/verify-admin-password', [AdminController::class, 'verifyPassword']);
+    Route::get('/get-cnic-file/{id}', [AdminController::class, 'getCnicFiles']);
+    Route::get('/get-user-file/{id}', [AdminController::class, 'getFiles']);
+    Route::post('/approve-user', [UserController::class, 'approve']);
+    Route::post('/reject-user', [UserController::class, 'reject']);
 
     Route::post('/logout',   [AuthController::class, 'logout'])->name('logout');
 });

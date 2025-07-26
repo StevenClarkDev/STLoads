@@ -66,169 +66,192 @@
                         <div class="card mx-4">
                             <div class="card-body">
                                 <h5 class="mb-3">Onboarding Form</h5>
-                                <form class="card-body" method="POST"
+                                <form class="card-body" method="POST" enctype="multipart/form-data"
                                     action="{{ route('onboarding-form-save', $user->id) }}">
                                     @csrf
                                     <div class="row g-4">
                                         <div class="col-md-6">
                                             <div class="form-floating form-floating-outline">
-                                                <input type="text" id="multicol-username" class="form-control"
-                                                    placeholder="Enter Name" name="name" />
-                                                <label for="multicol-username">Company Name</label>
+                                                <input type="text" id="company_name" class="form-control"
+                                                    placeholder="Enter Company Name" name="company_name" />
+                                                <label for="company_name">Company Name</label>
                                             </div>
                                         </div>
                                         <div class="col-md-6">
                                             <div class="form-floating form-floating-outline">
-                                                <input type="text" id="multicol-username" class="form-control"
-                                                    placeholder="Enter Name" name="name" />
-                                                <label for="multicol-username">Company Address</label>
+                                                <input type="text" id="company_address" class="form-control"
+                                                    placeholder="Enter Company Address" name="company_address" />
+                                                <label for="company_address">Company Address</label>
                                             </div>
                                         </div>
+                                        <div class="col-md-6">
+                                            <div class="form-floating form-floating-outline">
+                                                <input type="file" accept=".jpeg, .jpg, .png, .pdf"
+                                                    name="cnic_front" class="form-control" />
+                                                <label>CNIC Front</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-floating form-floating-outline">
+                                                <input type="file" accept=".jpeg, .jpg, .png, .pdf"
+                                                    name="cnic_back" class="form-control" />
+                                                <label>CNIC Back</label>
+                                            </div>
+                                        </div>
+
+                                        {{-- Carrier --}}
                                         @if ($role->id == 2)
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">DOT Number</label>
+                                                    <input type="text" name="dot_number" class="form-control"
+                                                        placeholder="DOT Number" />
+                                                    <label>DOT Number</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">MC Number</label>
+                                                    <input type="text" name="mc_number" class="form-control"
+                                                        placeholder="MC Number" />
+                                                    <label>MC Number</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Certificate of Insurance</label>
+                                                    <input type="file" accept=".jpeg, .jpg, .png, .pdf"
+                                                        name="certificate_of_insurance_carrier"
+                                                        class="form-control" />
+                                                    <label>Certificate of Insurance</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Equipment Types</label>
+                                                    <input type="text" name="equipment_types" class="form-control"
+                                                        placeholder="Equipment Types" />
+                                                    <label>Equipment Types</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Driver Roster</label>
+                                                    <input type="file" accept=".jpeg, .jpg, .png, .pdf"
+                                                        name="driver_roster" class="form-control" />
+                                                    <label>Driver Roster</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Safety Scorecard</label>
+                                                    <input type="file" accept=".jpeg, .jpg, .png, .pdf"
+                                                        name="safety_scorecard" class="form-control" />
+                                                    <label>Safety Scorecard</label>
                                                 </div>
                                             </div>
+
+                                            {{-- Shipper --}}
                                         @elseif($role->id == 3)
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Business Entity ID (EIN)</label>
+                                                    <input type="text" name="business_entity_id"
+                                                        class="form-control" placeholder="Business Entity ID (EIN)" />
+                                                    <label>Business Entity ID (EIN)</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">General Liability Insurance</label>
+                                                    <input type="file" accept=".jpeg, .jpg, .png, .pdf"
+                                                        name="general_liability_insurance" class="form-control" />
+                                                    <label>General Liability Insurance</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Facility Address</label>
+                                                    <input type="text" name="facility_address"
+                                                        class="form-control" placeholder="Facility Address" />
+                                                    <label>Facility Address</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Fulfillment Contact Info</label>
+                                                    <input type="text" name="fulfillment_contact_info"
+                                                        class="form-control" placeholder="Fulfillment Contact Info" />
+                                                    <label>Fulfillment Contact Info</label>
                                                 </div>
                                             </div>
+
+                                            {{-- Broker --}}
                                         @elseif($role->id == 4)
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">FMCSA Broker License No.</label>
+                                                    <input type="text" name="fmcsa_broker_license_no"
+                                                        class="form-control" placeholder="FMCSA Broker License No." />
+                                                    <label>FMCSA Broker License No.</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">MC Authority Number</label>
+                                                    <input type="text" name="mc_authority_number"
+                                                        class="form-control" placeholder="MC Authority Number" />
+                                                    <label>MC Authority Number</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Bonding Proof Document</label>
+                                                    <input type="file" accept=".jpeg, .jpg, .png, .pdf"
+                                                        name="bonding_proof_document" class="form-control" />
+                                                    <label>Bonding Proof Document</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Performance History</label>
+                                                    <input type="file" accept=".jpeg, .jpg, .png, .pdf"
+                                                        name="performance_history" class="form-control" />
+                                                    <label>Performance History</label>
                                                 </div>
                                             </div>
+
+                                            {{-- Forwarder --}}
                                         @elseif($role->id == 5)
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Freight Forwarder License</label>
+                                                    <input type="text" name="freight_forwarder_license"
+                                                        class="form-control"
+                                                        placeholder="Freight Forwarder License" />
+                                                    <label>Freight Forwarder License</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Customs License</label>
+                                                    <input type="text" name="customs_license" class="form-control"
+                                                        placeholder="Customs License" />
+                                                    <label>Customs License</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Certificate of Insurance</label>
+                                                    <input type="file" accept=".jpeg, .jpg, .png, .pdf"
+                                                        name="certificate_of_insurance_freight_forwarder"
+                                                        class="form-control" />
+                                                    <label>Certificate of Insurance</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">International/Intermodal
-                                                        Docs</label>
+                                                    <input type="file" accept=".jpeg, .jpg, .png, .pdf"
+                                                        name="international_docs" class="form-control" />
+                                                    <label>International/Intermodal Docs</label>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="text" id="multicol-username" class="form-control"
-                                                        placeholder="Enter Name" name="name" />
-                                                    <label for="multicol-username">Port Authority Registration</label>
+                                                    <input type="file" accept=".jpeg, .jpg, .png, .pdf"
+                                                        name="port_authority_registration" class="form-control" />
+                                                    <label>Port Authority Registration</label>
                                                 </div>
                                             </div>
                                         @endif
-
-
                                     </div>
+
                                     <div class="pt-4">
                                         <button type="submit" class="btn btn-primary me-sm-3 me-1">Submit</button>
-                                        <a href="{{ route('login', ['id' => $role->id]) }}" type="back"
+                                        <a href="{{ route('login', ['id' => $role->id]) }}"
                                             class="btn btn-outline-secondary">Cancel</a>
                                     </div>
                                 </form>

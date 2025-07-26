@@ -2,8 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\KycDocuments;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+
 
 class AdminController extends Controller
 {
@@ -129,5 +133,55 @@ class AdminController extends Controller
         }
         // Create a log entry for the login attempt
 
+    }
+
+    public function verifyPassword(Request $request)
+    {
+        if (Hash::check($request->password, Auth::user()->password)) {
+            return response()->json(['success' => true]);
+        }
+        return response()->json(['success' => false]);
+    }
+
+    public function getCnicFiles($id)
+    {
+        $kycDocs = KycDocuments::where('user_id', $id)
+            ->whereIn('document_type', ['cnic_front', 'cnic_back'])
+            ->get();
+
+        $files = [];
+
+        foreach ($kycDocs as $doc) {
+            $filePath = storage_path("app/public/{$doc->file_path}");
+
+            if (file_exists($filePath)) {
+                $files[] = [
+                    'url' => asset("storage/{$doc->file_path}"),
+                    'type' => $doc->document_type,
+                ];
+            }
+        }
+
+        return response()->json(['files' => $files]);
+    }
+    public function getFiles($id)
+    {
+        $kycDocs = KycDocuments::where('user_id', $id)
+            ->get();
+
+        $files = [];
+
+        foreach ($kycDocs as $doc) {
+            $filePath = storage_path("app/public/{$doc->file_path}");
+
+            if (file_exists($filePath)) {
+                $files[] = [
+                    'url' => asset("storage/{$doc->file_path}"),
+                    'type' => $doc->document_type,
+                ];
+            }
+        }
+
+        return response()->json(['files' => $files]);
     }
 }

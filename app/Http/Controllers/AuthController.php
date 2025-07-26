@@ -5,11 +5,14 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\OtpMail;
+use App\Models\KycDocuments;
+use App\Models\UserDetail;
 use Carbon\Carbon;
 
 
@@ -71,7 +74,7 @@ class AuthController extends Controller
 
             // Check if user has the required role id
             if ($user->roles()->where('id', $request->id)->exists()) {
-                if($user->status != 1) {
+                if ($user->status != 1) {
                     $role = $user->roles()->first();
                     $logsController->createLog(__METHOD__, 'error', 'Login denied: User not approved', null, json_encode(['email' => $request->email, 'role_id' => $request->id]));
                     return view('user_login_denial', compact('user', 'role'));
@@ -222,22 +225,7 @@ class AuthController extends Controller
             $otp = rand(100000, 999999);
             $otpExpiry = Carbon::now()->addMinutes(5);
 
-            // Log OTP generation
-            // \Log::info("Generated OTP: {$otp} for email: {$request->email}");
-
-            // session([
-            //     'pending_user' => [
-            //         'name' => $request->name,
-            //         'email' => $request->email,
-            //         'password' => Hash::make($request->password),
-            //         'role' => $request->role,
-            //         'dob' => $request->dob,
-            //         'gender' => $request->gender,
-            //         'cnic' => $request->cnic,
-            //         'address' => $request->address,
-            //     ],
-            //     'register_otp' => $otp,
-            // ]);
+            DB::beginTransaction();
 
             $user = User::create([
                 'name' => $request->name,
@@ -249,6 +237,8 @@ class AuthController extends Controller
                 'address' => $request->address,
                 'otp' => $otp,
                 'otp_expires_at' => $otpExpiry,
+                'otp_resend_count' => 1,
+                'last_otp_resend_at' => Carbon::now(),
                 'email_verified_at' => null,
                 'status' => 4,
             ]);
@@ -266,6 +256,7 @@ class AuthController extends Controller
                 $user->save();
             }
 
+            DB::commit();
 
             // Prepare email content
             $fromAddress = config('mail.from.address');
@@ -274,23 +265,11 @@ class AuthController extends Controller
             $subject = 'Your OTP Code';
             $body = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
 
-            // Log full email structure
-            \Log::info("Email Message Details", [
-                'From' => "{$fromName} <{$fromAddress}>",
-                'To' => $to,
-                'Subject' => $subject,
-                'Body' => $body,
-            ]);
-
-            // Send OTP via raw email
             Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
                 $message->from($fromAddress, $fromName)
                     ->to($to)
                     ->subject($subject);
             });
-
-            // Log success
-            \Log::info("OTP email successfully sent to {$to}");
 
             // Custom application log
             $logsController->createLog(
@@ -303,7 +282,7 @@ class AuthController extends Controller
 
             return view('auth.enter_otp', compact('to'));
         } catch (\Exception $e) {
-            \Log::error("Error sending OTP to {$request->email}: " . $e->getMessage());
+            // \Log::error("Error sending OTP to {$request->email}: " . $e->getMessage());
 
             $logsController->createLog(
                 __METHOD__,
@@ -327,6 +306,49 @@ class AuthController extends Controller
             return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
         }
     }
+
+    public function resendOtp(Request $request)
+    {
+        $email = $request->email;
+        $user = User::where('email', $email)->first();
+
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'User not found.']);
+        }
+        $now = now();
+        if ($user->last_otp_resend_at && $user->last_otp_resend_at->diffInHours($now) < 1) {
+            if ($user->otp_resend_count >= 5) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'OTP resend limit reached. Try again after an hour.'
+                ]);
+            }
+        } else {
+            // Reset counter if it's been more than 1 hour
+            $user->otp_resend_count = 0;
+        }
+
+        $otp = rand(100000, 999999);
+        $user->otp = $otp;
+        $user->otp_expires_at = now()->addMinutes(5);
+        $user->otp_resend_count += 1;
+        $user->last_otp_resend_at = $now;
+        $user->save();
+
+        $fromAddress = config('mail.from.address');
+        $fromName = config('mail.from.name');
+        $to = $request->email;
+        $subject = 'Your OTP Code';
+        $body = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
+        Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
+            $message->from($fromAddress, $fromName)
+                ->to($to)
+                ->subject($subject);
+        });
+
+        return response()->json(['success' => true]);
+    }
+
 
     public function forgetPassword(LogsController $logsController)
     {
@@ -356,10 +378,94 @@ class AuthController extends Controller
         // Return the onboarding form view
         return view('users.onboarding_form', compact('role', 'user'));
     }
-    public function onboardingFormSave(User $user)
+    public function onboardingFormSave(User $user, Request $request)
     {
         $role = $user->roles()->first();
 
-        return view('users.onboarding_form', compact('role'));
+        // Validate common fields
+        $request->validate([
+            'company_name' => 'required|string|max:255',
+            'company_address' => 'required|string|max:255',
+            'cnic_front' => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:2048',
+            'cnic_back' => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:2048',
+        ]);
+
+        $roleId = $role->id;
+        $detailsData = [
+            'company_name' => $request->company_name,
+            'company_address' => $request->company_address,
+        ];
+
+        $documents = [];
+
+        switch ($roleId) {
+            case 2: // Carrier
+                $detailsData['dot_number'] = $request->dot_number;
+                $detailsData['mc_number'] = $request->mc_number;
+                $detailsData['equipment_types'] = $request->equipment_types;
+
+                $documents['certificate_of_insurance_carrier'] = $request->file('certificate_of_insurance_carrier');
+                $documents['driver_roster'] = $request->file('driver_roster');
+                $documents['safety_scorecard'] = $request->file('safety_scorecard');
+                break;
+
+            case 3: // Shipper
+                $detailsData['business_entity_id'] = $request->business_entity_id;
+                $detailsData['facility_address'] = $request->facility_address;
+                $detailsData['fulfillment_contact_info'] = $request->fulfillment_contact_info;
+
+                $documents['general_liability_insurance'] = $request->file('general_liability_insurance');
+                break;
+
+            case 4: // Broker
+                $detailsData['fmcsa_broker_license_no'] = $request->fmcsa_broker_license_no;
+                $detailsData['mc_authority_number'] = $request->mc_authority_number;
+
+                $documents['bonding_proof_document'] = $request->file('bonding_proof_document');
+                $documents['performance_history'] = $request->file('performance_history');
+                break;
+
+            case 5: // Forwarder
+                $detailsData['freight_forwarder_license'] = $request->freight_forwarder_license;
+                $detailsData['customs_license'] = $request->customs_license;
+
+                $documents['certificate_of_insurance_freight_forwarder'] = $request->file('certificate_of_insurance_freight_forwarder');
+                $documents['international_docs'] = $request->file('international_docs');
+                $documents['port_authority_registration'] = $request->file('port_authority_registration');
+                break;
+        }
+
+        if ($request->hasFile('cnic_front')) {
+            $documents['cnic_front'] = $request->file('cnic_front');
+        }
+
+        if ($request->hasFile('cnic_back')) {
+            $documents['cnic_back'] = $request->file('cnic_back');
+        }
+
+        // Save user_details (create or update)
+        $userDetail = $user->details ?: new UserDetail();
+        $userDetail->fill($detailsData);
+        $userDetail->user_id = $user->id;
+        $userDetail->save();
+
+        // Save uploaded documents
+        foreach ($documents as $key => $file) {
+            if ($file) {
+                $path = $file->store("kyc_documents/{$user->id}", 'public');
+
+                KycDocuments::create([
+                    'user_id' => $user->id,
+                    'document_type' => $key,
+                    'file_path' => $path,
+                ]);
+            }
+        }
+
+        // Only update the user's status
+        $user->status = 3;
+        $user->save();
+
+        return redirect()->route('role')->with('success', 'Onboarding submitted. Awaiting admin approval.');
     }
 }
