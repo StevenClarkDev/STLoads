@@ -41,7 +41,8 @@
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/style.css') }}">
     <link id="color" rel="stylesheet" href="{{ url('assets/css/color-1.css') }}" media="screen">
     <!-- Responsive css-->
-    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/responsive.css') }}">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/custom-responsive.css') }}">
+    <!-- <link rel="stylesheet" type="text/css" href="{{ url('assets/css/responsive.css') }}"> -->
     <!-- Latest Font Awesome CDN -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
         integrity="sha512-ud4Xw6Z7YP0fH49YHefBGurHkD5xO2YrYug0St+e3QLCUvBLvNJS2E0RzRPRbJcqfZtCvCoz6rSPc6goEASn3w=="
@@ -50,33 +51,40 @@
 </head>
 
 <body>
-    <div class="container-fluid p-0"
-        style="background-image: url('{{ url('assets/images/login/texture-bg.jpg') }}'); background-size: cover; background-position: center; height: 100vh; display: flex; flex-direction: column;">
+    <div class="main-wrapper d-flex flex-column min-vh-100"
+        style="background: url('{{ url('assets/images/login/texture-bg.jpg') }}') no-repeat center center / cover;">
 
-        <!-- Logo Section -->
-        <div class="d-flex justify-content-center align-items-start pt-4" style="height: 100px; flex-shrink: 0;">
+        <!-- Logo -->
+        <div class="d-flex justify-content-center align-items-start pt-4 my-4" style="height: 100px;">
             <img src="{{ url('assets/images/logo/logo-white.png') }}" alt="Logo" style="height: 100px;">
         </div>
 
-        <!-- Main Content Area -->
-        <div class="flex-grow-1 overflow-hidden mt-4">
+        <!-- Main Content -->
+        <div class="flex-grow-1 d-flex overflow-hidden mt-3">
             <div class="container-fluid h-100">
                 <div class="row h-100 g-0">
-
                     <!-- Sidebar -->
                     @include('layout.sidebar')
 
-                    <!-- Page Content with Scroll if Needed -->
-                    <div class="col overflow-auto">
+                    <!-- Content Area -->
+                    <div class="col overflow-auto px-3">
                         @yield('content')
                     </div>
-
                 </div>
             </div>
         </div>
     </div>
 
-
+    <!-- Footer -->
+    <footer class="footer mt-auto bg-light py-2">
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col text-center text-secondary">
+                    <p class="mb-0">© 2025 Load Board All Rights Reserved</p>
+                </div>
+            </div>
+        </div>
+    </footer>
 
 
     <!-- latest jquery-->

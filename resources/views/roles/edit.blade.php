@@ -53,23 +53,18 @@
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card bg-secondary text-white text-center d-flex align-items-center justify-content-center" style="height: 380px; border: 2px solid var(--bs-light); background-color: rgba(255,255,255,0.1);">
+            <div class="card bg-secondary text-white text-center d-flex align-items-center justify-content-center"
+                style="border: 2px solid var(--bs-light); background-color: rgba(255,255,255,0.1);">
                 <div id="user-card" class="card-body position-relative p-4 d-flex flex-column justify-content-center align-items-center">
-                
-                <!-- Watermark Icon -->
-                <i id="card-icon" data-feather="" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:170px; height:170px; opacity:0.1; pointer-events:none; z-index:0;"></i>
-                
-                <!-- Foreground Content Box -->
-                <div style="z-index:1;">
-                    <h5 id="card-title" class="fw-bold mb-2 text-uppercase"></h5>
-                    <p class="mt-2" id="card-desc" style="font-size: 14px; line-height: 1.5; margin-bottom: 0;"></p>
-                </div>
-
+                        <i id="card-icon" data-feather="" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+                        width:170px; height:170px; opacity:0.1; pointer-events:none; z-index:0;"></i>
+                        <div style="z-index:1;">
+                            <h5 id="card-title" class="fw-bold mb-2 text-uppercase"></h5>
+                            <p id="card-desc" class="mt-2 text-white" style="font-size: 14px; line-height: 1.5; margin-bottom: 0;"></p>
+                        </div>
                 </div>
             </div>
         </div>
-
-
     </div> <!-- End of .row -->
 </div>
 <script>

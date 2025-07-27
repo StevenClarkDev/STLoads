@@ -1,10 +1,10 @@
 @extends('layout.app')
 
 @section('content')
-    <div class="col-xl-12 box-col-6 p-3">
-        <div class="card mx-4 shadow-sm border-0">
-            <div class="card-body p-4" style="height: 380px;">
-                <div class="d-flex align-items-center mb-4">
+    <div class="col-xl-12 p-3">
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-3" style="height: 380px;">
+                <div class="d-flex align-items-center mb-3">
                     <div class="me-3 d-flex align-items-center justify-content-center bg-primary rounded-circle"
                         style="width: 50px; height: 50px;">
                         <i id="card-icon" data-feather="" style="width: 30px; height: 30px; color: white;"></i>
@@ -15,17 +15,16 @@
                     </div>
                 </div>
 
+                <hr class="my-3">
 
-                <hr>
-
-                <div class="row mb-4">
-                    <div class="col-sm-12 mb-3">
-                        <h6 class="text-uppercase mb-2">Name</h6>
+                <div class="row mb-3">
+                    <div class="col-12 mb-2">
+                        <h6 class="text-uppercase mb-1">Name</h6>
                         <p class="mb-0">{{ ucfirst($role->name) }}</p>
                     </div>
 
-                    <div class="col-sm-12">
-                        <h6 class="text-uppercase mb-2">Permissions</h6>
+                    <div class="col-12">
+                        <h6 class="text-uppercase mb-1">Permissions</h6>
                         @if (!empty($rolePermissions))
                             <div class="d-flex flex-wrap gap-2">
                                 @foreach ($rolePermissions as $v)
@@ -38,14 +37,15 @@
                     </div>
                 </div>
 
-                <hr>
+                <hr class="my-3">
 
                 <div>
-                    <h6 class="text-uppercase mb-2">Role Details</h6>
-                    <p id="card-desc" class="mb-0 text-muted small">Loading description...</p>
+                    <h6 class="text-uppercase mb-1">Role Details</h6>
+                    <p id="card-desc" class="text-muted small mb-0">Loading description...</p>
                 </div>
-                <div class="d-flex flex-row-reverse gap-1 mt-2">
-                    <a href="{{ route('roles.index') }}" type="back" class="btn btn-outline-secondary">Back</a>
+
+                <div class="d-flex justify-content-end mt-3">
+                    <a href="{{ route('roles.index') }}" class="btn btn-outline-secondary">Back</a>
                 </div>
             </div>
         </div>
@@ -54,7 +54,6 @@
     <script>
         document.addEventListener("DOMContentLoaded", function () {
             const userType = @json($role->name).toLowerCase();
-
             const userData = {
                 carrier: {
                     title: "Carrier",
@@ -94,5 +93,4 @@
             }
         });
     </script>
-
 @endsection
