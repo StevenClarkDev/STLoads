@@ -44,7 +44,7 @@
                         <!-- Right Column -->
                         <div class="col-xl-4">
                             <div class="card social-profile mb-0">
-                                <div class="card-body bg-secondary rounded-4">
+                                <div class="card-body bg-primary rounded-4">
                                     <div class="social-img-wrap my-2">
                                         <div class="social-img">
                                             <img class="img-fluid rounded-circle"
@@ -63,7 +63,7 @@
                                         <ul
                                             class="social-follow list-unstyled d-flex justify-content-between mt-4 mb-2 px-2">
                                             <li class="text-center">
-                                                <h6 class="mb-0 text-white">{{ $user->id }}</h6>
+                                                <h6 class="mb-0 pt-2 text-white">{{ $user->id }}</h6>
                                                 <span class="text-light small">User ID</span>
                                             </li>
                                             <li class="text-center">
