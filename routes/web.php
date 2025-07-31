@@ -6,6 +6,8 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\LoadController;
+use App\Http\Controllers\ChatController;
 
 /* ───────────────  GUEST‑ONLY ROUTES  ─────────────── */
 
@@ -51,6 +53,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/get-user-file/{id}', [AdminController::class, 'getFiles']);
     Route::post('/approve-user', [UserController::class, 'approve']);
     Route::post('/reject-user', [UserController::class, 'reject']);
+
+    Route::get('/manage-loads', [LoadController::class, 'index'])->name('manage-loads');
+    Route::get('/chat', [ChatController::class, 'index'])->name('chat');
 
     Route::post('/logout',   [AuthController::class, 'logout'])->name('logout');
 });

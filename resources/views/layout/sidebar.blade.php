@@ -63,6 +63,22 @@
                                     </div>
                                 </a>
                             </li>
+                            <li class="nav-item mb-2">
+                                <a href="{{ url('manage-loads') }}">
+                                    <div
+                                        class="btn btn-{{ Str::startsWith($currentRoute, 'manage-loads.') ? 'primary' : 'light' }}">
+                                        <i data-feather="truck"></i> Manage Loads
+                                    </div>
+                                </a>
+                            </li>
+                            <li class="nav-item mb-2">
+                                <a href="{{ url('chat') }}">
+                                    <div
+                                        class="btn btn-{{ Str::startsWith($currentRoute, 'chat.') ? 'primary' : 'light' }}">
+                                        <i data-feather="message-circle"></i> Chat
+                                    </div>
+                                </a>
+                            </li>
                         </ul>
 
                         <hr>
