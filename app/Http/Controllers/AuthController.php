@@ -74,10 +74,13 @@ class AuthController extends Controller
 
             // Check if user has the required role id
             if ($user->roles()->where('id', $request->id)->exists()) {
-                if ($user->status != 1) {
+                if ($user->status != 1 && $user->status != 4) {
                     $role = $user->roles()->first();
                     $logsController->createLog(__METHOD__, 'error', 'Login denied: User not approved', null, json_encode(['email' => $request->email, 'role_id' => $request->id]));
                     return view('user_login_denial', compact('user', 'role'));
+                } elseif ($user->status == 4) {
+                    $logsController->createLog(__METHOD__, 'error', 'Login denied: User not verified', null, json_encode(['email' => $request->email, 'role_id' => $request->id]));
+                    return redirect()->route('otp', ['email' => $request->email])->with('error', 'Please verify your email first.');
                 }
                 Auth::login($user); // manually log in
                 $request->session()->regenerate();
@@ -205,6 +208,36 @@ class AuthController extends Controller
         return redirect()->route('onboarding-form', $user->id)->with('success', 'Email verified successfully!');
     }
 
+    public function verifyOTPPassword(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'otp' => 'required|array|size:6',
+            'otp.*' => 'required|digits:1',
+        ]);
+
+        // Combine the 6 OTP digits into a single string
+        $otp = implode('', $request->otp);
+
+        // Find the user with a matching email and unexpired OTP
+        $user = User::where('email', $request->email)
+            ->where('otp', $otp)
+            ->where('otp_expires_at', '>', now())
+            ->first();
+
+        if (!$user) {
+            return back()->withErrors(['otp' => 'Invalid or expired OTP.']);
+        }
+
+        // OTP is valid
+        $user->update([
+            'otp' => null,
+            'otp_expires_at' => null,
+        ]);
+
+        return redirect()->route('new-password', $user->id)->with('success', 'Email verified successfully!');
+    }
+
 
 
     public function sendOtp(Request $request, LogsController $logsController)
@@ -296,12 +329,64 @@ class AuthController extends Controller
         }
     }
 
-    public function otp(LogsController $logsController)
+    public function otp(LogsController $logsController, Request $request)
     {
         try {
-            return view('auth.enter_otp');
+            $referer = $request->headers->get('referer');
+
+            $email = $request->email;
+            if ($referer && str_contains($referer, 'forget-password')) {
+                $user = User::where('email', $email)->first();
+                $user->roles()->where('id', $request->id)->exists() ? $user : null;
+            } else {
+                $user = User::where('email', $email)->first();
+            }
+
+            if (!$user) {
+                return redirect()->back()->withErrors(['error' => 'User not found. Please register first']);
+            }
+            $now = now();
+            if (
+                $user->last_otp_resend_at &&
+                Carbon::parse($user->last_otp_resend_at)->diffInHours($now) < 1
+            ) {
+                // if ($user->last_otp_resend_at && $user->last_otp_resend_at->diffInHours($now) < 1) {
+                if ($user->otp_resend_count >= 5) {
+                    return redirect()->back()->withErrors(['error' => 'OTP resend limit reached. Try again after an hour.']);
+                }
+            } else {
+                $user->otp_resend_count = 0;
+            }
+
+            $otp = rand(100000, 999999);
+            $user->otp = $otp;
+            $user->otp_expires_at = now()->addMinutes(5);
+            $user->otp_resend_count += 1;
+            $user->last_otp_resend_at = $now;
+            $user->save();
+
+            $fromAddress = config('mail.from.address');
+            $fromName = config('mail.from.name');
+            $to = $request->email;
+            $subject = 'Your OTP Code';
+            if ($referer && str_contains($referer, 'forget-password')) {
+                $body = "Your OTP for forget password is: {$otp}\nIt will expire in 5 minutes.";
+            } else {
+                $body = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
+            }
+            Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
+                $message->from($fromAddress, $fromName)
+                    ->to($to)
+                    ->subject($subject);
+            });
+            if ($referer && str_contains($referer, 'forget-password')) {
+                $logsController->createLog(__METHOD__, 'success', "OTP {$otp} sent to {$to} for password reset", null, json_encode(['email' => $to, 'otp' => $otp, 'from' => $fromAddress]));
+                return view('auth.enter_otp_forget', compact('to'));
+            } else {
+                $logsController->createLog(__METHOD__, 'success', "OTP {$otp} sent to {$to} for password reset", null, json_encode(['email' => $to, 'otp' => $otp, 'from' => $fromAddress]));
+                return view('auth.enter_otp', compact('to'));
+            }
         } catch (\Exception $e) {
-            // Handle the exception, log it, or return an error response
             $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
             return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
         }
@@ -316,7 +401,11 @@ class AuthController extends Controller
             return response()->json(['success' => false, 'message' => 'User not found.']);
         }
         $now = now();
-        if ($user->last_otp_resend_at && $user->last_otp_resend_at->diffInHours($now) < 1) {
+        // if ($user->last_otp_resend_at && $user->last_otp_resend_at->diffInHours($now) < 1) {
+        if (
+            $user->last_otp_resend_at &&
+            Carbon::parse($user->last_otp_resend_at)->diffInHours($now) < 1
+        ) {
             if ($user->otp_resend_count >= 5) {
                 return response()->json([
                     'success' => false,
@@ -339,7 +428,7 @@ class AuthController extends Controller
         $fromName = config('mail.from.name');
         $to = $request->email;
         $subject = 'Your OTP Code';
-        $body = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
+        $body = "Your OTP is: {$otp}\nIt will expire in 5 minutes.";
         Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
             $message->from($fromAddress, $fromName)
                 ->to($to)
@@ -350,10 +439,11 @@ class AuthController extends Controller
     }
 
 
-    public function forgetPassword(LogsController $logsController)
+    public function forgetPassword(LogsController $logsController, $id)
     {
         try {
-            return view('auth.forget_password');
+            $role = Role::find($id);
+            return view('auth.forget_password', compact('role'));
         } catch (\Exception $e) {
             // Handle the exception, log it, or return an error response
             $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
@@ -361,14 +451,48 @@ class AuthController extends Controller
         }
     }
 
-    public function newPassword(LogsController $logsController)
+    public function newPassword(LogsController $logsController, User $user)
     {
         try {
-            return view('auth.new_password');
+            return view('auth.new_password', compact('user'));
         } catch (\Exception $e) {
             // Handle the exception, log it, or return an error response
             $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
             return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
+        }
+    }
+
+    public function newPasswordPost(User $user, Request $request, LogsController $logsController)
+    {
+        try {
+            $request->validate([
+                'password' => 'required|string|min:6|confirmed',
+            ]);
+
+            $user->update([
+                'password' => Hash::make($request->password),
+            ]);
+            // Custom application log
+            $logsController->createLog(
+                __METHOD__,
+                'success',
+                "New password set for user {$user->email}",
+                null,
+                json_encode(['user' => $user])
+            );
+
+            return redirect()->route('login', ['id' => $user->roles()->first()->id])
+                ->with('success', 'Password updated successfully. Please login.');
+        } catch (\Exception $e) {
+            $logsController->createLog(
+                __METHOD__,
+                'error',
+                'Eroor Setting New Password: ' . $e->getMessage(),
+                null,
+                json_encode(['user' => $user ?? 'N/A'])
+            );
+
+            return redirect()->back()->withErrors(['error' => 'Something went wrong: ' . $e->getMessage()]);
         }
     }
 

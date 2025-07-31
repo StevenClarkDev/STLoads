@@ -5,16 +5,16 @@
             <img src="../assets/images/stloads/logo-bg_none-small.png" alt="Load Board Logo" style="max-width: 40%;">
         </div>
 
-        <form action="{{ route('otp') }}" method="POST" class="row g-3">
+        <form action="{{ route('otp') }}" method="GET" class="row g-3">
             @csrf
 
             <h4>Forgot Password</h4>
             <p class="text-muted">Enter your email to receive an OTP</p>
 
-            <!-- Email Field -->
             <div class="col-12 position-relative">
                 <label>Email</label>
                 <div class="input-group">
+                    <input type="hidden" name="id" value="{{ $role->id }}">
                     <input id="email" class="form-control pe-5 rounded-2" type="email" name="email"
                         placeholder="you@example.com" required>
                     <i id="email-icon"
@@ -24,8 +24,8 @@
 
             <!-- Submit Button -->
             <div class="col-12 text-center mt-4">
-                <a href="{{ route('otp') }}" class="btn btn-primary w-50">Send OTP</a>
-                <p class="mt-3"><a href="{{ route('login') }}">Back to Sign In</a></p>
+                <button type="submit" class="btn btn-primary w-50">Send OTP</button>
+                <p class="mt-3"><a href="{{ route('login', ['id' => $role->id]) }}">Back to Sign In</a></p>
             </div>
 
             <!-- Laravel Feedback -->

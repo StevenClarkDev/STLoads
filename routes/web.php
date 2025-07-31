@@ -19,11 +19,13 @@ Route::middleware('guest')->group(function () {
     Route::get('/register', [AuthController::class, 'registerForm'])->name('register.form');
     Route::post('/register', [AuthController::class, 'sendOtp'])->name('register');
     Route::post('/verify-otp', [AuthController::class, 'verifyOTP'])->name('verify-otp');
+    Route::post('/verify-otp-forget', [AuthController::class, 'verifyOTPPassword'])->name('verify-otp-forget');
     Route::post('/otp/resend', [AuthController::class, 'resendOtp'])->name('otp.resend');
 
 
-    Route::get('/forget-password', [AuthController::class, 'forgetPassword'])->name('forget-password');
-    Route::get('/new-password', [AuthController::class, 'newPassword'])->name('new-password');
+    Route::get('/forget-password/{id}', [AuthController::class, 'forgetPassword'])->name('forget-password');
+    Route::get('/new-password/{user}', [AuthController::class, 'newPassword'])->name('new-password');
+    Route::post('/new-password/{user}', [AuthController::class, 'newPasswordPost'])->name('new-password-post');
 
     Route::get('/otp', [AuthController::class, 'otp'])->name('otp');
     // Route::post('/send-otp', [AuthController::class, 'sendOtp'])->name('otp.send');

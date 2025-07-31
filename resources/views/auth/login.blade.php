@@ -82,11 +82,14 @@
                                             name="password" required placeholder="*********">
                                     </div>
                                 </div>
+                                <div class="form-group" style="margin-bottom: 60px">
+                                    <a class="link" href="{{ route('forget-password', $id) }}">Forgot password?</a>
+                                </div>
                                 <div class="form-group mb-0">
-                                    <div class="checkbox p-0">
+                                    {{-- <div class="checkbox p-0">
                                         <input id="checkbox1" type="checkbox">
                                         <label class="text-muted" for="checkbox1">Remember Me</label>
-                                    </div><a class="link" href="{{ route('forget-password') }}">Forgot password?</a>
+                                    </div> --}}
                                     <div class="d-flex justify-content-between align-items-center mt-3">
                                         <button class="btn btn-primary btn-block w-40" type="submit">Sign
                                             in</button>

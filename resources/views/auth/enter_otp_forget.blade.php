@@ -7,7 +7,7 @@
                 style="max-width: 40%;">
         </div>
 
-        <form action="{{ route('verify-otp') }}" method="POST" class="text-center" id="otpForm">
+        <form action="{{ route('verify-otp-forget') }}" method="POST" class="text-center" id="otpForm">
             @csrf
 
             <h4>Enter OTP</h4>

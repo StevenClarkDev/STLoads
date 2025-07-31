@@ -5,7 +5,8 @@
             <img src="../assets/images/stloads/logo-bg_none-small.png" alt="Load Board Logo" style="max-width: 40%;">
         </div>
 
-        <form action="#" method="POST" class="row g-3 text-center">
+        <form action="{{ route('new-password-post', $user->id) }}" method="POST" class="row g-3 text-center">
+            @csrf
             <h4>Create Your Password</h4>
             <p class="text-muted">Enter and confirm your new password</p>
 
@@ -26,7 +27,7 @@
             <div class="position-relative text-start">
                 <label>Confirm Password</label>
                 <div class="input-group">
-                    <input id="confirm-password" class="form-control pe-5 rounded-2" type="password" name="confirm"
+                    <input id="confirm-password" class="form-control pe-5 rounded-2" type="password" name="password_confirmation"
                         placeholder="********" required>
                     <i id="confirm-password-icon"
                         class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
@@ -35,7 +36,7 @@
 
             <!-- Submit -->
             <div class="col-12 mt-3">
-                <a href="{{ route('login') }}" class="btn btn-primary w-50">Done</a>
+                <button type="submit" class="btn btn-primary w-50">Done</button>
             </div>
         </form>
     </div>
@@ -50,7 +51,7 @@
 
             function validatePassword() {
                 const value = passwordInput.value;
-                const isValid = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/.test(value);
+                const isValid = value.length >= 8;
 
                 passIcon.classList.toggle("text-primary", isValid);
                 passIcon.classList.toggle("text-muted", !isValid);
