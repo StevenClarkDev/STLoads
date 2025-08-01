@@ -11,7 +11,7 @@
                             <div class="row g-3">
                                 <div class="col-sm-6">
                                     <label class="form-label">Name</label>
-                                    <input class="form-control" type="text" value="{{ $user->name }}" readonly>
+                                    <input class="form-control" id="userName" type="text" value="{{ $user->name }}" readonly>
                                 </div>
                                 <div class="col-sm-6">
                                     <label class="form-label">Role</label>

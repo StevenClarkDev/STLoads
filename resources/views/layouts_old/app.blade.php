@@ -33,7 +33,8 @@
     <link rel="stylesheet" type="text/css" href="../assets/css/vendors/scrollbar.css">
     <link rel="stylesheet" type="text/css" href="../assets/css/vendors/animate.css">
     <link rel="stylesheet" type="text/css" href="../assets/css/vendors/datatables.css">
-
+    <!-- Bootstrap Icons CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <!-- Plugins css Ends-->
     <!-- Bootstrap css-->
     <link rel="stylesheet" type="text/css" href="../assets/css/vendors/bootstrap.css">
@@ -64,21 +65,27 @@
     <!-- page-wrapper Start-->
     <div class="page-wrapper compact-wrapper" id="pageWrapper">
         <!-- Page Header Start-->
-        @include('layouts.header')
+        @include('layouts_old.header')
         <!-- Page Header Ends -->
-
         <!-- Page Body Start-->
         <div class="page-body-wrapper">
             <!-- Page Sidebar Start-->
-            @include('layouts.sidebar')
+            @include('layouts_old.sidebar')
             <!-- Page Sidebar Ends-->
             <div class="page-body">
                 @yield('content')
             </div>
-            <!-- footer start-->
-            @include('layouts.footer')
-            <!-- footer end-->
         </div>
+        <!-- Footer -->
+        <footer class="footer mt-auto bg-light py-2">
+            <div class="container-fluid">
+                <div class="row">
+                    <div class="col text-center text-secondary">
+                        <p class="mb-0">© 2025 Load Board All Rights Reserved</p>
+                    </div>
+                </div>
+            </div>
+        </footer>
     </div>
     <!-- latest jquery-->
     <script src="../assets/js/jquery.min.js"></script>
@@ -112,7 +119,7 @@
     <script src="../assets/js/typeahead-search/typeahead-custom.js"></script>
     <script src="../assets/js/height-equal.js"></script>
     <script src="../assets/js/animation/wow/wow.min.js"></script>
-        <script src="../assets/js/datatable/datatables/jquery.dataTables.min.js"></script>
+    <script src="../assets/js/datatable/datatables/jquery.dataTables.min.js"></script>
     <script src="../assets/js/datatable/datatables/datatable.custom.js"></script>
     <!-- Plugins JS Ends-->
     <!-- Theme js-->

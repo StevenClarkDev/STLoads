@@ -17,11 +17,11 @@
             <div class="mobile-back text-end"><span>Back</span><i class="fa fa-angle-right ps-2" aria-hidden="true"></i>
             </div>
           </li>
-          <li class="pin-title sidebar-main-title">
+          <!-- <li class="pin-title sidebar-main-title">
             <div>
               <h6>Pinned</h6>
             </div>
-          </li>
+          </li> -->
           <li class="sidebar-main-title">
             <div>
               <h6 class="lan-1">General</h6>
@@ -62,7 +62,7 @@
               </li>
               <li>
                 <a href=" {{route('roles.index') }}">Roles</a>
-              <!-- </li>
+                <!-- </li>
               <li>
                 <a href=" {{ route('user_approval') }}">Shipper</a>
               </li>
@@ -71,7 +71,28 @@
               </li> -->
             </ul>
           </li>
-
+          <li class="sidebar-list">
+            <a class="sidebar-link sidebar-title" href="#">
+              <svg class="stroke-icon">
+                <use href="../assets/svg/icon-sprite.svg#stroke-user"></use>
+              </svg>
+              <svg class="fill-icon">
+                <use href="../assets/svg/icon-sprite.svg#fill-user"></use>
+              </svg>
+              <span>Manage Loads</span>
+            </a>
+            <ul class="sidebar-submenu">
+              <li>
+                <a href=" {{ route('users.index') }}">All Loads</a>
+              </li>
+              <li>
+                <a href=" {{route('users.index') }}">Recommended</a>
+              </li>
+              <li>
+                <a href=" {{ route('users.index') }}">Accepted</a>
+              </li>
+            </ul>
+          </li>
         </ul>
       </div>
       <div class="right-arrow" id="right-arrow"><i data-feather="arrow-right"></i></div>
