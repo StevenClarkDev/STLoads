@@ -11,6 +11,8 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Mail;
+
 
 class UserController extends Controller
 {
@@ -155,11 +157,27 @@ class UserController extends Controller
             return response()->json(['success' => false, 'message' => 'User not found']);
         }
 
+        // Approve the user
         $user->status = 1;
         $user->save();
 
-        return response()->json(['success' => true, 'message' => 'User Approved successfully']);
+        // Email details
+        $fromAddress = config('mail.from.address');
+        $fromName = config('mail.from.name');
+        $to = $user->email;
+        $subject = 'Your account has been approved';
+        $body = "Hello {$user->name},\n\nYour account has been approved. You can now log in and start using our system.\n\nThank you,\n{$fromName}";
+
+        // Send email
+        Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
+            $message->from($fromAddress, $fromName)
+                ->to($to)
+                ->subject($subject);
+        });
+
+        return response()->json(['success' => true, 'message' => 'User approved successfully']);
     }
+
 
     public function reject(Request $request)
     {
@@ -169,9 +187,24 @@ class UserController extends Controller
             return response()->json(['success' => false, 'message' => 'User not found']);
         }
 
+        // Set user status to rejected
         $user->status = 2;
         $user->save();
 
-        return response()->json(['success' => true, 'message' => 'User Rejected successfully']);
+        // Email details
+        $fromAddress = config('mail.from.address');
+        $fromName = config('mail.from.name');
+        $to = $user->email;
+        $subject = 'Your account has been rejected';
+        $body = "Hello {$user->name},\n\nWe regret to inform you that your account has been rejected.\nIf you believe this is a mistake, please contact support.\n\nThank you,\n{$fromName}";
+
+        // Send email
+        Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
+            $message->from($fromAddress, $fromName)
+                ->to($to)
+                ->subject($subject);
+        });
+
+        return response()->json(['success' => true, 'message' => 'User rejected successfully']);
     }
 }

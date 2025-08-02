@@ -86,7 +86,11 @@ class AuthController extends Controller
                 $request->session()->regenerate();
 
                 $logsController->createLog(__METHOD__, 'success', 'Login Successful', null, json_encode(['email' => $request->email, 'role_id' => $request->id]));
-                return redirect()->route('user_approval')->with('success', 'Login successful');
+                if ($user->roles->first()?->id === 1) {
+                    return redirect()->route('user_approval')->with('success', 'Login successful');
+                } else {
+                    return redirect()->route('manage-loads')->with('success', 'Login successful');
+                }
             } else {
                 $logsController->createLog(__METHOD__, 'error', 'Login denied: Role mismatch', null, json_encode(['email' => $request->email, 'role_id' => $request->id]));
                 return redirect()->back()->withErrors(['error' => 'Login denied: Role mismatch']);
@@ -192,7 +196,10 @@ class AuthController extends Controller
             ->first();
 
         if (!$user) {
-            return back()->withErrors(['otp' => 'Invalid or expired OTP.']);
+            return view('enter_otp', [
+                'to' => $request->email,
+                'error' => 'Invalid or expired OTP.'
+            ]);
         }
 
         // OTP is valid
@@ -226,7 +233,10 @@ class AuthController extends Controller
             ->first();
 
         if (!$user) {
-            return back()->withErrors(['otp' => 'Invalid or expired OTP.']);
+            return view('enter_otp_forget', [
+                'to' => $request->email,
+                'error' => 'Invalid or expired OTP.'
+            ]);
         }
 
         // OTP is valid
