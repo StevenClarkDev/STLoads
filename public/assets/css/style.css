@@ -17354,7 +17354,7 @@ p.data-attributes svg {
   flex: 1;
   overflow-y: auto;
   padding: 10px;
-  background: linear-gradient(0deg, #F5F6FA, #F5F6FA), linear-gradient(0deg, #FFFFFF, #FFFFFF);
+  /* background: linear-gradient(0deg, #F5F6FA, #F5F6FA), linear-gradient(0deg, #FFFFFF, #FFFFFF); */
   height: 620px;
 }
 
