@@ -31,6 +31,9 @@
                                         <span>See Registered Loads below.</span>
                                     </div>
                                     <div class="d-flex gap-2">
+                                        <a href="{{ route('loads.add') }}" class="btn btn-sm btn-primary px-3" type="button">
+                                            <i class="bi bi-plus-circle me-1"></i> Add Load
+                                        </a>
                                         <button class="btn btn-sm btn-outline-primary px-3" type="button"
                                             data-bs-toggle="collapse" data-bs-target="#collapseProduct"
                                             aria-expanded="false" aria-controls="collapseProduct">

@@ -55,6 +55,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/reject-user', [UserController::class, 'reject']);
 
     Route::get('/manage-loads', [LoadController::class, 'index'])->name('manage-loads');
+    Route::get('/loads/add', [LoadController::class, 'add'])->name('loads.add');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat');
 
     Route::post('/logout',   [AuthController::class, 'logout'])->name('logout');

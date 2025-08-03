@@ -13,34 +13,34 @@
     <meta name="keywords"
         content="admin template, Cuba admin template, dashboard template, flat admin template, responsive admin template, web app">
     <meta name="author" content="pixelstrap">
-    <link rel="icon" href="../assets/images/favicon.png" type="image/x-icon">
+    <link rel="icon" href="{{ url('assets/images/favicon.png') }}" type="image/x-icon">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
         integrity="sha512-b0HZvpK+k...fullhash..." crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="shortcut icon" href="../assets/images/favicon.png" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ url('assets/images/favicon.png') }}" type="image/x-icon">
     <title>LoadBoard - Login</title>
     <!-- Google font-->
     <link href="https://fonts.googleapis.com/css?family=Rubik:400,400i,500,500i,700,700i&amp;display=swap"
         rel="stylesheet">
     <link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,500,500i,700,700i,900&amp;display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" type="text/css" href="../assets/css/font-awesome.css">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/font-awesome.css') }}">
     <!-- ico-font-->
-    <link rel="stylesheet" type="text/css" href="../assets/css/vendors/icofont.css">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/icofont.css') }}">
     <!-- Themify icon-->
-    <link rel="stylesheet" type="text/css" href="../assets/css/vendors/themify.css">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/themify.css') }}">
     <!-- Flag icon-->
-    <link rel="stylesheet" type="text/css" href="../assets/css/vendors/flag-icon.css">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/flag-icon.css') }}">
     <!-- Feather icon-->
-    <link rel="stylesheet" type="text/css" href="../assets/css/vendors/feather-icon.css">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/feather-icon.css') }}">
     <!-- Plugins css start-->
     <!-- Plugins css Ends-->
     <!-- Bootstrap css-->
-    <link rel="stylesheet" type="text/css" href="../assets/css/vendors/bootstrap.css">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/bootstrap.css') }}">
     <!-- App css-->
-    <link rel="stylesheet" type="text/css" href="../assets/css/style.css">
-    <link id="color" rel="stylesheet" href="../assets/css/color-1.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/style.css') }}">
+    <link id="color" rel="stylesheet" href="{{ url('assets/css/color-1.css') }}" media="screen">
     <!-- Responsive css-->
-    <link rel="stylesheet" type="text/css" href="../assets/css/responsive.css">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/responsive.css') }}">
 </head>
 
 <body>
@@ -51,11 +51,11 @@
                 <div class="login-card login-dark">
                     <div>
                         <!-- <div><a class="logo text-start" href="index.html"><img class="img-fluid for-light"
-                                    src="../assets/images/logo/logo.png" alt="looginpage"><img
-                                    class="img-fluid for-dark" src="../assets/images/logo/logo_dark.png"
+                                    src="{{ url('assets/images/logo/logo.png') }}" alt="looginpage"><img
+                                    class="img-fluid for-dark" src="{{ url('assets/images/logo/logo_dark.png') }}"
                                     alt="looginpage"></a></div> -->
                         <div class="text-center mb-4">
-                            <img src="../assets/images/stloads/logo-bg_none-small.png" alt="Load Board Logo"
+                            <img src="{{ url('assets/images/stloads/logo-bg_none-small.png') }}" alt="Load Board Logo"
                                 style="max-width: 40%;">
                         </div>
                         <div class="login-main">
@@ -110,25 +110,25 @@
                     </div>
                 </div>
             </div>
-            <!-- <div class="col-xl-5"><img class="bg-img-cover bg-center" src="../assets/images/login/login-poster-2.jpg"
+            <!-- <div class="col-xl-5"><img class="bg-img-cover bg-center" src="{{ url('assets/images/login/login-poster-2.jpg') }}"
                     alt="loginpage"></div> -->
-            <div class="col-xl-5"><img class="bg-img-cover bg-center" src="../assets/images/login/login-poster.jpg"
+            <div class="col-xl-5"><img class="bg-img-cover bg-center" src="{{ url('assets/images/login/login-poster.jpg') }}"
                     alt="loginpage"></div>
         </div>
         <!-- latest jquery-->
-        <script src="../assets/js/jquery.min.js"></script>
+        <script src="{{ url('assets/js/jquery.min.js') }}"></script>
         <!-- Bootstrap js-->
-        <script src="../assets/js/bootstrap/bootstrap.bundle.min.js"></script>
+        <script src="{{ url('assets/js/bootstrap/bootstrap.bundle.min.js') }}"></script>
         <!-- feather icon js-->
-        <script src="../assets/js/icons/feather-icon/feather.min.js"></script>
-        <script src="../assets/js/icons/feather-icon/feather-icon.js"></script>
+        <script src="{{ url('assets/js/icons/feather-icon/feather.min.js') }}"></script>
+        <script src="{{ url('assets/js/icons/feather-icon/feather-icon.js') }}"></script>
         <!-- scrollbar js-->
         <!-- Sidebar jquery-->
-        <script src="../assets/js/config.js"></script>
+        <script src="{{ url('assets/js/config.js') }}"></script>
         <!-- Plugins JS start-->
         <!-- Plugins JS Ends-->
         <!-- Theme js-->
-        <script src="../assets/js/script.js"></script>
+        <script src="{{ url('assets/js/script.js') }}"></script>
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </div>
     @if (session('status'))
