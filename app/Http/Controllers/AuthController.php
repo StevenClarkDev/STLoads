@@ -46,7 +46,13 @@ class AuthController extends Controller
     {
         try {
             if (Auth::check()) {
-                return redirect()->route('dashboard');
+                $user = Auth::user();
+                if ($user && $user->roles->first()?->id === 1) {
+                    return redirect()->route('user_approval');
+                } else {
+                    return redirect()->route('manage-loads');
+                }
+                // return redirect()->route('dashboard');
             }
             return view('role');
         } catch (\Exception $e) {
