@@ -31,7 +31,13 @@
                                         <span>See Registered Loads below.</span>
                                     </div>
                                     <div class="d-flex gap-2">
-                                        <a href="{{ route('loads.add') }}" class="btn btn-sm btn-primary px-3" type="button">
+                                        <button id="resetPrefsBtn" class="btn btn-sm btn-secondary px-2 d-none"
+                                            type="button" data-bs-toggle="modal" data-bs-target="#recommendationModal"
+                                            title="Reset Preferences">
+                                            <i class="bi bi-arrow-clockwise"></i>
+                                        </button>
+                                        <a href="{{ route('loads.add') }}" class="btn btn-sm btn-primary px-3"
+                                            type="button">
                                             <i class="bi bi-plus-circle me-1"></i> Add Load
                                         </a>
                                         <button class="btn btn-sm btn-outline-primary px-3" type="button"
@@ -47,35 +53,43 @@
                             </div>
                             <div class="collapse" id="collapseProduct">
                                 <div class="card card-body list-product-body">
-                                    <div class="row ">
-                                        <div class="mb-3">
-                                            <label class="form-label small">Status</label>
-                                            <select class="form-select form-select-sm">
-                                                <option selected>All Statuses</option>
-                                                <option>Pending</option>
-                                                <option>Accepted</option>
-                                                <option>Rejected</option>
-                                            </select>
+                                    <form id="filterForm" onsubmit="applyFilters(event)">
+                                        <div class="row align-items-end g-2">
+                                            <div class="col-md-3">
+                                                <label class="form-label small">Status</label>
+                                                <select class="form-select form-select-sm" name="status">
+                                                    <option value="">All</option>
+                                                    <option value="pending">Pending</option>
+                                                    <option value="accepted">Accepted</option>
+                                                    <option value="rejected">Rejected</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label small">Payment</label>
+                                                <select class="form-select form-select-sm" name="payment">
+                                                    <option value="">All</option>
+                                                    <option value="paid">Paid</option>
+                                                    <option value="unpaid">Unpaid</option>
+                                                    <option value="pending">Pending</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label small">From</label>
+                                                <input type="date" class="form-control form-control-sm" name="from">
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label small">To</label>
+                                                <input type="date" class="form-control form-control-sm" name="to">
+                                            </div>
+                                            <div class="col-md-12 text-end">
+                                                <button type="submit" class="btn btn-sm btn-primary px-4">Apply
+                                                    Filters</button>
+                                            </div>
                                         </div>
-                                        <div class="mb-3">
-                                            <label class="form-label small">Payment</label>
-                                            <select class="form-select form-select-sm">
-                                                <option selected>All Payments</option>
-                                                <option>Paid</option>
-                                                <option>Unpaid</option>
-                                                <option>Pending</option>
-                                            </select>
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label small">Date Range</label>
-                                            <input type="date" class="form-control form-control-sm mb-2"
-                                                placeholder="From">
-                                            <input type="date" class="form-control form-control-sm" placeholder="To">
-                                        </div>
-                                        <button class="btn btn-sm btn-primary w-100">Apply Filters</button>
-                                    </div>
+                                    </form>
                                 </div>
                             </div>
+
                             <div class="card-body">
                                 <div class="list-product-header">
                                     <div>
@@ -103,7 +117,7 @@
                                                         <th>Destination</th>
                                                         <th>Schedule</th>
                                                         <th>Status</th>
-                                                        <th>Bid</th>
+                                                        <th>Bid Amount</th>
                                                         <th>Payment</th>
                                                         <th>Lane & Mode</th>
                                                         <th>Client</th>
@@ -111,51 +125,73 @@
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    @foreach (range(1, 8) as $i)
-                                                        <tr
-                                                            class="tab-all tab-{{ $i % 3 == 0 ? 'time' : ($i % 2 == 0 ? 'accepted' : 'recommended') }}">
+                                                    @foreach (range(1, 36) as $i)
+                                                        @php
+                                                            $statuses = ['available', 'booked', 'picked', 'delivered'];
+                                                            $statusText = $statuses[$i % 4];
+                                                            $statusClass = match ($statusText) {
+                                                                'available' => 'info',
+                                                                'booked' => 'primary',
+                                                                'picked' => 'warning',
+                                                                'delivered' => 'success',
+                                                            };
+                                                            $bidStatus = ['original', 'accepted', 'rejected'][$i % 3];
+                                                            $tabType = match ($i % 4) {
+                                                                0 => 'time',
+                                                                1 => 'recommended',
+                                                                2, 3 => 'accepted',
+                                                            };
+                                                        @endphp
+                                                        <tr class="tab-all tab-{{ $tabType }}">
                                                             <td>L-27{{ 80 + $i }}</td>
-                                                            <td><span class="badge rounded-circle p-2 badge-primary"><i
-                                                                        data-feather="map-pin"></i></span></td>
-                                                            <td><span class="badge rounded-circle p-2 badge-primary"><i
-                                                                        data-feather="map-pin"></i></span></td>
-                                                            <td>{{ now()->addDays($i)->format('jS M, Y') }}</td>
                                                             <td>
-                                                                @php
-                                                                    $status = ['accepted', 'pending', 'rejected'][
-                                                                        $i % 3
-                                                                    ];
-                                                                @endphp
-                                                                <button
-                                                                    class="btn btn-{{ $status == 'pending' ? 'primary' : 'outline-' . ($status == 'accepted' ? 'primary' : 'danger') }} d-flex align-items-center px-2 py-1"
-                                                                    type="button">
-                                                                    {{ ucfirst($status) }}
-                                                                </button>
+                                                                <span class="badge rounded-circle p-2 badge-primary"
+                                                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                    title="128 Pitt Street, Sydney">
+                                                                    <i data-feather="map-pin"></i>
+                                                                </span>
                                                             </td>
                                                             <td>
-                                                                @php
-                                                                    $status = ['accepted', 'pending', 'rejected'][
-                                                                        $i % 3
-                                                                    ];
-                                                                @endphp
-                                                                <button
-                                                                    class="btn btn-{{ $status == 'pending' ? 'primary' : 'outline-' . ($status == 'accepted' ? 'primary' : 'danger') }} d-flex align-items-center px-2 py-1"
-                                                                    type="button" data-bs-toggle="modal"
-                                                                    data-bs-target="#statusModal-{{ $i }}">
-                                                                    {{ ucfirst($status) }}
-                                                                </button>
+                                                                <span class="badge rounded-circle p-2 badge-primary"
+                                                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                    title="42 George Street, Melbourne">
+                                                                    <i data-feather="map-pin"></i>
+                                                                </span>
+                                                            </td>
+                                                            <td>{{ now()->addDays($i)->format('jS M, Y') }}</td>
+                                                            <td>
+                                                                <span
+                                                                    class="badge rounded-pill bg-{{ $statusClass }} p-2 text-capitalize">{{ $statusText }}</span>
+                                                            </td>
+                                                            <td>
+                                                                @if($bidStatus == 'original')
+                                                                    <button class="btn btn-primary btn-sm fix-width"
+                                                                        data-bs-toggle="modal" data-bs-target="#bidModal-{{ $i }}">
+                                                                        ${{ number_format(rand(8000, 15000), 0) }}
+                                                                    </button>
+                                                                @elseif($bidStatus == 'accepted')
+                                                                    <button class="btn btn-outline-primary btn-sm fix-width"
+                                                                        data-bs-toggle="modal" data-bs-target="#bidModal-{{ $i }}">
+                                                                        Accepted
+                                                                    </button>
+                                                                @else
+                                                                    <button class="btn btn-outline-danger btn-sm fix-width"
+                                                                        data-bs-toggle="modal" data-bs-target="#bidModal-{{ $i }}">
+                                                                        Rejected
+                                                                    </button>
+                                                                @endif
 
-                                                                <!-- Status Modal -->
-                                                                <div class="modal fade" id="statusModal-{{ $i }}"
-                                                                    tabindex="-1" aria-hidden="true">
+                                                                <!-- Bid Modal -->
+                                                                <div class="modal fade" id="bidModal-{{ $i }}" tabindex="-1"
+                                                                    aria-hidden="true">
                                                                     <div class="modal-dialog modal-dialog-centered"
                                                                         style="max-width: 600px;">
                                                                         <div class="modal-content p-4">
                                                                             <div class="modal-header border-0">
                                                                                 <h5 class="modal-title">
-                                                                                    @if ($status == 'accepted')
+                                                                                    @if ($bidStatus == 'accepted')
                                                                                         Bid Approved
-                                                                                    @elseif($status == 'rejected')
+                                                                                    @elseif($bidStatus == 'rejected')
                                                                                         Bid Not Approved
                                                                                     @else
                                                                                         Submit Your Bid
@@ -167,25 +203,16 @@
                                                                             </div>
 
                                                                             <div class="modal-body">
-                                                                                @if ($status == 'accepted')
-                                                                                    <p class="text-muted mb-4">
-                                                                                        Congratulations!
-                                                                                        Your
-                                                                                        bid has
-                                                                                        been accepted by the client.</p>
-                                                                                @elseif($status == 'rejected')
-                                                                                    <p class="text-muted mb-4">Client
-                                                                                        has
-                                                                                        rejected
-                                                                                        your bid
-                                                                                        due to high pricing or other
-                                                                                        concerns.
-                                                                                    </p>
+                                                                                @if ($bidStatus == 'accepted')
+                                                                                    <p class="text-muted mb-4">Congratulations! Your
+                                                                                        bid has been accepted by the client.</p>
+                                                                                @elseif($bidStatus == 'rejected')
+                                                                                    <p class="text-muted mb-4">Client has rejected
+                                                                                        your bid due to high pricing or other
+                                                                                        concerns.</p>
                                                                                 @else
-                                                                                    <p class="text-muted mb-4">Please
-                                                                                        review the
-                                                                                        client's
-                                                                                        offer and submit your bid below.
+                                                                                    <p class="text-muted mb-4">Please review the
+                                                                                        client's offer and submit your bid below.
                                                                                     </p>
                                                                                 @endif
 
@@ -193,42 +220,37 @@
                                                                                     <div class="col-md-6">
                                                                                         <label class="form-label">Client
                                                                                             Price</label>
-                                                                                        <input type="text"
-                                                                                            class="form-control"
-                                                                                            value="$10,000" readonly>
+                                                                                        <input type="text" class="form-control"
+                                                                                            value="${{ number_format(rand(8000, 12000), 0) }}"
+                                                                                            readonly>
                                                                                     </div>
                                                                                     <div class="col-md-6">
                                                                                         <label class="form-label">Your
                                                                                             Bid</label>
-                                                                                        @if ($status == 'pending')
-                                                                                            <input type="text"
-                                                                                                class="form-control"
+                                                                                        @if ($bidStatus == 'original')
+                                                                                            <input type="text" class="form-control"
                                                                                                 placeholder="Enter your bid">
                                                                                         @else
-                                                                                            <input type="text"
-                                                                                                class="form-control"
-                                                                                                value="$11,000" readonly>
+                                                                                            <input type="text" class="form-control"
+                                                                                                value="${{ number_format(rand(8000, 15000), 0) }}"
+                                                                                                readonly>
                                                                                         @endif
                                                                                     </div>
                                                                                 </div>
 
-                                                                                @if ($status == 'accepted')
+                                                                                @if ($bidStatus == 'accepted')
                                                                                     <div class="row mb-3">
                                                                                         <div class="col-md-6">
-                                                                                            <label class="form-label">Bid
-                                                                                                Submitted
+                                                                                            <label class="form-label">Bid Submitted
                                                                                                 On</label>
-                                                                                            <input type="text"
-                                                                                                class="form-control"
+                                                                                            <input type="text" class="form-control"
                                                                                                 value="{{ now()->subDays(2)->format('d M Y') }}"
                                                                                                 readonly>
                                                                                         </div>
                                                                                         <div class="col-md-6">
-                                                                                            <label
-                                                                                                class="form-label">Accepted
+                                                                                            <label class="form-label">Accepted
                                                                                                 On</label>
-                                                                                            <input type="text"
-                                                                                                class="form-control"
+                                                                                            <input type="text" class="form-control"
                                                                                                 value="{{ now()->subDay()->format('d M Y') }}"
                                                                                                 readonly>
                                                                                         </div>
@@ -237,7 +259,7 @@
 
                                                                                 <div
                                                                                     class="d-flex justify-content-end gap-2 mt-4">
-                                                                                    <a href="{{ route('chat')}}"
+                                                                                    <a href="{{ route('chat') }}"
                                                                                         class="btn btn-primary">Contact</a>
                                                                                 </div>
                                                                             </div>
@@ -255,18 +277,14 @@
                                                                 @endif
                                                             </td>
                                                             <td><span class="badge p-2 badge-light text-dark"><i
-                                                                        data-feather="map-pin"></i></span> SYD - MLB
-                                                            </td>
+                                                                        data-feather="map-pin"></i></span> SYD - MLB</td>
                                                             <td>BlueShip Pvt Ltd</td>
                                                             <td>
-                                                                <a href="#" title="View"
-                                                                    style="color: #8a949dff;"><i
+                                                                <a href="#" title="View" style="color: #8a949dff;"><i
                                                                         class="bi bi-eye"></i></a>
-                                                                <a href="#" title="Share"
-                                                                    style="color: #8a949dff;"><i
+                                                                <a href="#" title="Share" style="color: #8a949dff;"><i
                                                                         class="bi bi-share"></i></a>
-                                                                <a href="#" title="Delete"
-                                                                    style="color: #8a949dff;"><i
+                                                                <a href="#" title="Delete" style="color: #8a949dff;"><i
                                                                         class="bi bi-trash"></i></a>
                                                             </td>
                                                         </tr>
@@ -276,6 +294,26 @@
                                         </div>
                                     </div>
                                 </div>
+                                <!-- Pagination -->
+                                <div class="d-flex justify-content-end mt-3">
+                                    <nav aria-label="Page navigation">
+                                        <ul class="pagination pagination-sm pagination-circle mb-0">
+                                            <li class="page-item disabled" id="prevPage">
+                                                <a class="page-link" href="#" tabindex="-1" aria-disabled="true">
+                                                    <i class="bi bi-chevron-left"></i>
+                                                </a>
+                                            </li>
+                                            <li class="page-item active"><a class="page-link" href="#">1</a></li>
+                                            <li class="page-item"><a class="page-link" href="#">2</a></li>
+                                            <li class="page-item"><a class="page-link" href="#">3</a></li>
+                                            <li class="page-item" id="nextPage">
+                                                <a class="page-link" href="#">
+                                                    <i class="bi bi-chevron-right"></i>
+                                                </a>
+                                            </li>
+                                        </ul>
+                                    </nav>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -283,22 +321,215 @@
             </div>
         </div>
     </div>
+    <!-- Recommendation Preferences Modal -->
+    <div class="modal fade" id="recommendationModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" style="max-width: 500px;">
+            <div class="modal-content p-4">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title">Your Load Preferences</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="recommendationForm">
+                        <div class="mb-3">
+                            <label class="form-label">Role</label>
+                            <select class="form-select form-select-sm" name="role" required>
+                                <option value="">Select your role</option>
+                                <option value="carrier">Carrier</option>
+                                <option value="broker">Broker</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Preferred Lane</label>
+                            <input type="text" class="form-control form-control-sm" name="lane"
+                                placeholder="e.g., SYD - MLB">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Load Type</label>
+                            <select class="form-select form-select-sm" name="mode">
+                                <option value="">Select Mode</option>
+                                <option value="FTL">FTL</option>
+                                <option value="LTL">LTL</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Preferred Origin</label>
+                            <input type="text" class="form-control form-control-sm" name="origin" placeholder="City or ZIP">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Preferred Destination</label>
+                            <input type="text" class="form-control form-control-sm" name="destination"
+                                placeholder="City or ZIP">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Max Weight (in tons)</label>
+                            <input type="number" class="form-control form-control-sm" name="weight" placeholder="e.g., 20">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Available From</label>
+                            <input type="date" class="form-control form-control-sm" name="available_date">
+                        </div>
+
+                        <div class="text-end">
+                            <button type="submit" class="btn btn-primary btn-sm px-4">Save Preferences</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
 
 
     <script>
-        function switchTab(btn, tabType) {
-            document.querySelectorAll('.btn-outline-light').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+        // Pagination functionality
+        document.addEventListener('DOMContentLoaded', function () {
+            const rowsPerPage = 12;
+            let currentPage = 1;
+            let currentTab = 'all';
 
-            const rows = document.querySelectorAll('#user-approval-table tbody tr');
-            rows.forEach(row => {
-                if (tabType === 'all') {
-                    row.style.display = '';
+            // Initialize pagination
+            initPagination();
+
+            function initPagination() {
+                updatePagination();
+
+                // Handle page clicks
+                document.querySelectorAll('.pagination .page-link').forEach(link => {
+                    link.addEventListener('click', function (e) {
+                        e.preventDefault();
+                        const target = e.target.closest('a');
+                        if (target.querySelector('.bi-chevron-left')) {
+                            if (currentPage > 1) {
+                                currentPage--;
+                                updatePagination();
+                            }
+                        } else if (target.querySelector('.bi-chevron-right')) {
+                            const totalPages = Math.ceil(getVisibleRows().length / rowsPerPage);
+                            if (currentPage < totalPages) {
+                                currentPage++;
+                                updatePagination();
+                            }
+                        } else if (!isNaN(target.textContent)) {
+                            currentPage = parseInt(target.textContent);
+                            updatePagination();
+                        }
+                    });
+                });
+            }
+
+            function getVisibleRows() {
+                if (currentTab === 'all') {
+                    return Array.from(document.querySelectorAll('#user-approval-table tbody tr.tab-all'));
                 } else {
-                    row.style.display = row.classList.contains('tab-' + tabType) ? '' : 'none';
+                    return Array.from(document.querySelectorAll(`#user-approval-table tbody tr.tab-${currentTab}`));
                 }
-            });
-        }
+            }
+
+            function updatePagination() {
+                const visibleRows = getVisibleRows();
+                const totalPages = Math.ceil(visibleRows.length / rowsPerPage);
+
+                // Hide all rows
+                visibleRows.forEach(row => row.style.display = 'none');
+
+                // Show rows for current page
+                const start = (currentPage - 1) * rowsPerPage;
+                const end = start + rowsPerPage;
+                visibleRows.slice(start, end).forEach(row => row.style.display = '');
+
+                // Update pagination UI
+                const pagination = document.querySelector('.pagination');
+                pagination.innerHTML = '';
+
+                // Previous button
+                pagination.innerHTML += `
+                    <li class="page-item ${currentPage === 1 ? 'disabled' : ''}" id="prevPage">
+                        <a class="page-link" href="#" tabindex="-1" aria-disabled="true">
+                            <i class="bi bi-chevron-left"></i>
+                        </a>
+                    </li>
+                `;
+
+                // Page numbers - show max 3 pages around current
+                const startPage = Math.max(1, currentPage - 1);
+                const endPage = Math.min(totalPages, currentPage + 1);
+
+                if (startPage > 1) {
+                    pagination.innerHTML += `
+                        <li class="page-item ${1 === currentPage ? 'active' : ''}">
+                            <a class="page-link" href="#">1</a>
+                        </li>
+                    `;
+                    if (startPage > 2) {
+                        pagination.innerHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                    }
+                }
+
+                for (let i = startPage; i <= endPage; i++) {
+                    pagination.innerHTML += `
+                        <li class="page-item ${i === currentPage ? 'active' : ''}">
+                            <a class="page-link" href="#">${i}</a>
+                        </li>
+                    `;
+                }
+
+                if (endPage < totalPages) {
+                    if (endPage < totalPages - 1) {
+                        pagination.innerHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                    }
+                    pagination.innerHTML += `
+                        <li class="page-item ${totalPages === currentPage ? 'active' : ''}">
+                            <a class="page-link" href="#">${totalPages}</a>
+                        </li>
+                    `;
+                }
+
+                // Next button
+                pagination.innerHTML += `
+                    <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}" id="nextPage">
+                        <a class="page-link" href="#">
+                            <i class="bi bi-chevron-right"></i>
+                        </a>
+                    </li>
+                `;
+
+                // Add event listeners to new pagination buttons
+                document.querySelectorAll('.pagination .page-link').forEach(link => {
+                    link.addEventListener('click', function (e) {
+                        e.preventDefault();
+                        const target = e.target.closest('a');
+                        if (target.querySelector('.bi-chevron-left')) {
+                            if (currentPage > 1) {
+                                currentPage--;
+                                updatePagination();
+                            }
+                        } else if (target.querySelector('.bi-chevron-right')) {
+                            if (currentPage < totalPages) {
+                                currentPage++;
+                                updatePagination();
+                            }
+                        } else if (!isNaN(target.textContent)) {
+                            currentPage = parseInt(target.textContent);
+                            updatePagination();
+                        }
+                    });
+                });
+            }
+
+            // Update switchTab function to handle pagination
+            window.switchTab = function (btn, tabType) {
+                document.querySelectorAll('.btn-outline-light').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentTab = tabType;
+                currentPage = 1;
+                updatePagination();
+
+                // Toggle reset preferences button
+                const resetBtn = document.getElementById('resetPrefsBtn');
+                resetBtn.classList.toggle('d-none', tabType !== 'recommended');
+            };
+        });
 
         function exportToExcel() {
             // Create a workbook
@@ -316,15 +547,130 @@
             // Generate Excel file and download
             XLSX.writeFile(workbook, 'Loads_List.xlsx');
         }
+
+
+        function applyFilters(event) {
+            event.preventDefault();
+            const form = document.getElementById('filterForm');
+            const status = form.status.value.toLowerCase();
+            const payment = form.payment.value.toLowerCase();
+            const from = new Date(form.from.value);
+            const to = new Date(form.to.value);
+
+            const rows = document.querySelectorAll('#user-approval-table tbody tr');
+            rows.forEach(row => {
+                let show = true;
+
+                if (status) {
+                    const rowStatus = row.querySelector('td:nth-child(5) button')?.textContent?.trim().toLowerCase();
+                    if (rowStatus !== status) show = false;
+                }
+
+                if (payment) {
+                    const rowPayment = row.querySelector('td:nth-child(7) span')?.textContent?.trim().toLowerCase();
+                    if (rowPayment !== payment) show = false;
+                }
+
+                if (form.from.value && form.to.value) {
+                    const rowDateText = row.querySelector('td:nth-child(4)')?.textContent?.trim();
+                    const rowDate = new Date(rowDateText);
+                    if (rowDate < from || rowDate > to) show = false;
+                }
+
+                row.style.display = show ? '' : 'none';
+            });
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+                new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        });
+        let recommendationPrefsExist = false; // simulate backend check
+
+        // Handle form submission (only frontend)
+        document.getElementById('recommendationForm')?.addEventListener('submit', function (e) {
+            e.preventDefault();
+            // Normally this data would be sent to the server
+            const formData = Object.fromEntries(new FormData(this));
+            console.log('Preferences Saved:', formData);
+            bootstrap.Modal.getInstance(document.getElementById('recommendationModal')).hide();
+        });
+
     </script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
+
 
     <style>
         .btn-outline-light.active {
             background-color: #4d6b8a !important;
             color: white !important;
         }
-    </style>
 
-    <!-- Include SheetJS for Excel export -->
-    <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
+        #collapseProduct .form-label {
+            font-weight: 500;
+        }
+
+        #collapseProduct .form-control,
+        #collapseProduct .form-select {
+            font-size: 0.85rem;
+            padding: 0.4rem 0.6rem;
+        }
+
+        .fix-width {
+            width: 100px;
+            text-align: center;
+            padding: 6px 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .btn-outline-primary.fix-width:hover,
+        .btn-outline-danger.fix-width:hover {
+            background-color: inherit !important;
+            color: inherit !important;
+            border-color: inherit !important;
+            box-shadow: none !important;
+            transition: none !important;
+        }
+
+        #resetPrefsBtn {
+            height: 30px;
+            width: 30px;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Pagination styles */
+        .pagination {
+            margin: 0;
+        }
+
+        .pagination-circle .page-item {
+            margin: 0 3px;
+        }
+
+        .pagination-circle .page-link {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50% !important;
+            border: 1px solid #dee2e6;
+        }
+
+        .pagination-circle .page-item.active .page-link {
+            background-color: #4d6b8a;
+            border-color: #4d6b8a;
+        }
+
+        .pagination-circle .page-item.disabled .page-link {
+            color: #6c757d;
+        }
+    </style>
 @endsection
