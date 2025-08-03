@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('admin-layout.app')
 
 @section('content')
 <div class="row">
@@ -13,7 +13,7 @@
 </div>
 
 @session('success')
-    <div class="alert alert-success" role="alert"> 
+    <div class="alert alert-success" role="alert">
         {{ $value }}
     </div>
 @endsession

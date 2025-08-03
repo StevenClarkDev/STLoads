@@ -1,4 +1,4 @@
-@extends('layout.app')
+@extends('admin-layout.app')
 @section('content')
 <div class="row gy-3 py-2">
     <!-- Users Summary Card -->

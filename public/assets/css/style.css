@@ -19,7 +19,7 @@
         2.4 Badge CSS
         2.5 Bookmark CSS
         2.6 Breadcrumb CSS
-        2.7 Basic-card CSS        
+        2.7 Basic-card CSS
         2.8 Scrollbar CSS
         2.9 Buttons CSS
         2.10 Card CSS
@@ -33,7 +33,7 @@
         2.18 Forms CSS
         2.19 Icons CSS
         2.20 List CSS
-        2.21 Loader CSS 
+        2.21 Loader CSS
         2.22 Modal CSS
         2.23 Popover CSS
         2.24 Print CSS
@@ -61,7 +61,7 @@
         3.7 Comingsoon CSS
         3.8 Contacts CSS
         3.9 Dashboard_2 CSS
-        3.10 Dashboard_3 CSS 
+        3.10 Dashboard_3 CSS
         3.11 Dashboard_4 CSS
         3.12 Dashboard_5 CSS
         3.13 Dashboard_default CSS
@@ -16022,7 +16022,7 @@ input[type=number] {
 
 .list-product-header>div {
   display: flex;
-  justify-content: end;
+  justify-content: start;
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
