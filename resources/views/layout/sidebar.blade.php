@@ -63,7 +63,7 @@
                                     </div>
                                 </a>
                             </li>
-                            <li class="nav-item mb-2">
+                            {{-- <li class="nav-item mb-2">
                                 <a href="{{ url('manage-loads') }}">
                                     <div
                                         class="btn btn-{{ Str::startsWith($currentRoute, 'manage-loads.') ? 'primary' : 'light' }}">
@@ -78,7 +78,7 @@
                                         <i data-feather="message-circle"></i> Chat
                                     </div>
                                 </a>
-                            </li>
+                            </li> --}}
                         </ul>
 
                         <hr>
