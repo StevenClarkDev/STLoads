@@ -34,6 +34,8 @@
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/animate.css') }}">
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/datatables.css') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.4/dist/sweetalert2.min.css">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/jsgrid.css')}}">
+
 
     <!-- Bootstrap Icons CDN -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -108,6 +110,9 @@
     <script src="{{ url('assets/js/slick/slick.min.js') }}"></script>
     <script src="{{ url('assets/js/slick/slick.js') }}"></script>
     <script src="{{ url('assets/js/header-slick.js') }}"></script>
+    <script src="{{ url('assets/js/jsgrid/jsgrid.min.js')}}"></script>
+    <script src="{{ url('assets/js/jsgrid/griddata.js')}}"></script>
+    <script src="{{ url('assets/js/jsgrid/jsgrid.js')}}"></script>
     <script src="{{ url('assets/js/chart/apex-chart/apex-chart.js') }}"></script>
     <script src="{{ url('assets/js/chart/apex-chart/stock-prices.js') }}"></script>
     <script src="{{ url('assets/js/chart/apex-chart/moment.min.js') }}"></script>
