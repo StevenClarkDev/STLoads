@@ -33,6 +33,8 @@
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/scrollbar.css') }}">
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/animate.css') }}">
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/datatables.css') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.4/dist/sweetalert2.min.css">
+
     <!-- Bootstrap Icons CDN -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <!-- Plugins css Ends-->
@@ -121,6 +123,7 @@
     <script src="{{ url('assets/js/animation/wow/wow.min.js') }}"></script>
     <script src="{{ url('assets/js/datatable/datatables/jquery.dataTables.min.js') }}"></script>
     <script src="{{ url('assets/js/datatable/datatables/datatable.custom.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.4/dist/sweetalert2.all.min.js"></script>
     <!-- Plugins JS Ends-->
     <!-- Theme js-->
     <script src="{{ url('assets/js/script.js') }}"></script>
@@ -128,6 +131,43 @@
     <script>
         new WOW().init();
     </script>
+    @if (session()->has('success'))
+        <script>
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'success',
+                title: 'Success',
+                text: {!! json_encode(session('success')) !!},
+                showConfirmButton: false,
+                timer: 2500
+            }).then(() => {
+                @php
+                    session(['success' => null]);
+                @endphp
+            });
+        </script>
+    @endif
+
+    @if (session('error'))
+        <script>
+            Swal.fire({
+                position: 'center',
+                icon: 'error',
+                title: 'Error',
+                text: {!! json_encode(session('error')) !!},
+                showConfirmButton: false,
+                showCloseButton: true,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                backdrop: true,
+            }).then(() => {
+                @php
+                    session(['error' => null]);
+                @endphp
+            });
+        </script>
+    @endif
 </body>
 
 </html>
