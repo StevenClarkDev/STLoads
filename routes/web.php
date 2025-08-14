@@ -8,6 +8,11 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\LoadController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\LoadTypesController;
+use App\Http\Controllers\EquipmentsController;
+use App\Http\Controllers\CommodityTypesController;
+use App\Http\Controllers\LocationsController;
+use App\Http\Controllers\CitiesController;
 
 /* ───────────────  GUEST‑ONLY ROUTES  ─────────────── */
 
@@ -43,6 +48,10 @@ Route::middleware('auth')->group(function () {
 
     Route::resource('roles', RoleController::class);
     Route::resource('users', UserController::class);
+    Route::resource('load_types', LoadTypesController::class);
+    Route::resource('equipments', EquipmentsController::class);
+    Route::resource('commodity_types', CommodityTypesController::class);
+    Route::resource('locations', LocationsController::class);
     Route::get('/dashboard', [DashboardController::class, 'dashboard'])->name('dashboard');
     Route::get('/user_approval', [AdminController::class, 'userApproval'])->name('user_approval');
     Route::get('/users_by_role/{id}', [UserController::class, 'usersByRole'])->name('users_by_role');
@@ -57,6 +66,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/manage-loads', [LoadController::class, 'index'])->name('manage-loads');
     Route::get('/loads/add', [LoadController::class, 'add'])->name('loads.add');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat');
+
+    Route::get('/api/countries/{country}/cities', [CitiesController::class, 'byCountry'])
+    ->name('api.cities.by-country');
 
     Route::post('/logout',   [AuthController::class, 'logout'])->name('logout');
 });

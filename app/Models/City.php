@@ -4,15 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model as Models;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
-class LoadType extends Models
+class City extends Models
 {
-    use HasFactory, SoftDeletes;
-    protected $table = 'load_types';
+    protected $table = 'cities';
     protected $guarded = [];
     public $timestamps = true;
 
 }
-
-

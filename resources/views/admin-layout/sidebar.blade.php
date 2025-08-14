@@ -12,8 +12,7 @@
                         <ul class="nav flex-column">
                             <li class="nav-item mb-2">
                                 <a href="{{ route('user_approval') }}">
-                                    <div
-                                        class="btn btn-{{ request()->routeIs('user_approval') ? 'primary' : 'light' }}">
+                                    <div class="btn btn-{{ request()->routeIs('user_approval') ? 'primary' : 'light' }}">
                                         <i data-feather="home"></i> Home
                                     </div>
                                 </a>
@@ -78,6 +77,62 @@
                                         <i data-feather="message-circle"></i> Chat
                                     </div>
                                 </a>
+                            </li>
+                        </ul>
+                        @php
+                            use Illuminate\Support\Str;
+
+                            $isMasterActive =
+                                Str::startsWith($currentRoute, 'load_types') ||
+                                Str::startsWith($currentRoute, 'equipments') ||
+                                Str::startsWith($currentRoute, 'commodity_types') ||
+                                Str::startsWith($currentRoute, 'locations');
+                        @endphp
+
+                        <ul class="nav flex-column mb-2">
+                            <li class="nav-item mb-2">
+                                <button
+                                    class="btn btn-{{ $isMasterActive ? 'primary' : 'light' }} w-100 d-flex align-items-center justify-content-start"
+                                    type="button" data-bs-toggle="collapse" data-bs-target="#masterMenu"
+                                    aria-expanded="{{ $isMasterActive ? 'true' : 'false' }}">
+                                    <i data-feather="settings" class="me-2"></i> Master Pages
+                                </button>
+                                <div class="collapse {{ $isMasterActive ? 'show' : '' }} mt-2" id="masterMenu">
+                                    <ul class="nav flex-column ms-2">
+                                        <li class="nav-item mb-2">
+                                            <a href="{{ route('load_types.index') }}" class="w-100">
+                                                <div
+                                                    class="btn btn-{{ Str::startsWith($currentRoute, 'load_types') ? 'primary' : 'light' }} w-100 text-start">
+                                                    <i data-feather="layers" class="me-2"></i> Load Types
+                                                </div>
+                                            </a>
+                                        </li>
+                                        <li class="nav-item mb-2">
+                                            <a href="{{ route('equipments.index') }}" class="w-100">
+                                                <div
+                                                    class="btn btn-{{ Str::startsWith($currentRoute, 'equipments') ? 'primary' : 'light' }} w-100 text-start">
+                                                    <i data-feather="tool" class="me-2"></i> Equipments
+                                                </div>
+                                            </a>
+                                        </li>
+                                        <li class="nav-item mb-2">
+                                            <a href="{{ route('commodity_types.index') }}" class="w-100">
+                                                <div
+                                                    class="btn btn-{{ Str::startsWith($currentRoute, 'commodity_types') ? 'primary' : 'light' }} w-100 text-start">
+                                                    <i data-feather="package" class="me-2"></i> Commodity Types
+                                                </div>
+                                            </a>
+                                        </li>
+                                        <li class="nav-item mb-2">
+                                            <a href="{{ route('locations.index') }}" class="w-100">
+                                                <div
+                                                    class="btn btn-{{ Str::startsWith($currentRoute, 'locations') ? 'primary' : 'light' }} w-100 text-start">
+                                                    <i data-feather="map-pin" class="me-2"></i> Locations
+                                                </div>
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
                             </li>
                         </ul>
 

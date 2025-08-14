@@ -111,8 +111,6 @@
     <script src="{{ url('assets/js/slick/slick.js') }}"></script>
     <script src="{{ url('assets/js/header-slick.js') }}"></script>
     <script src="{{ url('assets/js/jsgrid/jsgrid.min.js')}}"></script>
-    <script src="{{ url('assets/js/jsgrid/griddata.js')}}"></script>
-    <script src="{{ url('assets/js/jsgrid/jsgrid.js')}}"></script>
     <script src="{{ url('assets/js/chart/apex-chart/apex-chart.js') }}"></script>
     <script src="{{ url('assets/js/chart/apex-chart/stock-prices.js') }}"></script>
     <script src="{{ url('assets/js/chart/apex-chart/moment.min.js') }}"></script>
