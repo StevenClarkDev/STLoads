@@ -101,6 +101,7 @@
                                 <div class="invalid-feedback">Please enter a message in the textarea.</div>
                             </div>
 
+                            <!-- Load Legs Table -->
                             <div class="col-xl-12">
                                 <div class="card">
                                     <div class="card-header d-flex">
@@ -144,21 +145,17 @@
 @endsection
 
 <style>
-    /* Card header adjustments */
     .card-header.d-flex {
         align-items: center;
         justify-content: space-between;
     }
 
-    /* Table container with max height and scroll */
     .table-responsive {
         max-height: 250px;
-        /* enough for ~5 rows */
         overflow-y: auto;
         overflow-x: auto;
     }
 
-    /* Table column width control */
     #load_legs-table th,
     #load_legs-table td {
         white-space: nowrap;
@@ -166,7 +163,6 @@
         vertical-align: middle;
     }
 
-    /* Input and select sizing for consistency */
     #load_legs-table .form-control,
     #load_legs-table .form-select {
         min-width: 150px;
@@ -174,7 +170,6 @@
         height: 36px;
     }
 
-    /* ID and Price smaller width */
     #load_legs-table td:first-child,
     #load_legs-table th:first-child,
     #load_legs-table td:nth-last-child(2),
@@ -182,7 +177,6 @@
         width: 80px;
     }
 
-    /* Remove button as icon */
     .btn-remove-icon {
         background: none;
         border: none;
@@ -197,9 +191,22 @@
     }
 </style>
 
+<!-- Include Flatpickr -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="{{ url('assets/js/jquery.min.js') }}"></script>
+
 <script>
     $(document).ready(function () {
+
+        // initialize flatpickr on all .datetimepicker
+        function initDatePickers() {
+            $(".datetimepicker").flatpickr({
+                enableTime: true,
+                dateFormat: "Y-m-d H:i",
+            });
+        }
+
         function addRow() {
             const newRow = `
                 <tr>
@@ -224,8 +231,16 @@
                             <option value="Miami, FL">Miami, FL</option>
                         </select>
                     </td>
-                    <td><input type="datetime-local" name="pickup_date[]" class="form-control" required /></td>
-                    <td><input type="datetime-local" name="delivery_date[]" class="form-control" required /></td>
+                    <td>
+                        <div class="input-group flatpicker-calender">
+                            <input class="form-control datetimepicker" name="pickup_date[]" type="text" required>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="input-group flatpicker-calender">
+                            <input class="form-control datetimepicker" name="delivery_date[]" type="text" required>
+                        </div>
+                    </td>
                     <td>
                         <select name="bid_status[]" class="form-select" required>
                             <option value="">Select...</option>
@@ -242,6 +257,7 @@
                 </tr>
             `;
             $('#load_legs-table tbody').append(newRow);
+            initDatePickers(); // re-init new date fields
         }
 
         $('#load_legs-table').on('click', '.remove-row-load_legs', function () {
@@ -251,5 +267,8 @@
         $('#add-load_legs-row').on('click', function () {
             addRow();
         });
+
+        // init on page load
+        initDatePickers();
     });
 </script>

@@ -75,11 +75,13 @@
                                             </div>
                                             <div class="col-md-3">
                                                 <label class="form-label small">From</label>
-                                                <input type="date" class="form-control form-control-sm" name="from">
+                                                <input type="text" class="form-control form-control-sm datetimepicker"
+                                                    name="from">
                                             </div>
                                             <div class="col-md-3">
                                                 <label class="form-label small">To</label>
-                                                <input type="date" class="form-control form-control-sm" name="to">
+                                                <input type="text" class="form-control form-control-sm datetimepicker"
+                                                    name="to">
                                             </div>
                                             <div class="col-md-12 text-end">
                                                 <button type="submit" class="btn btn-sm btn-primary px-4">Apply
@@ -180,92 +182,6 @@
                                                                         Rejected
                                                                     </button>
                                                                 @endif
-
-                                                                <!-- Bid Modal -->
-                                                                <div class="modal fade" id="bidModal-{{ $i }}" tabindex="-1"
-                                                                    aria-hidden="true">
-                                                                    <div class="modal-dialog modal-dialog-centered"
-                                                                        style="max-width: 600px;">
-                                                                        <div class="modal-content p-4">
-                                                                            <div class="modal-header border-0">
-                                                                                <h5 class="modal-title">
-                                                                                    @if ($bidStatus == 'accepted')
-                                                                                        Bid Approved
-                                                                                    @elseif($bidStatus == 'rejected')
-                                                                                        Bid Not Approved
-                                                                                    @else
-                                                                                        Submit Your Bid
-                                                                                    @endif
-                                                                                </h5>
-                                                                                <button type="button" class="btn-close"
-                                                                                    data-bs-dismiss="modal"
-                                                                                    aria-label="Close"></button>
-                                                                            </div>
-
-                                                                            <div class="modal-body">
-                                                                                @if ($bidStatus == 'accepted')
-                                                                                    <p class="text-muted mb-4">Congratulations! Your
-                                                                                        bid has been accepted by the client.</p>
-                                                                                @elseif($bidStatus == 'rejected')
-                                                                                    <p class="text-muted mb-4">Client has rejected
-                                                                                        your bid due to high pricing or other
-                                                                                        concerns.</p>
-                                                                                @else
-                                                                                    <p class="text-muted mb-4">Please review the
-                                                                                        client's offer and submit your bid below.
-                                                                                    </p>
-                                                                                @endif
-
-                                                                                <div class="row my-3">
-                                                                                    <div class="col-md-6">
-                                                                                        <label class="form-label">Client
-                                                                                            Price</label>
-                                                                                        <input type="text" class="form-control"
-                                                                                            value="${{ number_format(rand(8000, 12000), 0) }}"
-                                                                                            readonly>
-                                                                                    </div>
-                                                                                    <div class="col-md-6">
-                                                                                        <label class="form-label">Your
-                                                                                            Bid</label>
-                                                                                        @if ($bidStatus == 'original')
-                                                                                            <input type="text" class="form-control"
-                                                                                                placeholder="Enter your bid">
-                                                                                        @else
-                                                                                            <input type="text" class="form-control"
-                                                                                                value="${{ number_format(rand(8000, 15000), 0) }}"
-                                                                                                readonly>
-                                                                                        @endif
-                                                                                    </div>
-                                                                                </div>
-
-                                                                                @if ($bidStatus == 'accepted')
-                                                                                    <div class="row mb-3">
-                                                                                        <div class="col-md-6">
-                                                                                            <label class="form-label">Bid Submitted
-                                                                                                On</label>
-                                                                                            <input type="text" class="form-control"
-                                                                                                value="{{ now()->subDays(2)->format('d M Y') }}"
-                                                                                                readonly>
-                                                                                        </div>
-                                                                                        <div class="col-md-6">
-                                                                                            <label class="form-label">Accepted
-                                                                                                On</label>
-                                                                                            <input type="text" class="form-control"
-                                                                                                value="{{ now()->subDay()->format('d M Y') }}"
-                                                                                                readonly>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                @endif
-
-                                                                                <div
-                                                                                    class="d-flex justify-content-end gap-2 mt-4">
-                                                                                    <a href="{{ route('chat') }}"
-                                                                                        class="btn btn-primary">Contact</a>
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
                                                             </td>
                                                             <td>
                                                                 @if ($i % 4 == 0)
@@ -297,21 +213,7 @@
                                 <!-- Pagination -->
                                 <div class="d-flex justify-content-end mt-3">
                                     <nav aria-label="Page navigation">
-                                        <ul class="pagination pagination-sm pagination-circle mb-0">
-                                            <li class="page-item disabled" id="prevPage">
-                                                <a class="page-link" href="#" tabindex="-1" aria-disabled="true">
-                                                    <i class="bi bi-chevron-left"></i>
-                                                </a>
-                                            </li>
-                                            <li class="page-item active"><a class="page-link" href="#">1</a></li>
-                                            <li class="page-item"><a class="page-link" href="#">2</a></li>
-                                            <li class="page-item"><a class="page-link" href="#">3</a></li>
-                                            <li class="page-item" id="nextPage">
-                                                <a class="page-link" href="#">
-                                                    <i class="bi bi-chevron-right"></i>
-                                                </a>
-                                            </li>
-                                        </ul>
+                                        <ul class="pagination pagination-sm pagination-circle mb-0"></ul>
                                     </nav>
                                 </div>
                             </div>
@@ -368,7 +270,7 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Available From</label>
-                            <input type="date" class="form-control form-control-sm" name="available_date">
+                            <input type="text" class="form-control form-control-sm datetimepicker" name="available_date">
                         </div>
 
                         <div class="text-end">
@@ -387,7 +289,10 @@
             const rowsPerPage = 12;
             let currentPage = 1;
             let currentTab = 'all';
-
+            flatpickr(".datetimepicker", {
+                enableTime: false,
+                dateFormat: "Y-m-d",
+            })
             // Initialize pagination
             initPagination();
 
@@ -444,12 +349,12 @@
 
                 // Previous button
                 pagination.innerHTML += `
-                    <li class="page-item ${currentPage === 1 ? 'disabled' : ''}" id="prevPage">
-                        <a class="page-link" href="#" tabindex="-1" aria-disabled="true">
-                            <i class="bi bi-chevron-left"></i>
-                        </a>
-                    </li>
-                `;
+                                                    <li class="page-item ${currentPage === 1 ? 'disabled' : ''}" id="prevPage">
+                                                        <a class="page-link" href="#" tabindex="-1" aria-disabled="true">
+                                                            <i class="bi bi-chevron-left"></i>
+                                                        </a>
+                                                    </li>
+                                                `;
 
                 // Page numbers - show max 3 pages around current
                 const startPage = Math.max(1, currentPage - 1);
@@ -457,10 +362,10 @@
 
                 if (startPage > 1) {
                     pagination.innerHTML += `
-                        <li class="page-item ${1 === currentPage ? 'active' : ''}">
-                            <a class="page-link" href="#">1</a>
-                        </li>
-                    `;
+                                                        <li class="page-item ${1 === currentPage ? 'active' : ''}">
+                                                            <a class="page-link" href="#">1</a>
+                                                        </li>
+                                                    `;
                     if (startPage > 2) {
                         pagination.innerHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
                     }
@@ -468,10 +373,10 @@
 
                 for (let i = startPage; i <= endPage; i++) {
                     pagination.innerHTML += `
-                        <li class="page-item ${i === currentPage ? 'active' : ''}">
-                            <a class="page-link" href="#">${i}</a>
-                        </li>
-                    `;
+                                                        <li class="page-item ${i === currentPage ? 'active' : ''}">
+                                                            <a class="page-link" href="#">${i}</a>
+                                                        </li>
+                                                    `;
                 }
 
                 if (endPage < totalPages) {
@@ -479,20 +384,20 @@
                         pagination.innerHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
                     }
                     pagination.innerHTML += `
-                        <li class="page-item ${totalPages === currentPage ? 'active' : ''}">
-                            <a class="page-link" href="#">${totalPages}</a>
-                        </li>
-                    `;
+                                                        <li class="page-item ${totalPages === currentPage ? 'active' : ''}">
+                                                            <a class="page-link" href="#">${totalPages}</a>
+                                                        </li>
+                                                    `;
                 }
 
                 // Next button
                 pagination.innerHTML += `
-                    <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}" id="nextPage">
-                        <a class="page-link" href="#">
-                            <i class="bi bi-chevron-right"></i>
-                        </a>
-                    </li>
-                `;
+                                                    <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}" id="nextPage">
+                                                        <a class="page-link" href="#">
+                                                            <i class="bi bi-chevron-right"></i>
+                                                        </a>
+                                                    </li>
+                                                `;
 
                 // Add event listeners to new pagination buttons
                 document.querySelectorAll('.pagination .page-link').forEach(link => {
