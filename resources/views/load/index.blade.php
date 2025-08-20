@@ -77,11 +77,13 @@
                                             </div>
                                             <div class="col-md-3">
                                                 <label class="form-label small">From</label>
-                                                <input type="date" class="form-control form-control-sm" name="from">
+                                                <input type="text" class="form-control form-control-sm datetimepicker"
+                                                    name="from">
                                             </div>
                                             <div class="col-md-3">
                                                 <label class="form-label small">To</label>
-                                                <input type="date" class="form-control form-control-sm" name="to">
+                                                <input type="text" class="form-control form-control-sm datetimepicker"
+                                                    name="to">
                                             </div>
                                             <div class="col-md-12 text-end">
                                                 <button type="submit" class="btn btn-sm btn-primary px-4">Apply

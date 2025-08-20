@@ -80,7 +80,8 @@
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="formFile1">Documents</label>
-                                <input class="form-control" id="formFile1" type="file" name="documents" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" />
+                                <input class="form-control" id="formFile1" type="file" name="documents"
+                                    accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" />
                                 <div class="invalid-feedback">Invalid form file selected</div>
                             </div>
                             <div class="col-md-6">
@@ -104,6 +105,7 @@
                                 <div class="invalid-feedback">Please enter a message in the textarea.</div>
                             </div>
 
+                            <!-- Load Legs Table -->
                             <div class="col-xl-12">
                                 <div class="card">
                                     <div class="card-header d-flex">
@@ -151,21 +153,17 @@
 @endsection
 
 <style>
-    /* Card header adjustments */
     .card-header.d-flex {
         align-items: center;
         justify-content: space-between;
     }
 
-    /* Table container with max height and scroll */
     .table-responsive {
         max-height: 250px;
-        /* enough for ~5 rows */
         overflow-y: auto;
         overflow-x: auto;
     }
 
-    /* Table column width control */
     #load_legs-table th,
     #load_legs-table td {
         white-space: nowrap;
@@ -173,7 +171,6 @@
         vertical-align: middle;
     }
 
-    /* Input and select sizing for consistency */
     #load_legs-table .form-control,
     #load_legs-table .form-select {
         min-width: 150px;
@@ -181,7 +178,6 @@
         height: 36px;
     }
 
-    /* ID and Price smaller width */
     #load_legs-table td:first-child,
     #load_legs-table th:first-child,
     #load_legs-table td:nth-last-child(2),
@@ -189,7 +185,6 @@
         width: 80px;
     }
 
-    /* Remove button as icon */
     .btn-remove-icon {
         background: none;
         border: none;
@@ -205,83 +200,108 @@
 </style>
 
 <script src="{{ url('assets/js/jquery.min.js') }}"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
 <script>
-    $(document).ready(function() {
-
-        // Build one row (Blade will render the options server-side)
-        function rowTemplate() {
-            return `
-                <tr>
-                    <td><input type="text" name="leg_id[]" class="form-control leg-id" value="" readonly /></td>
-
-                    <td>
-                        <select name="pickup_location[]" class="form-select" required>
-                            <option value="">Select...</option>
-                            @foreach ($locations as $location)
-                                <option value="{{ $location->id }}">
-                                    {{ $location->name }} {{ $location->city->name }} {{ $location->country->name }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </td>
-
-                    <td>
-                        <select name="delivery_location[]" class="form-select" required>
-                            <option value="">Select...</option>
-                            @foreach ($locations as $location)
-                                <option value="{{ $location->id }}">
-                                    {{ $location->name }} {{ $location->city->name }} {{ $location->country->name }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </td>
-
-                    <td><input type="date" name="pickup_date[]" class="form-control" required /></td>
-                    <td><input type="date" name="delivery_date[]" class="form-control" required /></td>
-
-                    <td>
-                        <select name="bid_status[]" class="form-select" required>
-                            <option value="Fixed">Fixed</option>
-                            <option value="Open">Open</option>
-                        </select>
-                    </td>
-
-                    <td><input type="number" min="0" name="price[]" class="form-control" required /></td>
-                    @if ($roleId == 5)
-                    <td>
-                        <button type="button" class="btn-remove-icon remove-row-load_legs" title="Remove">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </td>
-                    @endif
-                </tr>
-            `;
-        }
-
-        // Re-number all leg_id inputs so they are 1..N in display order
-        function renumberRows() {
-            $('#load_legs-table tbody tr').each(function(index) {
-                $(this).find('input.leg-id').val(index + 1);
-            });
-        }
-
-        function addRow() {
-            $('#load_legs-table tbody').append(rowTemplate());
-            renumberRows();
-        }
-
-        // Initial row
-        addRow();
-
-        // Add new row
-        $('#add-load_legs-row').on('click', function() {
-            addRow();
+  $(function () {
+    // Init flatpickr (optionally scoped to a container)
+    function initDatePickers(scope) {
+      const ctx = scope || document;
+      $(ctx).find(".datetimepicker").each(function () {
+        flatpickr(this, {
+          enableTime: true,
+          dateFormat: "Y-m-d H:i",
         });
+      });
+    }
 
-        // Remove row + re-number
-        $('#load_legs-table').on('click', '.remove-row-load_legs', function() {
-            $(this).closest('tr').remove();
-            renumberRows();
-        });
+    // Table row HTML (Blade will render the @foreach options server-side)
+    function rowTemplate() {
+      return `
+        <tr>
+          <td><input type="text" name="leg_id[]" class="form-control leg-id" value="" readonly /></td>
+
+          <td>
+            <select name="pickup_location[]" class="form-select" required>
+              <option value="">Select...</option>
+              @foreach ($locations as $location)
+                <option value="{{ $location->id }}">
+                  {{ $location->name }} {{ $location->city->name }} {{ $location->country->name }}
+                </option>
+              @endforeach
+            </select>
+          </td>
+
+          <td>
+            <select name="delivery_location[]" class="form-select" required>
+              <option value="">Select...</option>
+              @foreach ($locations as $location)
+                <option value="{{ $location->id }}">
+                  {{ $location->name }} {{ $location->city->name }} {{ $location->country->name }}
+                </option>
+              @endforeach
+            </select>
+          </td>
+
+          <td>
+            <div class="input-group flatpicker-calender">
+              <input class="form-control datetimepicker" name="pickup_date[]" type="text" required>
+            </div>
+          </td>
+          <td>
+            <div class="input-group flatpicker-calender">
+              <input class="form-control datetimepicker" name="delivery_date[]" type="text" required>
+            </div>
+          </td>
+
+          <td>
+            <select name="bid_status[]" class="form-select" required>
+              <option value="Fixed">Fixed</option>
+              <option value="Open">Open</option>
+            </select>
+          </td>
+
+          <td><input type="number" min="0" name="price[]" class="form-control" required /></td>
+
+          @if ($roleId == 5)
+          <td>
+            <button type="button" class="btn-remove-icon remove-row-load_legs" title="Remove">
+              <i class="bi bi-trash"></i>
+            </button>
+          </td>
+          @endif
+        </tr>
+      `;
+    }
+
+    // Re-number S.No column
+    function renumberRows() {
+      $('#load_legs-table tbody tr').each(function (i) {
+        $(this).find('input.leg-id').val(i + 1);
+      });
+    }
+
+    // Add a new row
+    function addRow() {
+      const $row = $(rowTemplate());
+      $('#load_legs-table tbody').append($row);
+      initDatePickers($row); // init pickers only in the new row
+      renumberRows();
+    }
+
+    // Handlers
+    $('#add-load_legs-row').on('click', function () {
+      addRow();
     });
+
+    $('#load_legs-table').on('click', '.remove-row-load_legs', function () {
+      $(this).closest('tr').remove();
+      renumberRows();
+    });
+
+    // Initial state
+    addRow();
+  });
 </script>
+

@@ -136,6 +136,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.4/dist/sweetalert2.all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
     <!-- Plugins JS Ends-->
     <!-- Theme js-->
     <script src="{{ url('assets/js/script.js') }}"></script>
