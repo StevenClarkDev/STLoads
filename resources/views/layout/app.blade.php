@@ -34,11 +34,15 @@
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/animate.css') }}">
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/datatables.css') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.4/dist/sweetalert2.min.css">
-    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/jsgrid.css')}}">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/jsgrid.css') }}">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/flatpickr/flatpickr.min.css') }}">
+
 
 
     <!-- Bootstrap Icons CDN -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <!-- Plugins css Ends-->
     <!-- Bootstrap css-->
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/bootstrap.css') }}">
@@ -47,6 +51,7 @@
     <link id="color" rel="stylesheet" href="{{ url('assets/css/color-1.css') }}" media="screen">
     <!-- Responsive css-->
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/responsive.css') }}">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 </head>
 
 <body onload="startTime()">
@@ -110,7 +115,7 @@
     <script src="{{ url('assets/js/slick/slick.min.js') }}"></script>
     <script src="{{ url('assets/js/slick/slick.js') }}"></script>
     <script src="{{ url('assets/js/header-slick.js') }}"></script>
-    <script src="{{ url('assets/js/jsgrid/jsgrid.min.js')}}"></script>
+    <script src="{{ url('assets/js/jsgrid/jsgrid.min.js') }}"></script>
     <script src="{{ url('assets/js/chart/apex-chart/apex-chart.js') }}"></script>
     <script src="{{ url('assets/js/chart/apex-chart/stock-prices.js') }}"></script>
     <script src="{{ url('assets/js/chart/apex-chart/moment.min.js') }}"></script>
@@ -126,11 +131,26 @@
     <script src="{{ url('assets/js/animation/wow/wow.min.js') }}"></script>
     <script src="{{ url('assets/js/datatable/datatables/jquery.dataTables.min.js') }}"></script>
     <script src="{{ url('assets/js/datatable/datatables/datatable.custom.js') }}"></script>
+    <script src="{{ url('assets/js/flat-pickr/flatpickr.js') }}"></script>
+    <script src="{{ url('assets/js/flat-pickr/custom-flatpickr.js') }}"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.4/dist/sweetalert2.all.min.js"></script>
     <!-- Plugins JS Ends-->
     <!-- Theme js-->
     <script src="{{ url('assets/js/script.js') }}"></script>
     <script src="{{ url('assets/js/theme-customizer/customizer.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script>
+        $(document).ready(function() {
+
+            $('.select2').select2({
+                placeholder: 'Please Select',
+                allowClear: true,
+                width: '100%'
+            });
+        });
+    </script>
     <script>
         new WOW().init();
     </script>

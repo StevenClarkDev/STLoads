@@ -18,7 +18,8 @@ use App\Http\Controllers\CitiesController;
 
 Route::middleware('guest')->group(function () {
     // Login
-    Route::get('/login', [AuthController::class, 'login'])->name('login');
+    Route::get('/normal-login', [AuthController::class, 'login'])->name('normal-login');
+    Route::get('/login', [AuthController::class, 'role'])->name('login');
     Route::get('/admin/login', [AuthController::class, 'adminLogin'])->name('admin.login');
     Route::post('/login', [AuthController::class, 'verify'])->name('login.post');
     Route::post('/admin/login', [AuthController::class, 'adminVerify'])->name('admin.login.post');
@@ -42,6 +43,7 @@ Route::middleware('guest')->group(function () {
 Route::get('/', [AuthController::class, 'role'])->name('role');
 Route::get('/onboarding/{user}', [AuthController::class, 'onboardingForm'])->name('onboarding-form');
 Route::post('/onboarding/{user}', [AuthController::class, 'onboardingFormSave'])->name('onboarding-form-save');
+Route::post('/onboarding/shipper/{user}', [AuthController::class, 'onboardingFormSaveForShipper'])->name('onboarding-form-save-shipper');
 
 // 🔒 Auth-only routes
 Route::middleware('auth')->group(function () {
@@ -63,8 +65,21 @@ Route::middleware('auth')->group(function () {
     Route::post('/approve-user', [UserController::class, 'approve']);
     Route::post('/reject-user', [UserController::class, 'reject']);
 
+    // Load Management
     Route::get('/manage-loads', [LoadController::class, 'index'])->name('manage-loads');
+    Route::post('/save_preferences', [LoadController::class, 'savePreferences'])->name('savePreferences');
     Route::get('/loads/add', [LoadController::class, 'add'])->name('loads.add');
+    Route::post('/loads/add', [LoadController::class, 'store'])->name('loads.store');
+    Route::get('/loads/edit/{load}', [LoadController::class, 'edit'])->name('loads.edit');
+    Route::post('/loads/update/{load}', [LoadController::class, 'update'])->name('loads.update');
+    Route::post('/loads/delete/{load}', [LoadController::class, 'delete'])->name('loads.delete');
+    Route::get('/loads/view/{load}', [LoadController::class, 'view'])->name('loads.view');
+    Route::get('/loads/bid/{load}', [LoadController::class, 'bid'])->name('loads.bid');
+
+    // Chat
+    Route::get('/chat/{load}', [ChatController::class, 'index'])->name('chat.load');
+    Route::post('/chat/send', [ChatController::class, 'sendMessage'])->name('chat.send');
+    Route::get('/chat/load-messages/{load}', [ChatController::class, 'loadMessages'])->name('chat.load-messages');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat');
 
     Route::get('/api/countries/{country}/cities', [CitiesController::class, 'byCountry'])

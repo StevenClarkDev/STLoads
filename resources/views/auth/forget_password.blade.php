@@ -25,7 +25,7 @@
             <!-- Submit Button -->
             <div class="col-12 text-center mt-4">
                 <button type="submit" class="btn btn-primary w-50">Send OTP</button>
-                <p class="mt-3"><a href="{{ route('login', ['id' => $role->id]) }}">Back to Sign In</a></p>
+                <p class="mt-3"><a href="{{ route('normal-login', ['id' => $role->id]) }}">Back to Sign In</a></p>
             </div>
 
             <!-- Laravel Feedback -->

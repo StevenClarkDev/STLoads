@@ -29,14 +29,18 @@
                         <h4>Load Details</h4>
                     </div>
                     <div class="card-body">
-                        <form class="row g-3 needs-validation custom-input" novalidate="">
+                        <form class="row g-3 custom-input" action="{{ route('loads.store') }}" method="POST"
+                            enctype="multipart/form-data">
+                            @csrf
                             <div class="col-md-6">
                                 <label class="form-label" for="title">Title</label>
                                 <input class="form-control" id="title" name="title" type="text" required>
+                                <input id="user_id" name="user_id" type="hidden" value="{{ $user_id }}">
+                                <input id="role_id" name="role_id" type="hidden" value="{{ $roleId }}">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="load_type">Load Type</label>
-                                <select class="form-select" id="load_type" name="load_type" required>
+                                <select class="form-select" id="load_type" name="load_type_id" required>
                                     <option selected value="">Choose...</option>
                                     @foreach ($load_types as $load_type)
                                         <option value="{{ $load_type->id }}">{{ $load_type->name }}</option>
@@ -45,7 +49,7 @@
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="equipment_required">Equipment Required</label>
-                                <select class="form-select" id="equipment_required" name="equipment_required" required>
+                                <select class="form-select" id="equipment_required" name="equipment_id" required>
                                     <option selected value="">Choose...</option>
                                     @foreach ($equipments as $equipment)
                                         <option value="{{ $equipment->id }}">{{ $equipment->name }}</option>
@@ -67,7 +71,7 @@
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="commodity_type">Commodity Type</label>
-                                <select class="form-select" id="commodity_type" name="commodity_type" required>
+                                <select class="form-select" id="commodity_type" name="commodity_type_id" required>
                                     <option selected value="">Choose...</option>
                                     @foreach ($commodity_types as $commodity_type)
                                         <option value="{{ $commodity_type->id }}">{{ $commodity_type->name }}</option>
@@ -76,8 +80,7 @@
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="formFile1">Documents</label>
-                                <input class="form-control" id="formFile1" type="file" name="documents"
-                                    aria-label="file example">
+                                <input class="form-control" id="formFile1" type="file" name="documents" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" />
                                 <div class="invalid-feedback">Invalid form file selected</div>
                             </div>
                             <div class="col-md-6">
@@ -96,7 +99,7 @@
                             </div>
                             <div class="col-mb-12 mb-3">
                                 <label class="form-label" for="validationTextarea">Special Instructions</label>
-                                <textarea class="form-control" id="validationTextarea"
+                                <textarea class="form-control" id="validationTextarea" name="special_instructions"
                                     placeholder="Enter your Special Instructions"></textarea>
                                 <div class="invalid-feedback">Please enter a message in the textarea.</div>
                             </div>
@@ -105,23 +108,27 @@
                                 <div class="card">
                                     <div class="card-header d-flex">
                                         <h4 class="mb-0">Load Legs</h4>
-                                        <button type="button" class="btn btn-primary btn-sm" id="add-load_legs-row">
-                                            <i class="bi bi-plus-lg"></i> Add
-                                        </button>
+                                        @if ($roleId == 5)
+                                            <button type="button" class="btn btn-primary btn-sm" id="add-load_legs-row">
+                                                <i class="bi bi-plus-lg"></i> Add
+                                            </button>
+                                        @endif
                                     </div>
                                     <div class="card-body">
                                         <div class="table-responsive">
                                             <table class="table table-bordered" id="load_legs-table">
                                                 <thead class="table-light">
                                                     <tr>
-                                                        <th>ID</th>
+                                                        <th>S.No</th>
                                                         <th>Pickup Location</th>
                                                         <th>Delivery Location</th>
                                                         <th>Pickup Date</th>
                                                         <th>Delivery Date</th>
                                                         <th>Bid Status</th>
                                                         <th>Price</th>
-                                                        <th>Action</th>
+                                                        @if ($roleId == 5)
+                                                            <th>Action</th>
+                                                        @endif
                                                     </tr>
                                                 </thead>
                                                 <tbody></tbody>
@@ -199,57 +206,82 @@
 
 <script src="{{ url('assets/js/jquery.min.js') }}"></script>
 <script>
-    $(document).ready(function () {
-        function addRow() {
-            const newRow = `
+    $(document).ready(function() {
+
+        // Build one row (Blade will render the options server-side)
+        function rowTemplate() {
+            return `
                 <tr>
-                    <td><input type="text" name="leg_id[]" class="form-control" required /></td>
+                    <td><input type="text" name="leg_id[]" class="form-control leg-id" value="" readonly /></td>
+
                     <td>
                         <select name="pickup_location[]" class="form-select" required>
                             <option value="">Select...</option>
-                            <option value="New York, NY">New York, NY</option>
-                            <option value="Los Angeles, CA">Los Angeles, CA</option>
-                            <option value="Chicago, IL">Chicago, IL</option>
-                            <option value="Dallas, TX">Dallas, TX</option>
-                            <option value="Miami, FL">Miami, FL</option>
+                            @foreach ($locations as $location)
+                                <option value="{{ $location->id }}">
+                                    {{ $location->name }} {{ $location->city->name }} {{ $location->country->name }}
+                                </option>
+                            @endforeach
                         </select>
                     </td>
+
                     <td>
                         <select name="delivery_location[]" class="form-select" required>
                             <option value="">Select...</option>
-                            <option value="New York, NY">New York, NY</option>
-                            <option value="Los Angeles, CA">Los Angeles, CA</option>
-                            <option value="Chicago, IL">Chicago, IL</option>
-                            <option value="Dallas, TX">Dallas, TX</option>
-                            <option value="Miami, FL">Miami, FL</option>
+                            @foreach ($locations as $location)
+                                <option value="{{ $location->id }}">
+                                    {{ $location->name }} {{ $location->city->name }} {{ $location->country->name }}
+                                </option>
+                            @endforeach
                         </select>
                     </td>
-                    <td><input type="datetime-local" name="pickup_date[]" class="form-control" required /></td>
-                    <td><input type="datetime-local" name="delivery_date[]" class="form-control" required /></td>
+
+                    <td><input type="date" name="pickup_date[]" class="form-control" required /></td>
+                    <td><input type="date" name="delivery_date[]" class="form-control" required /></td>
+
                     <td>
                         <select name="bid_status[]" class="form-select" required>
-                            <option value="">Select...</option>
-                            <option value="Open">Open</option>
                             <option value="Fixed">Fixed</option>
+                            <option value="Open">Open</option>
                         </select>
                     </td>
+
                     <td><input type="number" min="0" name="price[]" class="form-control" required /></td>
+                    @if ($roleId == 5)
                     <td>
-                        <button type="button" class="btn-remove-icon remove-row-load_legs">
+                        <button type="button" class="btn-remove-icon remove-row-load_legs" title="Remove">
                             <i class="bi bi-trash"></i>
                         </button>
                     </td>
+                    @endif
                 </tr>
             `;
-            $('#load_legs-table tbody').append(newRow);
         }
 
-        $('#load_legs-table').on('click', '.remove-row-load_legs', function () {
-            $(this).closest('tr').remove();
+        // Re-number all leg_id inputs so they are 1..N in display order
+        function renumberRows() {
+            $('#load_legs-table tbody tr').each(function(index) {
+                $(this).find('input.leg-id').val(index + 1);
+            });
+        }
+
+        function addRow() {
+            $('#load_legs-table tbody').append(rowTemplate());
+            renumberRows();
+        }
+
+        // Initial row
+        addRow();
+
+        // Add new row
+        $('#add-load_legs-row').on('click', function() {
+            addRow();
         });
 
-        $('#add-load_legs-row').on('click', function () {
-            addRow();
+        // Remove row + re-number
+        $('#load_legs-table').on('click', '.remove-row-load_legs', function() {
+            $(this).closest('tr').remove();
+            renumberRows();
         });
     });
 </script>

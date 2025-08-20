@@ -14,7 +14,7 @@
                 </div>
                 <div class="d-flex justify-content-center gap-2">
                     <a href="{{ route('onboarding-form', $user->id) }}" class="btn btn-primary">Complete Onboarding</a>
-                    <a href="{{ route('login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Cancel</a>
+                    <a href="{{ route('normal-login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Cancel</a>
                 </div>
 
             @elseif ($user->status == 3)
@@ -23,7 +23,7 @@
                     <p>Your KYC verification is pending. Please wait for approval.</p>
                 </div>
                 <div class="text-center">
-                    <a href="{{ route('login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Back</a>
+                    <a href="{{ route('normal-login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Back</a>
                 </div>
 
             @elseif ($user->status == 4)
@@ -32,7 +32,7 @@
                     <p>Your email has not been verified yet. Please check your inbox.</p>
                 </div>
                 <div class="text-center">
-                    <a href="{{ route('login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Back</a>
+                    <a href="{{ route('normal-login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Back</a>
                 </div>
 
             @elseif ($user->status == 2)
@@ -41,7 +41,7 @@
                     <p>Your account has been rejected. Please contact support for more information.</p>
                 </div>
                 <div class="text-center">
-                    <a href="{{ route('login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Back</a>
+                    <a href="{{ route('normal-login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Back</a>
                 </div>
             @endif
         </div>

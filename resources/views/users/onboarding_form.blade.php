@@ -251,7 +251,7 @@
 
                                     <div class="pt-4">
                                         <button type="submit" class="btn btn-primary me-sm-3 me-1">Submit</button>
-                                        <a href="{{ route('login', ['id' => $role->id]) }}"
+                                        <a href="{{ route('normal-login', ['id' => $role->id]) }}"
                                             class="btn btn-outline-secondary">Cancel</a>
                                     </div>
                                 </form>

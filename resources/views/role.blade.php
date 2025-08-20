@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="icon" href="{{ url('assets/images/favicon.png') }}" type="image/x-icon">
+    <link rel="icon" href="{{ url('assets/images/favicon.png') }}" type="image/x-icon">
     <link rel="shortcut icon" href="{{ url('assets/images/favicon.png') }}" type="image/x-icon">
     <title>LoadBoard - Role Select</title>
     <!-- Google Fonts -->
@@ -13,6 +13,8 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.4/dist/sweetalert2.min.css">
+
     <style>
         :root {
             --primary-blue: #1F537B;
@@ -245,7 +247,7 @@
                                 <i class="fas fa-boxes role-icon"></i>
                                 <h3 class="role-title">Shipper</h3>
                                 <p class="role-count">Count 40</p>
-                                <a href="{{ route('login', ['id' => 2]) }}">
+                                <a href="{{ route('normal-login', ['id' => 2]) }}">
                                     <i class="fas fa-arrow-right role-arrow"></i>
                                 </a>
                             </div>
@@ -257,7 +259,7 @@
                                 <i class="fas fa-truck-fast role-icon"></i>
                                 <h3 class="role-title">Carrier</h3>
                                 <p class="role-count">Count 40</p>
-                                <a href="{{ route('login', ['id' => 3]) }}">
+                                <a href="{{ route('normal-login', ['id' => 3]) }}">
                                     <i class="fas fa-arrow-right role-arrow"></i>
                                 </a>
                             </div>
@@ -269,7 +271,7 @@
                                 <i class="fas fa-handshake-angle role-icon"></i>
                                 <h3 class="role-title">Broker</h3>
                                 <p class="role-count">Count 40</p>
-                                <a href="{{ route('login', ['id' => 4]) }}">
+                                <a href="{{ route('normal-login', ['id' => 4]) }}">
                                     <i class="fas fa-arrow-right role-arrow"></i>
                                 </a>
                             </div>
@@ -281,7 +283,7 @@
                                 <i class="fas fa-ship role-icon"></i>
                                 <h3 class="role-title">Freight Forwarder</h3>
                                 <p class="role-count">Count 40</p>
-                                <a href="{{ route('login', ['id' => 5]) }}">
+                                <a href="{{ route('normal-login', ['id' => 5]) }}">
                                     <i class="fas fa-arrow-right role-arrow"></i>
                                 </a>
                             </div>
@@ -292,8 +294,47 @@
         </div>
     </div>
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url('assets/js/jquery.min.js') }}"></script>
+    <!-- Bootstrap js-->
+    <script src="{{ url('assets/js/bootstrap/bootstrap.bundle.min.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.4/dist/sweetalert2.all.min.js"></script>
+ @if (session()->has('success'))
+        <script>
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'success',
+                title: 'Success',
+                text: {!! json_encode(session('success')) !!},
+                showConfirmButton: false,
+                timer: 2500
+            }).then(() => {
+                @php
+                    session(['success' => null]);
+                @endphp
+            });
+        </script>
+    @endif
+
+    @if (session('error'))
+        <script>
+            Swal.fire({
+                position: 'center',
+                icon: 'error',
+                title: 'Error',
+                text: {!! json_encode(session('error')) !!},
+                showConfirmButton: false,
+                showCloseButton: true,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                backdrop: true,
+            }).then(() => {
+                @php
+                    session(['error' => null]);
+                @endphp
+            });
+        </script>
+    @endif
 </body>
 
 </html>

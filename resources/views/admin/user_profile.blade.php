@@ -11,7 +11,8 @@
                             <div class="row g-3">
                                 <div class="col-sm-6">
                                     <label class="form-label">Name</label>
-                                    <input class="form-control" id="userName" type="text" value="{{ $user->name }}" readonly>
+                                    <input class="form-control" id="userName" type="text" value="{{ $user->name }}"
+                                        readonly>
                                 </div>
                                 <div class="col-sm-6">
                                     <label class="form-label">Role</label>
@@ -70,7 +71,7 @@
                                                 <button class="btn btn-sm btn-link p-0 text-white" data-bs-toggle="modal"
                                                     data-bs-target="#kycModal" title="Download KYC"
                                                     style="width:18px; height:18px;" data-user-id="{{ $user->id }}">
-                                                    <i data-feather="download" style="cursor:pointer;"></i>
+                                                    <i class="fa fa-download fa-2x" style="cursor:pointer;"></i>
                                                 </button>
                                                 <span class="d-block text-light small mt-2">Download KYC</span>
                                             </li>
@@ -78,7 +79,7 @@
                                                 <button class="btn btn-sm btn-link p-0 text-white" data-bs-toggle="modal"
                                                     data-bs-target="#cnicModal" data-user-id="{{ $user->id }}"
                                                     title="Download CNIC" style="width:18px; height:18px;">
-                                                    <i data-feather="download" style="cursor:pointer;"></i>
+                                                    <i class="fa fa-download fa-2x" style="cursor:pointer;"></i>
                                                 </button>
                                                 <span class="d-block text-light small mt-2">Download CNIC</span>
                                             </li>
@@ -125,7 +126,8 @@
                 </div>
                 <div class="modal-body">
                     <p>Please enter your admin password to download User Docs:</p>
-                    <input type="password" id="adminPasswordKYC" class="form-control" placeholder="Enter admin password">
+                    <input type="password" id="adminPasswordKYC" class="form-control"
+                        placeholder="Enter admin password">
                     <div id="passwordErrorKYC" class="text-danger mt-2 d-none">Incorrect password!</div>
                 </div>
                 <div class="modal-footer">
@@ -136,145 +138,147 @@
             </div>
         </div>
     </div>
+
+    <script src="{{ url('assets/js/jquery.min.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // feather.replace();
+
+            let selectedUserId = null;
+            let selectedDocType = null;
+
+            const kycModal = document.getElementById('kycModal');
+            kycModal.addEventListener('show.bs.modal', function(event) {
+                const buttonKYC = event.relatedTarget;
+                selectedUserId = buttonKYC.getAttribute('data-user-id');
+            });
+
+            window.verifyAndDownloadKYC = function() {
+                const passwordKYC = document.getElementById('adminPasswordKYC').value;
+
+                fetch('/verify-admin-password', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        },
+                        body: JSON.stringify({
+                            password: passwordKYC
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            document.getElementById('passwordErrorKYC').classList.add('d-none');
+                            const name = document.getElementById('userName').value;
+
+                            const modalKYC = bootstrap.Modal.getInstance(document.getElementById(
+                                'kycModal'));
+                            modalKYC.hide();
+
+                            document.getElementById('adminPasswordKYC').value = '';
+
+
+                            fetch(`/get-user-file/${selectedUserId}`)
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.files && data.files.length) {
+                                        data.files.forEach((file) => {
+                                            const link = document.createElement('a');
+                                            link.href = file.url;
+
+                                            const docType = file.type;
+                                            const extension = file.url.split('.').pop().split(
+                                                /\#|\?/)[0]; // e.g., jpg, png, pdf
+                                            const filename = `${docType}_${name}.${extension}`;
+
+                                            link.download = filename;
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            document.body.removeChild(link);
+                                        });
+                                    } else {
+                                        Swal.fire({
+                                            icon: 'warning',
+                                            title: 'No Files Found',
+                                            text: 'The requested documents are not available.',
+                                        });
+                                    }
+                                });
+
+                        } else {
+                            document.getElementById('passwordErrorKYC').classList.remove('d-none');
+                        }
+                    });
+            };
+            const cnicModal = document.getElementById('cnicModal');
+            cnicModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                selectedUserId = button.getAttribute('data-user-id');
+            });
+
+            window.verifyAndDownload = function() {
+                const password = document.getElementById('adminPassword').value;
+
+                fetch('/verify-admin-password', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        },
+                        body: JSON.stringify({
+                            password
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            document.getElementById('passwordError').classList.add('d-none');
+                            const name = document.getElementById('userName').value;
+                            document.getElementById('adminPassword').value = '';
+
+                            const modal = bootstrap.Modal.getInstance(document.getElementById('cnicModal'));
+                            if (document.activeElement) {
+                                document.activeElement.blur();
+                            }
+                            modal.hide();
+
+
+
+                            fetch(`/get-cnic-file/${selectedUserId}`)
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.files && data.files.length) {
+                                        data.files.forEach((file) => {
+                                            const link = document.createElement('a');
+                                            link.href = file.url;
+
+                                            const docType = file.type;
+                                            const extension = file.url.split('.').pop().split(
+                                                /\#|\?/)[0]; // e.g., jpg, png, pdf
+                                            const filename = `${docType}_${name}.${extension}`;
+
+                                            link.download = filename;
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            document.body.removeChild(link);
+                                        });
+                                    } else {
+                                        Swal.fire({
+                                            icon: 'warning',
+                                            title: 'No CNIC Files Found',
+                                            text: 'The requested CNIC front/back documents are not available.',
+                                        });
+                                    }
+                                });
+
+                        } else {
+                            document.getElementById('passwordError').classList.remove('d-none');
+                        }
+                    });
+            };
+        });
+    </script>
 @endsection
-
-<script src="{{ url('assets/js/jquery.min.js') }}"></script>
-<script src="{{ url('assets/js/bootstrap.bundle.min.js') }}"></script>
-<script src="{{ url('assets/js/feather.min.js') }}"></script>
-<script src="{{ url('assets/js/script.js') }}"></script>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        feather.replace();
-
-        let selectedUserId = null;
-        let selectedDocType = null;
-
-        const kycModal = document.getElementById('kycModal');
-        kycModal.addEventListener('show.bs.modal', function (event) {
-            const buttonKYC = event.relatedTarget;
-            selectedUserId = buttonKYC.getAttribute('data-user-id');
-        });
-
-        window.verifyAndDownloadKYC = function () {
-            const passwordKYC = document.getElementById('adminPasswordKYC').value;
-
-            fetch('/verify-admin-password', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                },
-                body: JSON.stringify({
-                    password: passwordKYC
-                })
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        document.getElementById('passwordErrorKYC').classList.add('d-none');
-                        const name = document.getElementById('userName').value;
-
-                        const modalKYC = bootstrap.Modal.getInstance(document.getElementById(
-                            'kycModal'));
-                        modalKYC.hide();
-
-                        document.getElementById('adminPasswordKYC').value = '';
-
-
-                        fetch(`/get-user-file/${selectedUserId}`)
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data.files && data.files.length) {
-                                    data.files.forEach((file) => {
-                                        const link = document.createElement('a');
-                                        link.href = file.url;
-
-                                        const docType = file.type;
-                                        const extension = file.url.split('.').pop().split(/\#|\?/)[0]; // e.g., jpg, png, pdf
-                                        const filename = `${docType}_${name}.${extension}`;
-
-                                        link.download = filename;
-                                        document.body.appendChild(link);
-                                        link.click();
-                                        document.body.removeChild(link);
-                                    });
-                                } else {
-                                    Swal.fire({
-                                        icon: 'warning',
-                                        title: 'No Files Found',
-                                        text: 'The requested documents are not available.',
-                                    });
-                                }
-                            });
-
-                    } else {
-                        document.getElementById('passwordErrorKYC').classList.remove('d-none');
-                    }
-                });
-        };
-        const cnicModal = document.getElementById('cnicModal');
-        cnicModal.addEventListener('show.bs.modal', function (event) {
-            const button = event.relatedTarget;
-            selectedUserId = button.getAttribute('data-user-id');
-        });
-
-        window.verifyAndDownload = function () {
-            const password = document.getElementById('adminPassword').value;
-
-            fetch('/verify-admin-password', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                },
-                body: JSON.stringify({
-                    password
-                })
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        document.getElementById('passwordError').classList.add('d-none');
-                        const name = document.getElementById('userName').value;
-
-                        const modal = bootstrap.Modal.getInstance(document.getElementById('cnicModal'));
-                        modal.hide();
-
-                        document.getElementById('adminPassword').value = '';
-
-
-                        fetch(`/get-cnic-file/${selectedUserId}`)
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data.files && data.files.length) {
-                                    data.files.forEach((file) => {
-                                        const link = document.createElement('a');
-                                        link.href = file.url;
-
-                                        const docType = file.type;
-                                        const extension = file.url.split('.').pop().split(/\#|\?/)[0]; // e.g., jpg, png, pdf
-                                        const filename = `${docType}_${name}.${extension}`;
-
-                                        link.download = filename;
-                                        document.body.appendChild(link);
-                                        link.click();
-                                        document.body.removeChild(link);
-                                    });
-                                } else {
-                                    Swal.fire({
-                                        icon: 'warning',
-                                        title: 'No CNIC Files Found',
-                                        text: 'The requested CNIC front/back documents are not available.',
-                                    });
-                                }
-                            });
-
-                    } else {
-                        document.getElementById('passwordError').classList.remove('d-none');
-                    }
-                });
-        };
-    });
-</script>

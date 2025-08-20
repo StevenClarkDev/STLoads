@@ -58,4 +58,9 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    public function carrierPreference()
+    {
+        return $this->hasOne(CarrierPreference::class, 'user_id');
+    }
 }

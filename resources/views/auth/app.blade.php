@@ -11,6 +11,9 @@
         content="admin template, Cuba admin template, dashboard template, flat admin template, responsive admin template, web app">
     <meta name="author" content="pixelstrap">
     <link rel="icon" href="{{ url('assets/images/favicon.png') }}" type="image/x-icon">
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/flatpickr/flatpickr.min.css') }}">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+
     <link rel="shortcut icon" href="{{ url('assets/images/favicon.png') }}" type="image/x-icon">
     <title>LoadBoard - Signup</title>
     <!-- Google font-->
@@ -27,6 +30,7 @@
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/flag-icon.css') }}">
     <!-- Feather icon-->
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/feather-icon.css') }}">
+
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
     <!-- Plugins css start-->
     <!-- Plugins css Ends-->
@@ -46,7 +50,24 @@
             @yield('content')
         </div>
     </div>
+    <!-- latest jquery-->
+    <script src="{{ url('assets/js/jquery.min.js') }}"></script>
+    <!-- Bootstrap js-->
+    <script src="{{ url('assets/js/bootstrap/bootstrap.bundle.min.js') }}"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="{{ url('assets/js/flat-pickr/flatpickr.js') }}"></script>
+    <script src="{{ url('assets/js/flat-pickr/custom-flatpickr.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script>
+        $(document).ready(function() {
+
+            $('.select2').select2({
+                placeholder: 'Please Select',
+                allowClear: true,
+                width: '100%'
+            });
+        });
+    </script>
 
 
     <script>

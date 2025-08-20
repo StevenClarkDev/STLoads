@@ -14,6 +14,9 @@ use App\Mail\OtpMail;
 use App\Models\KycDocuments;
 use App\Models\UserDetail;
 use Carbon\Carbon;
+use App\Models\ShipperDetail;
+use Validator;
+use Illuminate\Support\Facades\Storage;
 
 
 class AuthController extends Controller
@@ -152,7 +155,12 @@ class AuthController extends Controller
         $id  = request()->query('id');
         $role_name = Role::find($id)->name ?? 'User';
 
+        // if($id == 2){
+        //     return view('auth.shipper_register', compact('id', 'role_name')); // create this blade file if not done
+        // }else{
         return view('auth.register', compact('id', 'role_name')); // create this blade file if not done
+        // }
+
     }
 
     public function register(Request $request, LogsController $logsController)
@@ -178,7 +186,7 @@ class AuthController extends Controller
 
             $logsController->createLog(__METHOD__, 'success', 'User Registered', null, null);
 
-            return redirect()->route('login')->with('success', 'Account created successfully. Please login.');
+            return redirect()->route('normal-login')->with('success', 'Account created successfully. Please login.');
         } catch (\Exception $e) {
             $logsController->createLog(__METHOD__, 'error', 'Registration failed: ' . $e->getMessage(), null, null);
             return redirect()->back()->withErrors(['error' => 'Something went wrong during registration.']);
@@ -283,6 +291,9 @@ class AuthController extends Controller
                 'dob' => $request->dob,
                 'gender' => $request->gender,
                 'cnic_no' => $request->cnic_no,
+                'phone_no' => $request->phone_no,
+                'ucr_hcc_no' => $request->ucr_hcc_no,
+                'mc_cbsa_usdot_no' => $request->mc_cbsa_usdot_no,
                 'address' => $request->address,
                 'otp' => $otp,
                 'otp_expires_at' => $otpExpiry,
@@ -497,7 +508,7 @@ class AuthController extends Controller
                 json_encode(['user' => $user])
             );
 
-            return redirect()->route('login', ['id' => $user->roles()->first()->id])
+            return redirect()->route('normal-login', ['id' => $user->roles()->first()->id])
                 ->with('success', 'Password updated successfully. Please login.');
         } catch (\Exception $e) {
             $logsController->createLog(
@@ -515,8 +526,11 @@ class AuthController extends Controller
     public function onboardingForm(User $user)
     {
         $role = $user->roles()->first();
-        // Return the onboarding form view
-        return view('users.onboarding_form', compact('role', 'user'));
+        if ($role->id == 2) {
+            return view('users.shipper_onboarding_form', compact('role', 'user'));
+        } else {
+            return view('users.onboarding_form', compact('role', 'user'));
+        }
     }
     public function onboardingFormSave(User $user, Request $request)
     {
@@ -607,5 +621,114 @@ class AuthController extends Controller
         $user->save();
 
         return redirect()->route('role')->with('success', 'Onboarding submitted. Awaiting admin approval.');
+    }
+
+    public function onboardingFormSaveForShipper(User $user, Request $request)
+    {
+        // Step 1: Validation
+        $request->validate([
+            'company_name' => 'required|string|max:255',
+            'company_address' => 'required|string|max:255',
+            'business_type' => 'required|string|max:255',
+            'website' => 'nullable',
+            'cnic_front' => 'required|file|mimes:jpeg,jpg,png,pdf',
+            'cnic_back' => 'required|file|mimes:jpeg,jpg,png,pdf',
+            'shipments_per_week' => 'required|numeric',
+            'volume_or_weight_per_shipment' => 'required|string|max:255',
+            'types_of_goods_being_shipped' => 'required|array',
+            'packaging_type' => 'required|array',
+            'types_of_delivery_services_needed' => 'required|array',
+            'preferred_pickup_days' => 'required|array',
+            'preferred_pickup_from_time' => 'required',
+            'preferred_pickup_to_time' => 'required',
+            'logistics_provider' => 'nullable|string',
+            'preferred_payment_method' => 'required|array',
+            'billing_contact_name' => 'required|string|max:255',
+            'billing_email_address' => 'required|email|max:255',
+            'tax_id' => 'required|string|max:255',
+            'invoice_frequency' => 'required|string',
+            'shipment_tracking' => 'required|string',
+            'pickup_materials_supplied' => 'required|string',
+            'demo_or_onboarding_call' => 'required|string',
+            'preferred_communication_method' => 'required|array',
+            'special_notes' => 'nullable|string|max:1000',
+        ]);
+
+        // Begin a transaction to ensure data consistency
+        DB::beginTransaction();
+
+        try {
+            // Step 2: Handle file uploads
+            $documents = [];
+            if ($request->hasFile('cnic_front') || $request->hasFile('cnic_back')) {
+                $documents['cnic_front'] = $request->file('cnic_front');
+                $documents['cnic_back'] = $request->file('cnic_back');
+                foreach ($documents as $key => $file) {
+                    if ($file) {
+                        $path = $file->store("kyc_documents/{$user->id}", 'public');
+
+                        // Create a record for each uploaded file
+                        KycDocuments::create([
+                            'user_id' => $user->id,
+                            'document_type' => $key,
+                            'file_path' => $path,
+                        ]);
+                    }
+                }
+            }
+
+            // Step 3: Create or update the UserDetail
+            $user_detail = UserDetail::create([
+                'user_id' => $user->id,
+                'company_name' => $request->input('company_name'),
+                'company_address' => $request->input('company_address'),
+            ]);
+
+            // Step 4: Store the onboarding data in ShipperDetail
+            $onboarding = new ShipperDetail();
+            $onboarding->company_name = $request->input('company_name');
+            $onboarding->company_address = $request->input('company_address');
+            $onboarding->business_type = $request->input('business_type');
+            $onboarding->website = $request->input('website');
+            $onboarding->shipments_per_week = $request->input('shipments_per_week');
+            $onboarding->volume_or_weight_per_shipment = $request->input('volume_or_weight_per_shipment');
+            $onboarding->types_of_goods_being_shipped = json_encode($request->input('types_of_goods_being_shipped'));
+            $onboarding->packaging_type = json_encode($request->input('packaging_type'));
+            $onboarding->types_of_delivery_services_needed = json_encode($request->input('types_of_delivery_services_needed'));
+            $onboarding->preferred_pickup_days = json_encode($request->input('preferred_pickup_days'));
+            $onboarding->preferred_pickup_from_time = $request->input('preferred_pickup_from_time');
+            $onboarding->preferred_pickup_to_time = $request->input('preferred_pickup_to_time');
+            $onboarding->logistics_provider = $request->input('logistics_provider');
+            $onboarding->preferred_payment_method = json_encode($request->input('preferred_payment_method'));
+            $onboarding->billing_contact_name = $request->input('billing_contact_name');
+            $onboarding->billing_email_address = $request->input('billing_email_address');
+            $onboarding->tax_id = $request->input('tax_id');
+            $onboarding->invoice_frequency = $request->input('invoice_frequency');
+            $onboarding->shipment_tracking = $request->input('shipment_tracking');
+            $onboarding->pickup_materials_supplied = $request->input('pickup_materials_supplied');
+            $onboarding->demo_or_onboarding_call = $request->input('demo_or_onboarding_call');
+            $onboarding->preferred_communication_method = json_encode($request->input('preferred_communication_method'));
+            $onboarding->special_notes = $request->input('special_notes');
+            $onboarding->other_goods = $request->input('other_goods');
+            $onboarding->other_payment = $request->input('other_payment');
+            $onboarding->user_id = $user->id; // assuming you are saving this for a specific user
+            $onboarding->save();
+
+            // Step 5: Update the user's status
+            $user->status = 3;
+            $user->save();
+
+            // Commit the transaction
+            DB::commit();
+
+            // Redirect with success message
+            return redirect()->route('role')->with('success', 'Onboarding submitted. Awaiting admin approval.');
+        } catch (\Exception $e) {
+            // If something goes wrong, rollback the transaction
+            DB::rollBack();
+
+            // Return error message
+            return redirect()->back()->with('error', 'There was an error while saving the onboarding data. ' . $e->getMessage());
+        }
     }
 }
