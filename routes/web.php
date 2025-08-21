@@ -13,6 +13,11 @@ use App\Http\Controllers\EquipmentsController;
 use App\Http\Controllers\CommodityTypesController;
 use App\Http\Controllers\LocationsController;
 use App\Http\Controllers\CitiesController;
+use App\Http\Controllers\BidChatController;
+use App\Http\Controllers\ConversationController;
+use App\Events\TestPing;
+use Illuminate\Support\Facades\Auth;
+use App\Models\{Conversation};
 
 /* ───────────────  GUEST‑ONLY ROUTES  ─────────────── */
 
@@ -74,16 +79,41 @@ Route::middleware('auth')->group(function () {
     Route::post('/loads/update/{load}', [LoadController::class, 'update'])->name('loads.update');
     Route::post('/loads/delete/{load}', [LoadController::class, 'delete'])->name('loads.delete');
     Route::get('/loads/view/{load}', [LoadController::class, 'view'])->name('loads.view');
-    Route::get('/loads/bid/{load}', [LoadController::class, 'bid'])->name('loads.bid');
+    // Route::get('/loads/bid/{load}', [LoadController::class, 'bid'])->name('loads.bid');
 
     // Chat
-    Route::get('/chat/{load}', [ChatController::class, 'index'])->name('chat.load');
-    Route::post('/chat/send', [ChatController::class, 'sendMessage'])->name('chat.send');
-    Route::get('/chat/load-messages/{load}', [ChatController::class, 'loadMessages'])->name('chat.load-messages');
-    Route::get('/chat', [ChatController::class, 'index'])->name('chat');
+    // Route::get('/chat/{load}', [ChatController::class, 'index'])->name('chat.load');
+    // Route::post('/chat/send', [ChatController::class, 'sendMessage'])->name('chat.send');
+    // Route::get('/chat/load-messages/{load}', [ChatController::class, 'loadMessages'])->name('chat.load-messages');
+    // Route::get('/chat', [ChatController::class, 'index'])->name('chat');
+
+    Route::post('/loads/{load}/bid', [BidChatController::class, 'submit'])->name('loads.bid');
+    Route::get('/chat', function () {
+        $userId = Auth::id();
+
+        $conversations = Conversation::query()
+            ->where(fn($q) => $q->where('carrier_id', $userId)->orWhere('shipper_id', $userId))
+            ->latest('updated_at')
+            ->get();
+
+        if ($conversations->isNotEmpty()) {
+            // Go to most recent convo
+            return redirect()->route('chat.room', $conversations->first());
+        }
+
+        // No conversations yet → render empty state
+        return view('chat.index', [
+            'roomId'        => null,
+            'messages'      => collect(),   // empty collection
+            'conversation'  => null,
+            'conversations' => $conversations,
+        ]);
+    })->name('chat.index');
+    Route::get('/chat/{conversation}', [ConversationController::class, 'show'])->name('chat.room');
+    Route::post('/chat/{conversation}', [ConversationController::class, 'store']);
 
     Route::get('/api/countries/{country}/cities', [CitiesController::class, 'byCountry'])
-    ->name('api.cities.by-country');
+        ->name('api.cities.by-country');
 
     Route::post('/logout',   [AuthController::class, 'logout'])->name('logout');
 });

@@ -200,23 +200,24 @@
 </style>
 
 <script src="{{ url('assets/js/jquery.min.js') }}"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
 <script>
   $(function () {
-    // Init flatpickr (optionally scoped to a container)
-    function initDatePickers(scope) {
-      const ctx = scope || document;
-      $(ctx).find(".datetimepicker").each(function () {
-        flatpickr(this, {
-          enableTime: true,
-          dateFormat: "Y-m-d H:i",
-        });
+    // ----- Server-rendered snippets (NO Blade inside JS strings below) -----
+    const locationOptions = `{!! collect($locations)->map(function($l){
+        $label = trim(($l->name ?? '') . ' ' . ($l->city->name ?? '') . ' ' . ($l->country->name ?? ''));
+        return '<option value="'.$l->id.'">'.e($label).'</option>';
+      })->implode('') !!}`;
+
+    const canEditLegs = {{ $roleId == 5 ? 'true' : 'false' }};
+
+    function renumberRows() {
+      $('#load_legs-table tbody tr').each(function (i) {
+        $(this).find('input.leg-id').val(i + 1);
       });
     }
 
-    // Table row HTML (Blade will render the @foreach options server-side)
+    // ----- Row template (pure JS; inject prebuilt options) -----
     function rowTemplate() {
       return `
         <tr>
@@ -225,33 +226,26 @@
           <td>
             <select name="pickup_location[]" class="form-select" required>
               <option value="">Select...</option>
-              @foreach ($locations as $location)
-                <option value="{{ $location->id }}">
-                  {{ $location->name }} {{ $location->city->name }} {{ $location->country->name }}
-                </option>
-              @endforeach
+              ${locationOptions}
             </select>
           </td>
 
           <td>
             <select name="delivery_location[]" class="form-select" required>
               <option value="">Select...</option>
-              @foreach ($locations as $location)
-                <option value="{{ $location->id }}">
-                  {{ $location->name }} {{ $location->city->name }} {{ $location->country->name }}
-                </option>
-              @endforeach
+              ${locationOptions}
             </select>
           </td>
 
           <td>
             <div class="input-group flatpicker-calender">
-              <input class="form-control datetimepicker" name="pickup_date[]" type="text" required>
+              <input class="form-control datepicker" name="pickup_date[]" type="text" required>
             </div>
           </td>
+
           <td>
             <div class="input-group flatpicker-calender">
-              <input class="form-control datetimepicker" name="delivery_date[]" type="text" required>
+              <input class="form-control datepicker" name="delivery_date[]" type="date" required>
             </div>
           </td>
 
@@ -264,44 +258,32 @@
 
           <td><input type="number" min="0" name="price[]" class="form-control" required /></td>
 
-          @if ($roleId == 5)
-          <td>
-            <button type="button" class="btn-remove-icon remove-row-load_legs" title="Remove">
-              <i class="bi bi-trash"></i>
-            </button>
-          </td>
-          @endif
+          ${canEditLegs ? `
+            <td>
+              <button type="button" class="btn-remove-icon remove-row-load_legs" title="Remove">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          ` : ``}
         </tr>
       `;
     }
 
-    // Re-number S.No column
-    function renumberRows() {
-      $('#load_legs-table tbody tr').each(function (i) {
-        $(this).find('input.leg-id').val(i + 1);
-      });
-    }
-
-    // Add a new row
     function addRow() {
       const $row = $(rowTemplate());
       $('#load_legs-table tbody').append($row);
-      initDatePickers($row); // init pickers only in the new row
       renumberRows();
     }
 
-    // Handlers
-    $('#add-load_legs-row').on('click', function () {
-      addRow();
-    });
+    // ----- Events -----
+    $('#add-load_legs-row').on('click', addRow);
 
     $('#load_legs-table').on('click', '.remove-row-load_legs', function () {
       $(this).closest('tr').remove();
       renumberRows();
     });
 
-    // Initial state
+    // ----- Init -----
     addRow();
   });
 </script>
-

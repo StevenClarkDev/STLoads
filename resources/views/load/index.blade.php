@@ -184,44 +184,57 @@
                                                                     style="max-width: 600px;">
                                                                     <div class="modal-content p-4">
                                                                         <div class="modal-header border-0">
-                                                                            <h5 class="modal-title">Submit Your Bid
-                                                                            </h5>
+                                                                            <h5 class="modal-title">Submit Your Bid</h5>
                                                                             <button type="button" class="btn-close"
                                                                                 data-bs-dismiss="modal"
                                                                                 aria-label="Close"></button>
                                                                         </div>
 
-                                                                        <div class="modal-body">
-                                                                            <p class="text-muted mb-4">Please
-                                                                                review
-                                                                                the client's offer and submit your
-                                                                                bid
-                                                                                below.</p>
-
-                                                                            <div class="row my-3">
-                                                                                <div class="col-md-6">
-                                                                                    <label class="form-label">Client
-                                                                                        Price</label>
-                                                                                    <input type="text"
-                                                                                        class="form-control"
-                                                                                        value="${{ number_format($load_leg->price, 0) }}"
-                                                                                        readonly>
+                                                                        <form method="POST"
+                                                                            action="{{ route('loads.bid', $load_leg->id) }}">
+                                                                            @csrf
+                                                                            <div class="modal-body">
+                                                                                <p class="text-muted mb-4">Please review
+                                                                                    the client's offer and submit your bid
+                                                                                    below.</p>
+                                                                                <div class="row my-3">
+                                                                                    <div class="col-md-6">
+                                                                                        <label class="form-label">Client
+                                                                                            Price</label>
+                                                                                        <input class="form-control"
+                                                                                            value="${{ number_format($load_leg->price, 0) }}"
+                                                                                            readonly>
+                                                                                    </div>
+                                                                                    <div class="col-md-6">
+                                                                                        <label class="form-label">Your
+                                                                                            Bid</label>
+                                                                                        <input type="number"
+                                                                                            min="1" step="1"
+                                                                                            name="amount"
+                                                                                            class="form-control"
+                                                                                            placeholder="Enter your bid"
+                                                                                            required>
+                                                                                    </div>
                                                                                 </div>
-                                                                                <div class="col-md-6">
-                                                                                    <label class="form-label">Your
-                                                                                        Bid</label>
-                                                                                    <input type="text"
-                                                                                        class="form-control"
-                                                                                        placeholder="Enter your bid">
+                                                                                <label class="form-label mt-2">Note
+                                                                                    (optional)
+                                                                                </label>
+                                                                                <input type="text" name="note"
+                                                                                    class="form-control"
+                                                                                    placeholder="Any additional info">
+                                                                            </div>
+                                                                            @if ($roleId == 3)
+                                                                                <div
+                                                                                    class="modal-footer border-0 d-flex justify-content-end gap-2">
+                                                                                    <button type="button"
+                                                                                        class="btn btn-outline-secondary"
+                                                                                        data-bs-dismiss="modal">Cancel</button>
+                                                                                    <button type="submit"
+                                                                                        class="btn btn-primary">Submit Bid
+                                                                                        &amp; Chat</button>
                                                                                 </div>
-                                                                            </div>
-
-                                                                            <div
-                                                                                class="d-flex justify-content-end gap-2 mt-4">
-                                                                                <a href="{{ route('chat') }}"
-                                                                                    class="btn btn-primary">Contact</a>
-                                                                            </div>
-                                                                        </div>
+                                                                            @endif
+                                                                        </form>
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -322,59 +335,72 @@
                                                                     <button
                                                                         class="btn btn-outline-primary btn-sm fix-width"
                                                                         data-bs-toggle="modal"
-                                                                        data-bs-target="#bidModal-{{ $i }}">
+                                                                        data-bs-target="#bidrecModal-{{ $i }}">
                                                                         ${{ number_format($load_leg->price, 0) }}
                                                                     </button>
                                                                 @endif
 
                                                                 <!-- Bid Modal -->
-                                                                <div class="modal fade" id="bidModal-{{ $i }}"
-                                                                    tabindex="-1" aria-hidden="true">
-                                                                    <div class="modal-dialog modal-dialog-centered"
-                                                                        style="max-width: 600px;">
-                                                                        <div class="modal-content p-4">
-                                                                            <div class="modal-header border-0">
-                                                                                <h5 class="modal-title">Submit Your Bid
-                                                                                </h5>
-                                                                                <button type="button" class="btn-close"
-                                                                                    data-bs-dismiss="modal"
-                                                                                    aria-label="Close"></button>
-                                                                            </div>
+                                                                <div class="modal fade" id="bidrecModal-{{ $i }}"
+                                                                tabindex="-1" aria-hidden="true">
+                                                                <div class="modal-dialog modal-dialog-centered"
+                                                                    style="max-width: 600px;">
+                                                                    <div class="modal-content p-4">
+                                                                        <div class="modal-header border-0">
+                                                                            <h5 class="modal-title">Submit Your Bid</h5>
+                                                                            <button type="button" class="btn-close"
+                                                                                data-bs-dismiss="modal"
+                                                                                aria-label="Close"></button>
+                                                                        </div>
 
+                                                                        <form method="POST"
+                                                                            action="{{ route('loads.bid', $load_leg->id) }}">
+                                                                            @csrf
                                                                             <div class="modal-body">
-                                                                                <p class="text-muted mb-4">Please
-                                                                                    review
-                                                                                    the client's offer and submit your
-                                                                                    bid
+                                                                                <p class="text-muted mb-4">Please review
+                                                                                    the client's offer and submit your bid
                                                                                     below.</p>
-
                                                                                 <div class="row my-3">
                                                                                     <div class="col-md-6">
                                                                                         <label class="form-label">Client
                                                                                             Price</label>
-                                                                                        <input type="text"
-                                                                                            class="form-control"
+                                                                                        <input class="form-control"
                                                                                             value="${{ number_format($load_leg->price, 0) }}"
                                                                                             readonly>
                                                                                     </div>
                                                                                     <div class="col-md-6">
                                                                                         <label class="form-label">Your
                                                                                             Bid</label>
-                                                                                        <input type="text"
+                                                                                        <input type="number"
+                                                                                            min="1" step="1"
+                                                                                            name="amount"
                                                                                             class="form-control"
-                                                                                            placeholder="Enter your bid">
+                                                                                            placeholder="Enter your bid"
+                                                                                            required>
                                                                                     </div>
                                                                                 </div>
-
-                                                                                <div
-                                                                                    class="d-flex justify-content-end gap-2 mt-4">
-                                                                                    <a href="{{ route('chat') }}"
-                                                                                        class="btn btn-primary">Contact</a>
-                                                                                </div>
+                                                                                <label class="form-label mt-2">Note
+                                                                                    (optional)
+                                                                                </label>
+                                                                                <input type="text" name="note"
+                                                                                    class="form-control"
+                                                                                    placeholder="Any additional info">
                                                                             </div>
-                                                                        </div>
+                                                                            @if ($roleId == 3)
+                                                                                <div
+                                                                                    class="modal-footer border-0 d-flex justify-content-end gap-2">
+                                                                                    <button type="button"
+                                                                                        class="btn btn-outline-secondary"
+                                                                                        data-bs-dismiss="modal">Cancel</button>
+                                                                                    <button type="submit"
+                                                                                        class="btn btn-primary">Submit Bid
+                                                                                        &amp; Chat</button>
+                                                                                </div>
+                                                                            @endif
+                                                                        </form>
                                                                     </div>
                                                                 </div>
+                                                            </div>
                                                             </td>
                                                             <td>
                                                                 <span
@@ -767,13 +793,13 @@
         }
 
         /* #resetPrefsBtn {
-            height: 30px;
-            width: 30px;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        } */
+                    height: 30px;
+                    width: 30px;
+                    padding: 0;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                } */
 
         /* Pagination styles */
         .pagination {

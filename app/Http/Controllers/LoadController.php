@@ -120,7 +120,7 @@ class LoadController extends Controller
 
             $logsController->createLog(__METHOD__, 'success', 'User is attempting to index load in', null, null);
             // dd('here');
-            return view('load.index', compact('load_legs', 'roleId', 'loadCount', 'equipments', 'load_types', 'commodity_types', 'locations', 'countries', 'cities', 'carrierPreference', 'recommendedLoadLegs', 'recommendedLoadLegsCount'));
+            return view('load.index', compact('load_legs', 'roleId', 'loadCount', 'equipments', 'load_types', 'commodity_types', 'locations', 'countries', 'cities', 'carrierPreference', 'recommendedLoadLegs', 'recommendedLoadLegsCount', 'user'));
         } catch (\Exception $e) {
             // Handle the exception, log it, or return an error response
             $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
