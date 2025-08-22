@@ -23,7 +23,7 @@
             <div class="col-sm-12">
                 <div class="card">
                     <div class="card-body p-0">
-                        <div class="card mx-3">
+                        <div class="mx-3">
                             <div class="card-header pb-0 card-no-border">
                                 <div class="d-flex justify-content-between align-items-center flex-wrap">
                                     <div class="mb-2">
@@ -263,7 +263,7 @@
                                                     <th>Weight</th>
                                                     <th>Pickup Date</th>
                                                     <th>Delivery Date</th>
-                                                    <th>Score</th>
+                                                    <!-- <th>Score</th> -->
                                                     <th>Match Info</th>
                                                     <th>Status</th>
                                                     <th>Bid Status</th>
@@ -297,7 +297,7 @@
                                                             </td>
                                                             <td>{{ \Carbon\Carbon::parse($load_leg->delivery_date)->format('jS M, Y') }}
                                                             </td>
-                                                            <td class="text-center">{{ $load_leg->score }}</td>
+                                                            <!-- <td class="text-center">{{ $load_leg->score }}</td> -->
                                                             <!-- <td>
                                                                 <button class="btn btn-link toggle-debug"
                                                                     data-bs-toggle="collapse"
@@ -330,12 +330,13 @@
                                                                     data-debug='@json($load_leg->debug_info)'
                                                                     data-bs-toggle="modal"
                                                                     data-bs-target="#aiDebugModal">
-                                                                    <i class="bi bi-search"></i> View Match Info
+                                                                    {{ $load_leg->score }}
+                                                                    <i class="bi bi-eye"></i> 
                                                                 </button>
                                                             </td>
                                                             <td>
                                                                 <span
-                                                                    class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
+                                                                    class="badge rounded-pill bg-light-info p-2 text-capitalize text-primary">{{ $load_leg->status_master?->name }}</span>
                                                             </td>
                                                             <td>
                                                                 @if ($load_leg->bid_status == 'Fixed')
@@ -1079,7 +1080,7 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script> -->
 
 
-    <style>
+    <!-- <style>
         .btn-outline-light.active {
             background-color: #4d6b8a !important;
             color: white !important;
@@ -1150,5 +1151,5 @@
         .pagination-circle .page-item.disabled .page-link {
             color: #6c757d;
         }
-    </style>
+    </style> -->
 @endsection

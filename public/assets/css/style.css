@@ -50817,6 +50817,9 @@ html[dir=rtl] body.dark-only .page-wrapper .page-body-wrapper .page-body .card:n
   background-position: center;
 }
 
+.text-primary {
+  color: var(--theme-deafult) !important;
+}
 /**=====================
   5.10 Additonal CSS Ends
 ==========================**/
