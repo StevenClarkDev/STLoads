@@ -17,6 +17,7 @@ use App\Models\Country;
 use App\Models\CarrierPreference;
 use App\Models\City;
 use Illuminate\Support\Facades\Validator;
+use App\Support\LoadNumbers;
 
 class LoadController extends Controller
 {
@@ -288,10 +289,25 @@ class LoadController extends Controller
 
             $load->save();
 
+            $user_id = Auth::user()->id;
+            $user = User::find($user_id);
+            $role     = $user->roles()->first();        // requires HasRoles
+            $roleId   = $role?->id;
+            $loadNumber = LoadNumbers::generateLoadNumber($roleId);
+
+            // Update load with number
+            $load->load_number = $loadNumber;
+            $load->save();
+
             $rowCount = count($request->pickup_location);
+            $legNo = 1;
+
             for ($i = 0; $i < $rowCount; $i++) {
                 $loadLeg = new LoadLeg();
                 $loadLeg->load_id               = $load->id;
+                $loadLeg->leg_no                = $legNo; // 1..n
+                $loadLeg->leg_code              = LoadNumbers::legCode($loadNumber, $legNo);
+
                 $loadLeg->pickup_location_id    = $request->pickup_location[$i];
                 $loadLeg->delivery_location_id  = $request->delivery_location[$i];
                 $loadLeg->pickup_date           = $request->pickup_date[$i];
@@ -299,7 +315,11 @@ class LoadController extends Controller
                 $loadLeg->bid_status            = $request->bid_status[$i];
                 $loadLeg->price                 = $request->price[$i];
                 $loadLeg->save();
+                $legNo++;
             }
+
+            $load->leg_count = $rowCount;
+            $load->save();
 
             DB::commit();
 

@@ -16939,7 +16939,7 @@ p.data-attributes svg {
 }
 
 .left-sidebar-wrapper .advance-options ul {
-  display: flex;
+  /* display: flex; */
   align-items: center;
   flex-wrap: wrap;
   padding: 0;

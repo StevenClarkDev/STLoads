@@ -132,7 +132,7 @@
                                             <tbody>
                                                 @foreach ($load_legs as $i => $load_leg)
                                                     <tr>
-                                                        <td>{{ 'L-' . $load_leg->id }}</td>
+                                                        <td>{{ $load_leg->leg_code }}</td>
                                                         <td>
                                                             <span class="badge rounded-circle p-2 badge-primary"
                                                                 data-bs-toggle="tooltip" data-bs-placement="top"
@@ -153,7 +153,7 @@
                                                         </td>
                                                         <td>
                                                             <span
-                                                                class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status?->name }}</span>
+                                                                class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
                                                         </td>
                                                         <td>
                                                             @if ($load_leg->bid_status == 'Fixed')
@@ -275,7 +275,7 @@
                                                 @if ($recommendedLoadLegs != null)
                                                     @foreach ($recommendedLoadLegs as $i => $load_leg)
                                                         <tr>
-                                                            <td>{{ 'L-' . $load_leg->id }}</td>
+                                                            <td>{{ $load_leg->leg_code }}</td>
                                                             <td>
                                                                 <span class="badge rounded-circle p-2 badge-primary"
                                                                     data-bs-toggle="tooltip" data-bs-placement="top"

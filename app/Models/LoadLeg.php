@@ -18,6 +18,21 @@ class LoadLeg extends Models
         return $this->belongsTo(Load::class, 'load_id');
     }
 
+    public function status_master()
+    {
+        return $this->belongsTo(LoadLegStatusMaster::class, 'status_id');
+    }
+
+    public function offer()
+    {
+        return $this->belongsTo(Offers::class, 'accepted_offer_id');
+    }
+
+    public function offers()
+    {
+        return $this->hasMany(Offers::class, 'load_leg_id');
+    }
+
     public function pickupLocation()
     {
         return $this->belongsTo(Locations::class, 'pickup_location_id');
@@ -28,5 +43,3 @@ class LoadLeg extends Models
         return $this->belongsTo(Locations::class, 'delivery_location_id');
     }
 }
-
-

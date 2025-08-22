@@ -5,28 +5,26 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model as Models;
 
-class Conversation extends Models
+class Offers extends Models
 {
-    protected $table = 'conversations';
+    use HasFactory;
+    protected $table = 'offers';
     protected $guarded = [];
     public $timestamps = true;
 
-    protected $fillable = ['load_leg_id', 'shipper_id', 'carrier_id'];
-
-    public function messages()
-    {
-        return $this->hasMany(Message::class);
-    }
-    public function shipper()
-    {
-        return $this->belongsTo(User::class, 'shipper_id');
-    }
     public function carrier()
     {
         return $this->belongsTo(User::class, 'carrier_id');
     }
-    public function load_leg()
+
+    public function status_master()
     {
+        return $this->belongsTo(OfferStatusMaster::class, 'status_id');
+    }
+
+    public function loadLeg() {
         return $this->belongsTo(LoadLeg::class, 'load_leg_id');
     }
 }
+
+

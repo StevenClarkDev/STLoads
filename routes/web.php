@@ -15,6 +15,7 @@ use App\Http\Controllers\LocationsController;
 use App\Http\Controllers\CitiesController;
 use App\Http\Controllers\BidChatController;
 use App\Http\Controllers\ConversationController;
+use App\Http\Controllers\OfferController;
 use App\Events\TestPing;
 use Illuminate\Support\Facades\Auth;
 use App\Models\{Conversation};
@@ -87,7 +88,7 @@ Route::middleware('auth')->group(function () {
     // Route::get('/chat/load-messages/{load}', [ChatController::class, 'loadMessages'])->name('chat.load-messages');
     // Route::get('/chat', [ChatController::class, 'index'])->name('chat');
 
-    Route::post('/loads/{load}/bid', [BidChatController::class, 'submit'])->name('loads.bid');
+    Route::post('/loads/{loadLeg}/bid', [BidChatController::class, 'submit'])->name('loads.bid');
     Route::get('/chat', function () {
         $userId = Auth::id();
 
@@ -111,6 +112,10 @@ Route::middleware('auth')->group(function () {
     })->name('chat.index');
     Route::get('/chat/{conversation}', [ConversationController::class, 'show'])->name('chat.room');
     Route::post('/chat/{conversation}', [ConversationController::class, 'store']);
+
+    Route::post('/offers', [OfferController::class, 'store'])->name('offers.store');
+    Route::post('/offers/{offer}/accept', [OfferController::class, 'accept'])->name('offers.accept');
+    Route::post('/offers/{offer}/decline', [OfferController::class, 'decline'])->name('offers.decline');
 
     Route::get('/api/countries/{country}/cities', [CitiesController::class, 'byCountry'])
         ->name('api.cities.by-country');
