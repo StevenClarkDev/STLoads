@@ -297,8 +297,8 @@
                                                             </td>
                                                             <td>{{ \Carbon\Carbon::parse($load_leg->delivery_date)->format('jS M, Y') }}
                                                             </td>
-                                                            <td>{{ $load_leg->score }}</td>
-                                                            <td>
+                                                            <td class="text-center">{{ $load_leg->score }}</td>
+                                                            <!-- <td>
                                                                 <button class="btn btn-link toggle-debug"
                                                                     data-bs-toggle="collapse"
                                                                     data-bs-target="#debug-info-{{ $i }}"
@@ -312,10 +312,30 @@
                                                                         <div>{{ $debug }}</div>
                                                                     @endforeach
                                                                 </div>
+                                                            </td> -->
+                                                            <!-- <td>
+                                                                <button
+                                                                    class="btn btn-link show-ai-debug"
+                                                                    data-leg="{{ $load_leg->leg_code }}"
+                                                                    data-debug='@json($load_leg->debug_info)'
+                                                                    data-bs-toggle="modal"
+                                                                    data-bs-target="#aiDebugModal">
+                                                                    View Match Info
+                                                                </button>
+                                                            </td> -->
+                                                            <td>
+                                                                <button
+                                                                    class="btn btn-sm show-ai-debug btn-outline-primary px-3 rounded-pill shadow-sm"
+                                                                    data-leg="{{ $load_leg->leg_code }}"
+                                                                    data-debug='@json($load_leg->debug_info)'
+                                                                    data-bs-toggle="modal"
+                                                                    data-bs-target="#aiDebugModal">
+                                                                    <i class="bi bi-search"></i> View Match Info
+                                                                </button>
                                                             </td>
                                                             <td>
                                                                 <span
-                                                                    class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status?->name }}</span>
+                                                                    class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
                                                             </td>
                                                             <td>
                                                                 @if ($load_leg->bid_status == 'Fixed')
@@ -541,8 +561,309 @@
         </div>
     </div>
 
+    <!-- Matched Info Modal -->
+    <div class="modal fade" id="aiDebugModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" style="max-width: 640px;">
+            <div class="modal-content ai-modal shadow-lg border-0 rounded-4 overflow-hidden">
+            <div class="ai-gradient-bar"></div>
 
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-semibold">
+                AI Match Analysis <span class="text-muted" id="aiLegLabel"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <div class="modal-body pt-3">
+                <!-- Generating state -->
+                <div id="aiGenerating" class="ai-generating">
+                <div class="ai-chip mb-3">
+                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    GENERATING…
+                </div>
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line"></div>
+                <div class="skeleton-line short"></div>
+                </div>
+
+                <!-- Final content -->
+                <div id="aiContent" class="d-none">
+                <ul class="list-unstyled mb-0" id="aiDebugList"></ul>
+                </div>
+            </div>
+
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+            </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
     <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // -------------------------
+        // Elements
+        // -------------------------
+        const countryEl           = document.getElementById('country_id');
+        const cityEl              = document.getElementById('city_id');
+        const equipmentOwnedEl    = document.getElementById('equipment_owned');
+        const loadTypeEl          = document.getElementById('load_type');
+        const maxWeightCapacityEl = document.getElementById('max_weight_capacity');
+        const availabilityDaysEl  = document.getElementById('availability_days');
+
+        // -------------------------
+        // Fetch cities by country
+        // -------------------------
+        async function fetchCities(countryIds) {
+            if (!countryIds || countryIds.length === 0) {
+                cityEl.innerHTML = '<option value="">-- Select City --</option>';
+                cityEl.disabled = true;
+                $(cityEl).trigger('change');
+                return;
+            }
+
+            cityEl.disabled = true;
+            const cities = [];
+
+            for (let countryId of countryIds) {
+                const url  = "{{ url('/api/countries') }}/" + countryId + "/cities";
+                const res  = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                const data = await res.json();
+                cities.push(...data);
+            }
+
+            cityEl.innerHTML = '';
+            cities.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = c.name;
+                cityEl.appendChild(opt);
+            });
+
+            cityEl.disabled = false;
+            $(cityEl).trigger('change');
+        }
+
+        // -------------------------
+        // Initialize Select2
+        // -------------------------
+        $('.select2').select2();
+        $(countryEl).on('change', () => fetchCities($(countryEl).val()));
+
+        // -------------------------
+        // Handle Form Submit
+        // -------------------------
+        document.getElementById('recommendationForm')?.addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            const data = {
+                equipment_id: Array.from(equipmentOwnedEl.selectedOptions).map(o => o.value),
+                load_type_id: Array.from(loadTypeEl.selectedOptions).map(o => o.value),
+                country_id:   Array.from(countryEl.selectedOptions).map(o => o.value),
+                city_id:      Array.from(cityEl.selectedOptions).map(o => o.value),
+                availability_days: Array.from(availabilityDaysEl.selectedOptions).map(o => o.value),
+                max_weight_capacity: maxWeightCapacityEl.value
+            };
+
+            const btn = document.getElementById('save-button');
+            btn.innerHTML = 'Saving...';
+            btn.disabled = true;
+
+            fetch('{{ route('savePreferences') }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('recommendationModal')).hide();
+                    Swal.fire({
+                        toast: true, position: 'top-end', icon: 'success',
+                        title: 'Success', text: 'Preferences saved successfully',
+                        showConfirmButton: false, timer: 2500
+                    });
+                } else {
+                    Swal.fire({
+                        position: 'center', icon: 'error', title: 'Error',
+                        text: data.message || 'Error submitting the form. Try again.',
+                        showCloseButton: true, allowOutsideClick: false, allowEscapeKey: false
+                    });
+                }
+            })
+            .catch(err => {
+                console.error('AJAX error:', err);
+                Swal.fire({
+                    position: 'center', icon: 'error', title: 'Error',
+                    text: 'There was an error submitting the form. Please try again.',
+                    showCloseButton: true, allowOutsideClick: false, allowEscapeKey: false
+                });
+            })
+            .finally(() => {
+                btn.innerHTML = 'Save Preferences';
+                btn.disabled = false;
+            });
+        });
+
+        // -------------------------
+        // Tooltip Init
+        // -------------------------
+        [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        .forEach(el => new bootstrap.Tooltip(el));
+
+        // -------------------------
+        // Pagination Tabs
+        // -------------------------
+        window.switchTab = function (btn, tabType) {
+            document.querySelectorAll('.btn-outline-light').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            document.querySelectorAll('.tab-pane').forEach(tab => tab.classList.remove('show','active'));
+            document.getElementById(`tab-${tabType}`).classList.add('show','active');
+
+            document.getElementById('resetPrefsBtn').classList.toggle('d-none', tabType !== 'recommended');
+        };
+
+        // -------------------------
+        // Export to Excel
+        // -------------------------
+        window.exportToExcel = function () {
+            const workbook  = XLSX.utils.book_new();
+            const table     = document.getElementById('user-approval-table');
+            const worksheet = XLSX.utils.table_to_sheet(table);
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Loads");
+            XLSX.writeFile(workbook, 'Loads_List.xlsx');
+        };
+
+        // -------------------------
+        // AI Debug Modal (Match Info)
+        // -------------------------
+        const modal = document.getElementById('aiDebugModal');
+        const list  = document.getElementById('aiDebugList');
+        const gen   = document.getElementById('aiGenerating');
+        const body  = document.getElementById('aiContent');
+        const label = document.getElementById('aiLegLabel');
+
+        document.querySelectorAll('.show-ai-debug').forEach(btn => {
+            btn.addEventListener('click', () => {
+                list.innerHTML = '';
+                body.classList.add('d-none');
+                gen.classList.remove('d-none');
+
+                label.textContent = btn.getAttribute('data-leg') ? `· ${btn.getAttribute('data-leg')}` : '';
+
+                let items = [];
+                try {
+                    const parsed = JSON.parse(btn.getAttribute('data-debug') || '[]');
+                    items = Array.isArray(parsed) ? parsed : [parsed];
+                } catch {
+                    items = ['(No debug details available)'];
+                }
+
+                setTimeout(() => {
+                    items.filter(Boolean).forEach(text => {
+                        const li = document.createElement('li');
+                        li.textContent = text;
+                        list.appendChild(li);
+                    });
+                    gen.classList.add('d-none');
+                    body.classList.remove('d-none');
+                }, 800);
+            });
+        });
+
+        modal.addEventListener('hidden.bs.modal', () => {
+            list.innerHTML = '';
+            label.textContent = '';
+            body.classList.add('d-none');
+            gen.classList.remove('d-none');
+        });
+    });
+    </script>
+    <style>
+        /* Active tab button */
+    .btn-outline-light.active {
+        background-color: #4d6b8a !important;
+        color: #fff !important;
+    }
+
+    /* Form styling */
+    #collapseProduct .form-label { font-weight: 500; }
+    #collapseProduct .form-control,
+    #collapseProduct .form-select {
+        font-size: 0.85rem;
+        padding: 0.4rem 0.6rem;
+    }
+
+    /* Fixed width buttons */
+    .fix-width {
+        width: 100px; text-align: center;
+        padding: 6px 0;
+        display: flex; justify-content: center; align-items: center;
+    }
+    .btn-outline-primary.fix-width:hover,
+    .btn-outline-danger.fix-width:hover {
+        background: inherit !important;
+        color: inherit !important;
+        border-color: inherit !important;
+        box-shadow: none !important;
+    }
+
+    /* Pagination */
+    .pagination { margin: 0; }
+    .pagination-circle .page-item { margin: 0 3px; }
+    .pagination-circle .page-link {
+        width: 32px; height: 32px; padding: 0;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 50% !important; border: 1px solid #dee2e6;
+    }
+    .pagination-circle .page-item.active .page-link {
+        background-color: #4d6b8a; border-color: #4d6b8a;
+    }
+    .pagination-circle .page-item.disabled .page-link { color: #6c757d; }
+
+    /* -------------------------
+    AI Modal Styles
+    ------------------------- */
+    .ai-modal { background: #fff; }
+    .ai-gradient-bar {
+        height: 8px;
+        background: linear-gradient(90deg,#1F537B,#00ADF0);
+    }
+    .ai-chip {
+        display: inline-flex; align-items: center;
+        padding: .375rem .75rem; border-radius: 999px;
+        font-weight: 600; 
+        /* font-size: .85rem; */
+        background: linear-gradient(90deg,#eef3ff,#f6edff);
+        box-shadow: 0 0 0 1px rgba(99,102,241,.12) inset;
+    }
+    .ai-generating .skeleton-line {
+        height: 12px; margin: .6rem 0; border-radius: 8px;
+        position: relative; overflow: hidden; background: #eef1f5;
+    }
+    .ai-generating .skeleton-line.short { width: 60%; }
+    .ai-generating .skeleton-line::after {
+        content: ""; position: absolute; inset: 0;
+        transform: translateX(-100%);
+        background: linear-gradient(90deg,transparent,rgba(0,0,0,.05),transparent);
+        animation: shimmer 1.2s infinite;
+    }
+    @keyframes shimmer { 100% { transform: translateX(100%); } }
+
+    #aiDebugList li {
+        padding: .6rem .75rem;
+        border: 1px solid #edf0f5; border-radius: .75rem;
+        margin-bottom: .5rem; background: #fafbff;
+    }
+
+    </style>
+
+    <!-- <script>
         document.addEventListener('DOMContentLoaded', function() {
             const countryEl = document.getElementById('country_id');
             const cityEl = document.getElementById('city_id');
@@ -755,7 +1076,7 @@
         //bootstrap.Modal.getInstance(document.getElementById('recommendationModal')).hide();
         //});
     </script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script> -->
 
 
     <style>
