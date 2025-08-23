@@ -153,13 +153,8 @@
     </div>
 
     <script>
-        document.getElementById('cnic_upload').addEventListener('change', function() {
-            const fileName = this.files[0]?.name || 'No file chosen';
-            document.getElementById('cnic_file_name').textContent = fileName;
-        });
-
         document.getElementById('user_image').addEventListener('change', function() {
-            const fileName = this.files[0]?.name || 'No file chosen';
+            const fileName = this.files.length > 0 ? this.files[0].name : 'No file chosen';
             document.getElementById('user_image_name').textContent = fileName;
         });
     </script>
