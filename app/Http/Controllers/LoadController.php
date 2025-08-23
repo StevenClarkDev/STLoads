@@ -314,6 +314,7 @@ class LoadController extends Controller
                 $loadLeg->delivery_date         = $request->delivery_date[$i];
                 $loadLeg->bid_status            = $request->bid_status[$i];
                 $loadLeg->price                 = $request->price[$i];
+                $loadLeg->status_id             = 1;
                 $loadLeg->save();
                 $legNo++;
             }
@@ -330,6 +331,58 @@ class LoadController extends Controller
             DB::rollBack();
             $logsController->createLog(__METHOD__, 'error', 'Failed to create load: ' . $e->getMessage(), null, null);
             return back()->withInput()->with('error', 'An error occurred while processing your request. ' . $e->getMessage());
+        }
+    }
+
+    public function book(LoadLeg $load_leg, Request $request, LogsController $logsController)
+    {
+        // (Optional) ensure only allowed users can book
+        // $this->authorize('book', $load_leg);
+
+        // Accept an amount, but we'll prefer server-side price below
+        $validated = $request->validate([
+            'amount' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        try {
+            return DB::transaction(function () use ($load_leg, $validated, $logsController) {
+
+                $leg = \App\Models\LoadLeg::query()
+                    ->whereKey($load_leg->getKey())
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if ((int) $leg->status_id === 4 || $leg->booked_at || $leg->booked_carrier_id) {
+                    $logsController->createLog(__METHOD__, 'warning', 'Attempted to book an already booked load', $leg, null);
+                    return redirect()
+                        ->route('manage-loads')
+                        ->with('error', 'This load has already been booked.');
+                }
+
+                $amount = $leg->price ?? ($validated['amount'] ?? 0);
+
+                $leg->update([
+                    'status_id'         => 4,                 // e.g., 4 = booked
+                    'booked_carrier_id' => Auth::id(),
+                    'booked_at'         => now(),
+                    'booked_amount'     => $amount,
+                ]);
+
+                $logsController->createLog(__METHOD__, 'success', 'User has successfully booked a load', $leg, null);
+
+                return redirect()
+                    ->route('manage-loads')
+                    ->with('success', 'Load booked successfully.');
+            });
+        } catch (\Throwable $e) {
+            try {
+                $logsController->createLog(__METHOD__, 'error', 'Failed to book load: ' . $e->getMessage(), $load_leg, null);
+            } catch (\Throwable $ignored) {
+            }
+
+            return back()
+                ->withInput()
+                ->with('error', 'An error occurred while processing your request.');
         }
     }
 }

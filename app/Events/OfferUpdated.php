@@ -45,7 +45,11 @@ class OfferUpdated implements ShouldBroadcastNow
                 'load_leg_id' => $this->offer->load_leg_id,
                 'carrier_id'  => $this->offer->carrier_id,
                 'amount'      => (float) $this->offer->amount,
+                'shipper_id' => $this->offer->loadLeg?->load_master?->user_id,
                 'status_id'      => (int) $this->offer->status_id,
+                'conversation_id' => $this->offer->conversation_id,
+                'created_at' => $this->offer->created_at?->toIso8601String(),
+                'updated_at' => $this->offer->updated_at?->toIso8601String(),
             ],
         ];
     }

@@ -165,8 +165,17 @@
                                                             @endif
                                                         </td>
                                                         <td>
-                                                            @if ($load_leg->bid_status == 'Fixed')
+                                                            @if ($load_leg->status_id == 4 || $roleId != 3)
                                                                 <button class="btn btn-primary btn-sm fix-width">
+                                                                    ${{ number_format($load_leg->booked_amount > 0 ? $load_leg->booked_amount : $load_leg->price, 0) }}
+                                                                </button>
+                                                            @elseif ($load_leg->bid_status == 'Fixed')
+                                                                <button class="btn btn-primary btn-sm fix-width"
+                                                                    data-bs-toggle="modal"
+                                                                    data-bs-target="#confirmFixedModal"
+                                                                    data-book-url="{{ route('load-legs.book', $load_leg) }}"
+                                                                    data-amount="{{ $load_leg->price }}"
+                                                                    data-leg-code="{{ $load_leg->leg_code ?? '' }}">
                                                                     ${{ number_format($load_leg->price, 0) }}
                                                                 </button>
                                                             @else
@@ -176,6 +185,48 @@
                                                                     ${{ number_format($load_leg->price, 0) }}
                                                                 </button>
                                                             @endif
+
+                                                            {{-- Reusable Fixed-Price Booking Modal --}}
+                                                            <div class="modal fade" id="confirmFixedModal" tabindex="-1"
+                                                                aria-hidden="true">
+                                                                <div class="modal-dialog">
+                                                                    <form id="confirmFixedForm" class="modal-content"
+                                                                        method="POST" action="#">
+                                                                        @csrf
+                                                                        <div class="modal-header">
+                                                                            <h5 class="modal-title">Book this load?</h5>
+                                                                            <button type="button" class="btn-close"
+                                                                                data-bs-dismiss="modal"></button>
+                                                                        </div>
+
+                                                                        <div class="modal-body">
+                                                                            <p class="mb-2">
+                                                                                You’re about to <strong>book</strong>
+                                                                                <span id="fixedLegLabel"></span>
+                                                                                at <strong id="fixedAmountLabel"></strong>.
+                                                                            </p>
+                                                                            <p class="text-muted small mb-0">
+                                                                                This will reserve the load at the fixed
+                                                                                price.
+                                                                            </p>
+
+                                                                            {{-- Hidden value if backend expects it --}}
+                                                                            <input type="hidden" name="amount"
+                                                                                id="fixedAmountInput" value="">
+                                                                        </div>
+
+                                                                        <div class="modal-footer">
+                                                                            <button class="btn btn-light" type="button"
+                                                                                data-bs-dismiss="modal">Cancel</button>
+                                                                            <button class="btn btn-primary"
+                                                                                id="confirmFixedBtn" type="submit">
+                                                                                Proceed
+                                                                            </button>
+                                                                        </div>
+                                                                    </form>
+                                                                </div>
+                                                            </div>
+
 
                                                             <!-- Bid Modal -->
                                                             <div class="modal fade" id="bidModal-{{ $i }}"
@@ -299,39 +350,38 @@
                                                             </td>
                                                             <!-- <td class="text-center">{{ $load_leg->score }}</td> -->
                                                             <!-- <td>
-                                                                <button class="btn btn-link toggle-debug"
-                                                                    data-bs-toggle="collapse"
-                                                                    data-bs-target="#debug-info-{{ $i }}"
-                                                                    aria-expanded="false"
-                                                                    aria-controls="debug-info-{{ $i }}">
-                                                                    View Match Info
-                                                                </button>
-                                                                <div id="debug-info-{{ $i }}"
-                                                                    class="collapse mt-2">
-                                                                    @foreach ($load_leg->debug_info as $debug)
-                                                                        <div>{{ $debug }}</div>
-                                                                    @endforeach
-                                                                </div>
-                                                            </td> -->
+                                                                                                    <button class="btn btn-link toggle-debug"
+                                                                                                        data-bs-toggle="collapse"
+                                                                                                        data-bs-target="#debug-info-{{ $i }}"
+                                                                                                        aria-expanded="false"
+                                                                                                        aria-controls="debug-info-{{ $i }}">
+                                                                                                        View Match Info
+                                                                                                    </button>
+                                                                                                    <div id="debug-info-{{ $i }}"
+                                                                                                        class="collapse mt-2">
+                                                                                                        @foreach ($load_leg->debug_info as $debug)
+    <div>{{ $debug }}</div>
+    @endforeach
+                                                                                                    </div>
+                                                                                                </td> -->
                                                             <!-- <td>
-                                                                <button
-                                                                    class="btn btn-link show-ai-debug"
-                                                                    data-leg="{{ $load_leg->leg_code }}"
-                                                                    data-debug='@json($load_leg->debug_info)'
-                                                                    data-bs-toggle="modal"
-                                                                    data-bs-target="#aiDebugModal">
-                                                                    View Match Info
-                                                                </button>
-                                                            </td> -->
+                                                                                                    <button
+                                                                                                        class="btn btn-link show-ai-debug"
+                                                                                                        data-leg="{{ $load_leg->leg_code }}"
+                                                                                                        data-debug='@json($load_leg->debug_info)'
+                                                                                                        data-bs-toggle="modal"
+                                                                                                        data-bs-target="#aiDebugModal">
+                                                                                                        View Match Info
+                                                                                                    </button>
+                                                                                                </td> -->
                                                             <td>
                                                                 <button
                                                                     class="btn btn-sm show-ai-debug btn-outline-primary px-3 rounded-pill shadow-sm"
                                                                     data-leg="{{ $load_leg->leg_code }}"
                                                                     data-debug='@json($load_leg->debug_info)'
-                                                                    data-bs-toggle="modal"
-                                                                    data-bs-target="#aiDebugModal">
+                                                                    data-bs-toggle="modal" data-bs-target="#aiDebugModal">
                                                                     {{ $load_leg->score }}
-                                                                    <i class="bi bi-eye"></i> 
+                                                                    <i class="bi bi-eye"></i>
                                                                 </button>
                                                             </td>
                                                             <td>
@@ -348,8 +398,17 @@
                                                                 @endif
                                                             </td>
                                                             <td>
-                                                                @if ($load_leg->bid_status == 'Fixed')
+                                                                @if ($load_leg->status_id == 4 || $roleId != 3)
                                                                     <button class="btn btn-primary btn-sm fix-width">
+                                                                        ${{ number_format($load_leg->booked_amount > 0 ? $load_leg->booked_amount : $load_leg->price, 0) }}
+                                                                    </button>
+                                                                @elseif ($load_leg->bid_status == 'Fixed')
+                                                                    <button class="btn btn-primary btn-sm fix-width"
+                                                                        data-bs-toggle="modal"
+                                                                        data-bs-target="#reCconfirmFixedModal"
+                                                                        data-book-url="{{ route('load-legs.book', $load_leg) }}"
+                                                                        data-amount="{{ $load_leg->price }}"
+                                                                        data-leg-code="{{ $load_leg->leg_code ?? '' }}">
                                                                         ${{ number_format($load_leg->price, 0) }}
                                                                     </button>
                                                                 @else
@@ -361,67 +420,117 @@
                                                                     </button>
                                                                 @endif
 
-                                                                <!-- Bid Modal -->
-                                                                <div class="modal fade" id="bidrecModal-{{ $i }}"
-                                                                tabindex="-1" aria-hidden="true">
-                                                                <div class="modal-dialog modal-dialog-centered"
-                                                                    style="max-width: 600px;">
-                                                                    <div class="modal-content p-4">
-                                                                        <div class="modal-header border-0">
-                                                                            <h5 class="modal-title">Submit Your Bid</h5>
-                                                                            <button type="button" class="btn-close"
-                                                                                data-bs-dismiss="modal"
-                                                                                aria-label="Close"></button>
-                                                                        </div>
-
-                                                                        <form method="POST"
-                                                                            action="{{ route('loads.bid', $load_leg->id) }}">
+                                                                <div class="modal fade" id="reCconfirmFixedModal"
+                                                                    tabindex="-1" aria-hidden="true">
+                                                                    <div class="modal-dialog">
+                                                                        <form id="reCconfirmFixedForm" class="modal-content"
+                                                                            method="POST" action="#">
                                                                             @csrf
-                                                                            <div class="modal-body">
-                                                                                <p class="text-muted mb-4">Please review
-                                                                                    the client's offer and submit your bid
-                                                                                    below.</p>
-                                                                                <div class="row my-3">
-                                                                                    <div class="col-md-6">
-                                                                                        <label class="form-label">Client
-                                                                                            Price</label>
-                                                                                        <input class="form-control"
-                                                                                            value="${{ number_format($load_leg->price, 0) }}"
-                                                                                            readonly>
-                                                                                    </div>
-                                                                                    <div class="col-md-6">
-                                                                                        <label class="form-label">Your
-                                                                                            Bid</label>
-                                                                                        <input type="number"
-                                                                                            min="1" step="1"
-                                                                                            name="amount"
-                                                                                            class="form-control"
-                                                                                            placeholder="Enter your bid"
-                                                                                            required>
-                                                                                    </div>
-                                                                                </div>
-                                                                                <label class="form-label mt-2">Note
-                                                                                    (optional)
-                                                                                </label>
-                                                                                <input type="text" name="note"
-                                                                                    class="form-control"
-                                                                                    placeholder="Any additional info">
+                                                                            <div class="modal-header">
+                                                                                <h5 class="modal-title">Book this load?
+                                                                                </h5>
+                                                                                <button type="button" class="btn-close"
+                                                                                    data-bs-dismiss="modal"></button>
                                                                             </div>
-                                                                            @if ($roleId == 3)
-                                                                                <div
-                                                                                    class="modal-footer border-0 d-flex justify-content-end gap-2">
-                                                                                    <button type="button"
-                                                                                        class="btn btn-outline-secondary"
-                                                                                        data-bs-dismiss="modal">Cancel</button>
-                                                                                    <button type="submit"
-                                                                                        class="btn btn-primary">Submit Bid
-                                                                                        &amp; Chat</button>
-                                                                                </div>
-                                                                            @endif
+
+                                                                            <div class="modal-body">
+                                                                                <p class="mb-2">
+                                                                                    You’re about to <strong>book</strong>
+                                                                                    <span id="reCfixedLegLabel"></span>
+                                                                                    at <strong
+                                                                                        id="reCfixedAmountLabel"></strong>.
+                                                                                </p>
+                                                                                <p class="text-muted small mb-0">
+                                                                                    This will reserve the load at the fixed
+                                                                                    price.
+                                                                                </p>
+
+                                                                                {{-- Hidden value if backend expects it --}}
+                                                                                <input type="hidden" name="amount"
+                                                                                    id="reCfixedAmountInput" value="">
+                                                                            </div>
+
+                                                                            <div class="modal-footer">
+                                                                                <button class="btn btn-light"
+                                                                                    type="button"
+                                                                                    data-bs-dismiss="modal">Cancel</button>
+                                                                                <button class="btn btn-primary"
+                                                                                    id="reCconfirmFixedBtn" type="submit">
+                                                                                    Proceed
+                                                                                </button>
+                                                                            </div>
                                                                         </form>
                                                                     </div>
                                                                 </div>
-                                                            </div>
+
+                                                                <!-- Bid Modal -->
+                                                                <div class="modal fade"
+                                                                    id="bidrecModal-{{ $i }}" tabindex="-1"
+                                                                    aria-hidden="true">
+                                                                    <div class="modal-dialog modal-dialog-centered"
+                                                                        style="max-width: 600px;">
+                                                                        <div class="modal-content p-4">
+                                                                            <div class="modal-header border-0">
+                                                                                <h5 class="modal-title">Submit Your Bid
+                                                                                </h5>
+                                                                                <button type="button" class="btn-close"
+                                                                                    data-bs-dismiss="modal"
+                                                                                    aria-label="Close"></button>
+                                                                            </div>
+
+                                                                            <form method="POST"
+                                                                                action="{{ route('loads.bid', $load_leg->id) }}">
+                                                                                @csrf
+                                                                                <div class="modal-body">
+                                                                                    <p class="text-muted mb-4">Please
+                                                                                        review
+                                                                                        the client's offer and submit your
+                                                                                        bid
+                                                                                        below.</p>
+                                                                                    <div class="row my-3">
+                                                                                        <div class="col-md-6">
+                                                                                            <label
+                                                                                                class="form-label">Client
+                                                                                                Price</label>
+                                                                                            <input class="form-control"
+                                                                                                value="${{ number_format($load_leg->price, 0) }}"
+                                                                                                readonly>
+                                                                                        </div>
+                                                                                        <div class="col-md-6">
+                                                                                            <label class="form-label">Your
+                                                                                                Bid</label>
+                                                                                            <input type="number"
+                                                                                                min="1"
+                                                                                                step="1"
+                                                                                                name="amount"
+                                                                                                class="form-control"
+                                                                                                placeholder="Enter your bid"
+                                                                                                required>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <label class="form-label mt-2">Note
+                                                                                        (optional)
+                                                                                    </label>
+                                                                                    <input type="text" name="note"
+                                                                                        class="form-control"
+                                                                                        placeholder="Any additional info">
+                                                                                </div>
+                                                                                @if ($roleId == 3)
+                                                                                    <div
+                                                                                        class="modal-footer border-0 d-flex justify-content-end gap-2">
+                                                                                        <button type="button"
+                                                                                            class="btn btn-outline-secondary"
+                                                                                            data-bs-dismiss="modal">Cancel</button>
+                                                                                        <button type="submit"
+                                                                                            class="btn btn-primary">Submit
+                                                                                            Bid
+                                                                                            &amp; Chat</button>
+                                                                                    </div>
+                                                                                @endif
+                                                                            </form>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
                                                             </td>
                                                             <td>
                                                                 <span
@@ -566,302 +675,440 @@
     <div class="modal fade" id="aiDebugModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered" style="max-width: 640px;">
             <div class="modal-content ai-modal shadow-lg border-0 rounded-4 overflow-hidden">
-            <div class="ai-gradient-bar"></div>
+                <div class="ai-gradient-bar"></div>
 
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title fw-semibold">
-                AI Match Analysis <span class="text-muted" id="aiLegLabel"></span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-
-            <div class="modal-body pt-3">
-                <!-- Generating state -->
-                <div id="aiGenerating" class="ai-generating">
-                <div class="ai-chip mb-3">
-                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                    GENERATING…
-                </div>
-                <div class="skeleton-line"></div>
-                <div class="skeleton-line"></div>
-                <div class="skeleton-line short"></div>
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-semibold">
+                        AI Match Analysis <span class="text-muted" id="aiLegLabel"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
 
-                <!-- Final content -->
-                <div id="aiContent" class="d-none">
-                <ul class="list-unstyled mb-0" id="aiDebugList"></ul>
-                </div>
-            </div>
+                <div class="modal-body pt-3">
+                    <!-- Generating state -->
+                    <div id="aiGenerating" class="ai-generating">
+                        <div class="ai-chip mb-3">
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            GENERATING…
+                        </div>
+                        <div class="skeleton-line"></div>
+                        <div class="skeleton-line"></div>
+                        <div class="skeleton-line short"></div>
+                    </div>
 
-            <div class="modal-footer border-0 pt-0">
-                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
-            </div>
+                    <!-- Final content -->
+                    <div id="aiContent" class="d-none">
+                        <ul class="list-unstyled mb-0" id="aiDebugList"></ul>
+                    </div>
+                </div>
+
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+                </div>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
     <script>
-    document.addEventListener('DOMContentLoaded', function () {
-        // -------------------------
-        // Elements
-        // -------------------------
-        const countryEl           = document.getElementById('country_id');
-        const cityEl              = document.getElementById('city_id');
-        const equipmentOwnedEl    = document.getElementById('equipment_owned');
-        const loadTypeEl          = document.getElementById('load_type');
-        const maxWeightCapacityEl = document.getElementById('max_weight_capacity');
-        const availabilityDaysEl  = document.getElementById('availability_days');
+        (function() {
+            const modalEl = document.getElementById('confirmFixedModal');
+            const form = document.getElementById('confirmFixedForm');
+            const amountLabel = document.getElementById('fixedAmountLabel');
+            const legLabel = document.getElementById('fixedLegLabel');
+            const amountInput = document.getElementById('fixedAmountInput');
+            const confirmBtn = document.getElementById('confirmFixedBtn');
 
-        // -------------------------
-        // Fetch cities by country
-        // -------------------------
-        async function fetchCities(countryIds) {
-            if (!countryIds || countryIds.length === 0) {
-                cityEl.innerHTML = '<option value="">-- Select City --</option>';
-                cityEl.disabled = true;
-                $(cityEl).trigger('change');
-                return;
+            const reCmodalEl = document.getElementById('reCconfirmFixedModal');
+            const reCform = document.getElementById('reCconfirmFixedForm');
+            const reCamountLabel = document.getElementById('reCfixedAmountLabel');
+            const reClegLabel = document.getElementById('reCfixedLegLabel');
+            const reCamountInput = document.getElementById('reCfixedAmountInput');
+            const reCconfirmBtn = document.getElementById('reCconfirmFixedBtn');
+
+            function fmtUSD(n, digits = 0) {
+                try {
+                    return new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: 'USD',
+                        maximumFractionDigits: digits
+                    }).format(Number(n));
+                } catch {
+                    return '$' + Number(n).toFixed(digits);
+                }
             }
 
-            cityEl.disabled = true;
-            const cities = [];
+            modalEl?.addEventListener('show.bs.modal', (ev) => {
+                const btn = ev.relatedTarget;
+                const url = btn?.getAttribute('data-book-url') || '#';
+                const amount = btn?.getAttribute('data-amount') || '0';
+                const legCode = btn?.getAttribute('data-leg-code') || '';
 
-            for (let countryId of countryIds) {
-                const url  = "{{ url('/api/countries') }}/" + countryId + "/cities";
-                const res  = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                const data = await res.json();
-                cities.push(...data);
-            }
+                form.setAttribute('action', url);
+                amountLabel.textContent = fmtUSD(amount, 0);
+                amountInput.value = amount;
+                legLabel.textContent = legCode ? `Load #${legCode}` : 'this load';
 
-            cityEl.innerHTML = '';
-            cities.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c.id;
-                opt.textContent = c.name;
-                cityEl.appendChild(opt);
+                // reset button state if previously submitted
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = 'Proceed';
             });
 
-            cityEl.disabled = false;
-            $(cityEl).trigger('change');
-        }
+            reCmodalEl?.addEventListener('show.bs.modal', (ev) => {
+                const btnrec = ev.relatedTarget;
+                const urlrec = btnrec?.getAttribute('data-book-url') || '#';
+                const amountrec = btnrec?.getAttribute('data-amount') || '0';
+                const legCoderec = btnrec?.getAttribute('data-leg-code') || '';
 
-        // -------------------------
-        // Initialize Select2
-        // -------------------------
-        $('.select2').select2();
-        $(countryEl).on('change', () => fetchCities($(countryEl).val()));
+                reCform.setAttribute('action', urlrec);
+                reCamountLabel.textContent = fmtUSD(amount, 0);
+                reCamountInput.value = amountrec;
+                reClegLabel.textContent = legCoderec ? `Load #${legCoderec}` : 'this load';
 
-        // -------------------------
-        // Handle Form Submit
-        // -------------------------
-        document.getElementById('recommendationForm')?.addEventListener('submit', function (e) {
-            e.preventDefault();
+                // reset button state if previously submitted
+                reCconfirmBtn.disabled = false;
+                reCconfirmBtn.innerHTML = 'Proceed';
+            });
 
-            const data = {
-                equipment_id: Array.from(equipmentOwnedEl.selectedOptions).map(o => o.value),
-                load_type_id: Array.from(loadTypeEl.selectedOptions).map(o => o.value),
-                country_id:   Array.from(countryEl.selectedOptions).map(o => o.value),
-                city_id:      Array.from(cityEl.selectedOptions).map(o => o.value),
-                availability_days: Array.from(availabilityDaysEl.selectedOptions).map(o => o.value),
-                max_weight_capacity: maxWeightCapacityEl.value
+            form?.addEventListener('submit', () => {
+                // simple UX: disable + spinner while posting (normal HTML POST)
+                confirmBtn.disabled = true;
+                confirmBtn.innerHTML =
+                    '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Booking...';
+            });
+
+            reCform?.addEventListener('submit', () => {
+                reCconfirmBtn.disabled = true;
+                reCconfirmBtn.innerHTML =
+                    '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Booking...';
+            });
+        })();
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // -------------------------
+            // Elements
+            // -------------------------
+            const countryEl = document.getElementById('country_id');
+            const cityEl = document.getElementById('city_id');
+            const equipmentOwnedEl = document.getElementById('equipment_owned');
+            const loadTypeEl = document.getElementById('load_type');
+            const maxWeightCapacityEl = document.getElementById('max_weight_capacity');
+            const availabilityDaysEl = document.getElementById('availability_days');
+
+            // -------------------------
+            // Fetch cities by country
+            // -------------------------
+            async function fetchCities(countryIds) {
+                if (!countryIds || countryIds.length === 0) {
+                    cityEl.innerHTML = '<option value="">-- Select City --</option>';
+                    cityEl.disabled = true;
+                    $(cityEl).trigger('change');
+                    return;
+                }
+
+                cityEl.disabled = true;
+                const cities = [];
+
+                for (let countryId of countryIds) {
+                    const url = "{{ url('/api/countries') }}/" + countryId + "/cities";
+                    const res = await fetch(url, {
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    });
+                    const data = await res.json();
+                    cities.push(...data);
+                }
+
+                cityEl.innerHTML = '';
+                cities.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    cityEl.appendChild(opt);
+                });
+
+                cityEl.disabled = false;
+                $(cityEl).trigger('change');
+            }
+
+            // -------------------------
+            // Initialize Select2
+            // -------------------------
+            $('.select2').select2();
+            $(countryEl).on('change', () => fetchCities($(countryEl).val()));
+
+            // -------------------------
+            // Handle Form Submit
+            // -------------------------
+            document.getElementById('recommendationForm')?.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                const data = {
+                    equipment_id: Array.from(equipmentOwnedEl.selectedOptions).map(o => o.value),
+                    load_type_id: Array.from(loadTypeEl.selectedOptions).map(o => o.value),
+                    country_id: Array.from(countryEl.selectedOptions).map(o => o.value),
+                    city_id: Array.from(cityEl.selectedOptions).map(o => o.value),
+                    availability_days: Array.from(availabilityDaysEl.selectedOptions).map(o => o.value),
+                    max_weight_capacity: maxWeightCapacityEl.value
+                };
+
+                const btn = document.getElementById('save-button');
+                btn.innerHTML = 'Saving...';
+                btn.disabled = true;
+
+                fetch('{{ route('savePreferences') }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        },
+                        body: JSON.stringify(data)
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            bootstrap.Modal.getInstance(document.getElementById('recommendationModal'))
+                                .hide();
+                            Swal.fire({
+                                toast: true,
+                                position: 'top-end',
+                                icon: 'success',
+                                title: 'Success',
+                                text: 'Preferences saved successfully',
+                                showConfirmButton: false,
+                                timer: 2500
+                            });
+                        } else {
+                            Swal.fire({
+                                position: 'center',
+                                icon: 'error',
+                                title: 'Error',
+                                text: data.message || 'Error submitting the form. Try again.',
+                                showCloseButton: true,
+                                allowOutsideClick: false,
+                                allowEscapeKey: false
+                            });
+                        }
+                    })
+                    .catch(err => {
+                        console.error('AJAX error:', err);
+                        Swal.fire({
+                            position: 'center',
+                            icon: 'error',
+                            title: 'Error',
+                            text: 'There was an error submitting the form. Please try again.',
+                            showCloseButton: true,
+                            allowOutsideClick: false,
+                            allowEscapeKey: false
+                        });
+                    })
+                    .finally(() => {
+                        btn.innerHTML = 'Save Preferences';
+                        btn.disabled = false;
+                    });
+            });
+
+            // -------------------------
+            // Tooltip Init
+            // -------------------------
+            [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+                .forEach(el => new bootstrap.Tooltip(el));
+
+            // -------------------------
+            // Pagination Tabs
+            // -------------------------
+            window.switchTab = function(btn, tabType) {
+                document.querySelectorAll('.btn-outline-light').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                document.querySelectorAll('.tab-pane').forEach(tab => tab.classList.remove('show', 'active'));
+                document.getElementById(`tab-${tabType}`).classList.add('show', 'active');
+
+                document.getElementById('resetPrefsBtn').classList.toggle('d-none', tabType !== 'recommended');
             };
 
-            const btn = document.getElementById('save-button');
-            btn.innerHTML = 'Saving...';
-            btn.disabled = true;
+            // -------------------------
+            // Export to Excel
+            // -------------------------
+            window.exportToExcel = function() {
+                const workbook = XLSX.utils.book_new();
+                const table = document.getElementById('user-approval-table');
+                const worksheet = XLSX.utils.table_to_sheet(table);
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Loads");
+                XLSX.writeFile(workbook, 'Loads_List.xlsx');
+            };
 
-            fetch('{{ route('savePreferences') }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                },
-                body: JSON.stringify(data)
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    bootstrap.Modal.getInstance(document.getElementById('recommendationModal')).hide();
-                    Swal.fire({
-                        toast: true, position: 'top-end', icon: 'success',
-                        title: 'Success', text: 'Preferences saved successfully',
-                        showConfirmButton: false, timer: 2500
-                    });
-                } else {
-                    Swal.fire({
-                        position: 'center', icon: 'error', title: 'Error',
-                        text: data.message || 'Error submitting the form. Try again.',
-                        showCloseButton: true, allowOutsideClick: false, allowEscapeKey: false
-                    });
-                }
-            })
-            .catch(err => {
-                console.error('AJAX error:', err);
-                Swal.fire({
-                    position: 'center', icon: 'error', title: 'Error',
-                    text: 'There was an error submitting the form. Please try again.',
-                    showCloseButton: true, allowOutsideClick: false, allowEscapeKey: false
+            // -------------------------
+            // AI Debug Modal (Match Info)
+            // -------------------------
+            const modal = document.getElementById('aiDebugModal');
+            const list = document.getElementById('aiDebugList');
+            const gen = document.getElementById('aiGenerating');
+            const body = document.getElementById('aiContent');
+            const label = document.getElementById('aiLegLabel');
+
+            document.querySelectorAll('.show-ai-debug').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    list.innerHTML = '';
+                    body.classList.add('d-none');
+                    gen.classList.remove('d-none');
+
+                    label.textContent = btn.getAttribute('data-leg') ?
+                        `· ${btn.getAttribute('data-leg')}` : '';
+
+                    let items = [];
+                    try {
+                        const parsed = JSON.parse(btn.getAttribute('data-debug') || '[]');
+                        items = Array.isArray(parsed) ? parsed : [parsed];
+                    } catch {
+                        items = ['(No debug details available)'];
+                    }
+
+                    setTimeout(() => {
+                        items.filter(Boolean).forEach(text => {
+                            const li = document.createElement('li');
+                            li.textContent = text;
+                            list.appendChild(li);
+                        });
+                        gen.classList.add('d-none');
+                        body.classList.remove('d-none');
+                    }, 800);
                 });
-            })
-            .finally(() => {
-                btn.innerHTML = 'Save Preferences';
-                btn.disabled = false;
             });
-        });
 
-        // -------------------------
-        // Tooltip Init
-        // -------------------------
-        [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-        .forEach(el => new bootstrap.Tooltip(el));
-
-        // -------------------------
-        // Pagination Tabs
-        // -------------------------
-        window.switchTab = function (btn, tabType) {
-            document.querySelectorAll('.btn-outline-light').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-
-            document.querySelectorAll('.tab-pane').forEach(tab => tab.classList.remove('show','active'));
-            document.getElementById(`tab-${tabType}`).classList.add('show','active');
-
-            document.getElementById('resetPrefsBtn').classList.toggle('d-none', tabType !== 'recommended');
-        };
-
-        // -------------------------
-        // Export to Excel
-        // -------------------------
-        window.exportToExcel = function () {
-            const workbook  = XLSX.utils.book_new();
-            const table     = document.getElementById('user-approval-table');
-            const worksheet = XLSX.utils.table_to_sheet(table);
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Loads");
-            XLSX.writeFile(workbook, 'Loads_List.xlsx');
-        };
-
-        // -------------------------
-        // AI Debug Modal (Match Info)
-        // -------------------------
-        const modal = document.getElementById('aiDebugModal');
-        const list  = document.getElementById('aiDebugList');
-        const gen   = document.getElementById('aiGenerating');
-        const body  = document.getElementById('aiContent');
-        const label = document.getElementById('aiLegLabel');
-
-        document.querySelectorAll('.show-ai-debug').forEach(btn => {
-            btn.addEventListener('click', () => {
+            modal.addEventListener('hidden.bs.modal', () => {
                 list.innerHTML = '';
+                label.textContent = '';
                 body.classList.add('d-none');
                 gen.classList.remove('d-none');
-
-                label.textContent = btn.getAttribute('data-leg') ? `· ${btn.getAttribute('data-leg')}` : '';
-
-                let items = [];
-                try {
-                    const parsed = JSON.parse(btn.getAttribute('data-debug') || '[]');
-                    items = Array.isArray(parsed) ? parsed : [parsed];
-                } catch {
-                    items = ['(No debug details available)'];
-                }
-
-                setTimeout(() => {
-                    items.filter(Boolean).forEach(text => {
-                        const li = document.createElement('li');
-                        li.textContent = text;
-                        list.appendChild(li);
-                    });
-                    gen.classList.add('d-none');
-                    body.classList.remove('d-none');
-                }, 800);
             });
         });
-
-        modal.addEventListener('hidden.bs.modal', () => {
-            list.innerHTML = '';
-            label.textContent = '';
-            body.classList.add('d-none');
-            gen.classList.remove('d-none');
-        });
-    });
     </script>
     <style>
         /* Active tab button */
-    .btn-outline-light.active {
-        background-color: #4d6b8a !important;
-        color: #fff !important;
-    }
+        .btn-outline-light.active {
+            background-color: #4d6b8a !important;
+            color: #fff !important;
+        }
 
-    /* Form styling */
-    #collapseProduct .form-label { font-weight: 500; }
-    #collapseProduct .form-control,
-    #collapseProduct .form-select {
-        font-size: 0.85rem;
-        padding: 0.4rem 0.6rem;
-    }
+        /* Form styling */
+        #collapseProduct .form-label {
+            font-weight: 500;
+        }
 
-    /* Fixed width buttons */
-    .fix-width {
-        width: 100px; text-align: center;
-        padding: 6px 0;
-        display: flex; justify-content: center; align-items: center;
-    }
-    .btn-outline-primary.fix-width:hover,
-    .btn-outline-danger.fix-width:hover {
-        background: inherit !important;
-        color: inherit !important;
-        border-color: inherit !important;
-        box-shadow: none !important;
-    }
+        #collapseProduct .form-control,
+        #collapseProduct .form-select {
+            font-size: 0.85rem;
+            padding: 0.4rem 0.6rem;
+        }
 
-    /* Pagination */
-    .pagination { margin: 0; }
-    .pagination-circle .page-item { margin: 0 3px; }
-    .pagination-circle .page-link {
-        width: 32px; height: 32px; padding: 0;
-        display: flex; align-items: center; justify-content: center;
-        border-radius: 50% !important; border: 1px solid #dee2e6;
-    }
-    .pagination-circle .page-item.active .page-link {
-        background-color: #4d6b8a; border-color: #4d6b8a;
-    }
-    .pagination-circle .page-item.disabled .page-link { color: #6c757d; }
+        /* Fixed width buttons */
+        .fix-width {
+            width: 100px;
+            text-align: center;
+            padding: 6px 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
 
-    /* -------------------------
-    AI Modal Styles
-    ------------------------- */
-    .ai-modal { background: #fff; }
-    .ai-gradient-bar {
-        height: 8px;
-        background: linear-gradient(90deg,#1F537B,#00ADF0);
-    }
-    .ai-chip {
-        display: inline-flex; align-items: center;
-        padding: .375rem .75rem; border-radius: 999px;
-        font-weight: 600; 
-        /* font-size: .85rem; */
-        background: linear-gradient(90deg,#eef3ff,#f6edff);
-        box-shadow: 0 0 0 1px rgba(99,102,241,.12) inset;
-    }
-    .ai-generating .skeleton-line {
-        height: 12px; margin: .6rem 0; border-radius: 8px;
-        position: relative; overflow: hidden; background: #eef1f5;
-    }
-    .ai-generating .skeleton-line.short { width: 60%; }
-    .ai-generating .skeleton-line::after {
-        content: ""; position: absolute; inset: 0;
-        transform: translateX(-100%);
-        background: linear-gradient(90deg,transparent,rgba(0,0,0,.05),transparent);
-        animation: shimmer 1.2s infinite;
-    }
-    @keyframes shimmer { 100% { transform: translateX(100%); } }
+        .btn-outline-primary.fix-width:hover,
+        .btn-outline-danger.fix-width:hover {
+            background: inherit !important;
+            color: inherit !important;
+            border-color: inherit !important;
+            box-shadow: none !important;
+        }
 
-    #aiDebugList li {
-        padding: .6rem .75rem;
-        border: 1px solid #edf0f5; border-radius: .75rem;
-        margin-bottom: .5rem; background: #fafbff;
-    }
+        /* Pagination */
+        .pagination {
+            margin: 0;
+        }
 
+        .pagination-circle .page-item {
+            margin: 0 3px;
+        }
+
+        .pagination-circle .page-link {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50% !important;
+            border: 1px solid #dee2e6;
+        }
+
+        .pagination-circle .page-item.active .page-link {
+            background-color: #4d6b8a;
+            border-color: #4d6b8a;
+        }
+
+        .pagination-circle .page-item.disabled .page-link {
+            color: #6c757d;
+        }
+
+        /* -------------------------
+                                        AI Modal Styles
+                                        ------------------------- */
+        .ai-modal {
+            background: #fff;
+        }
+
+        .ai-gradient-bar {
+            height: 8px;
+            background: linear-gradient(90deg, #1F537B, #00ADF0);
+        }
+
+        .ai-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: .375rem .75rem;
+            border-radius: 999px;
+            font-weight: 600;
+            /* font-size: .85rem; */
+            background: linear-gradient(90deg, #eef3ff, #f6edff);
+            box-shadow: 0 0 0 1px rgba(99, 102, 241, .12) inset;
+        }
+
+        .ai-generating .skeleton-line {
+            height: 12px;
+            margin: .6rem 0;
+            border-radius: 8px;
+            position: relative;
+            overflow: hidden;
+            background: #eef1f5;
+        }
+
+        .ai-generating .skeleton-line.short {
+            width: 60%;
+        }
+
+        .ai-generating .skeleton-line::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            transform: translateX(-100%);
+            background: linear-gradient(90deg, transparent, rgba(0, 0, 0, .05), transparent);
+            animation: shimmer 1.2s infinite;
+        }
+
+        @keyframes shimmer {
+            100% {
+                transform: translateX(100%);
+            }
+        }
+
+        #aiDebugList li {
+            padding: .6rem .75rem;
+            border: 1px solid #edf0f5;
+            border-radius: .75rem;
+            margin-bottom: .5rem;
+            background: #fafbff;
+        }
     </style>
 
     <!-- <script>
@@ -1008,148 +1255,148 @@
             });
         });
     </script>
-    <script>
-        document.querySelectorAll('.toggle-debug').forEach(item => {
-            item.addEventListener('click', function() {
-                const target = document.querySelector(this.getAttribute('data-bs-target'));
-                target.classList.toggle('collapse');
-            });
-        });
-    </script>
-    <script>
-        // Pagination functionality
-        document.addEventListener('DOMContentLoaded', function() {
+                                        <script>
+                                            document.querySelectorAll('.toggle-debug').forEach(item => {
+                                                item.addEventListener('click', function() {
+                                                    const target = document.querySelector(this.getAttribute('data-bs-target'));
+                                                    target.classList.toggle('collapse');
+                                                });
+                                            });
+                                        </script>
+                                        <script>
+                                            // Pagination functionality
+                                            document.addEventListener('DOMContentLoaded', function() {
 
-            // Update switchTab function to handle pagination
-            window.switchTab = function(btn, tabType) {
-                document.querySelectorAll('.btn-outline-light').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
+                                                // Update switchTab function to handle pagination
+                                                window.switchTab = function(btn, tabType) {
+                                                    document.querySelectorAll('.btn-outline-light').forEach(b => b.classList.remove('active'));
+                                                    btn.classList.add('active');
 
-                const allTabs = document.querySelectorAll('.tab-pane');
-                allTabs.forEach(tab => {
-                    tab.classList.remove('show', 'active');
-                });
+                                                    const allTabs = document.querySelectorAll('.tab-pane');
+                                                    allTabs.forEach(tab => {
+                                                        tab.classList.remove('show', 'active');
+                                                    });
 
-                // Show the selected tab
-                const selectedTab = document.getElementById(`tab-${tabType}`);
-                selectedTab.classList.add('show', 'active');
-
-
-                // Toggle reset preferences button
-                const resetBtn = document.getElementById('resetPrefsBtn');
-                resetBtn.classList.toggle('d-none', tabType !== 'recommended');
-            };
-        });
-
-        function exportToExcel() {
-            // Create a workbook
-            const workbook = XLSX.utils.book_new();
-
-            // Get the table
-            const table = document.getElementById('user-approval-table');
-
-            // Convert table to worksheet
-            const worksheet = XLSX.utils.table_to_sheet(table);
-
-            // Add worksheet to workbook
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Loads");
-
-            // Generate Excel file and download
-            XLSX.writeFile(workbook, 'Loads_List.xlsx');
-        }
+                                                    // Show the selected tab
+                                                    const selectedTab = document.getElementById(`tab-${tabType}`);
+                                                    selectedTab.classList.add('show', 'active');
 
 
+                                                    // Toggle reset preferences button
+                                                    const resetBtn = document.getElementById('resetPrefsBtn');
+                                                    resetBtn.classList.toggle('d-none', tabType !== 'recommended');
+                                                };
+                                            });
 
-        document.addEventListener('DOMContentLoaded', function() {
-            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            tooltipTriggerList.forEach(function(tooltipTriggerEl) {
-                new bootstrap.Tooltip(tooltipTriggerEl);
-            });
-        });
-        let recommendationPrefsExist = false; // simulate backend check
+                                            function exportToExcel() {
+                                                // Create a workbook
+                                                const workbook = XLSX.utils.book_new();
 
-        // Handle form submission (only frontend)
-        //document.getElementById('recommendationForm')?.addEventListener('submit', function(e) {
-        //  e.preventDefault();
-        // Normally this data would be sent to the server
-        //const formData = Object.fromEntries(new FormData(this));
-        //console.log('Preferences Saved:', formData);
-        //bootstrap.Modal.getInstance(document.getElementById('recommendationModal')).hide();
-        //});
-    </script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script> -->
+                                                // Get the table
+                                                const table = document.getElementById('user-approval-table');
+
+                                                // Convert table to worksheet
+                                                const worksheet = XLSX.utils.table_to_sheet(table);
+
+                                                // Add worksheet to workbook
+                                                XLSX.utils.book_append_sheet(workbook, worksheet, "Loads");
+
+                                                // Generate Excel file and download
+                                                XLSX.writeFile(workbook, 'Loads_List.xlsx');
+                                            }
+
+
+
+                                            document.addEventListener('DOMContentLoaded', function() {
+                                                var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+                                                tooltipTriggerList.forEach(function(tooltipTriggerEl) {
+                                                    new bootstrap.Tooltip(tooltipTriggerEl);
+                                                });
+                                            });
+                                            let recommendationPrefsExist = false; // simulate backend check
+
+                                            // Handle form submission (only frontend)
+                                            //document.getElementById('recommendationForm')?.addEventListener('submit', function(e) {
+                                            //  e.preventDefault();
+                                            // Normally this data would be sent to the server
+                                            //const formData = Object.fromEntries(new FormData(this));
+                                            //console.log('Preferences Saved:', formData);
+                                            //bootstrap.Modal.getInstance(document.getElementById('recommendationModal')).hide();
+                                            //});
+                                        </script>
+                                        <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script> -->
 
 
     <!-- <style>
-        .btn-outline-light.active {
-            background-color: #4d6b8a !important;
-            color: white !important;
-        }
+                                            .btn-outline-light.active {
+                                                background-color: #4d6b8a !important;
+                                                color: white !important;
+                                            }
 
-        #collapseProduct .form-label {
-            font-weight: 500;
-        }
+                                            #collapseProduct .form-label {
+                                                font-weight: 500;
+                                            }
 
-        #collapseProduct .form-control,
-        #collapseProduct .form-select {
-            font-size: 0.85rem;
-            padding: 0.4rem 0.6rem;
-        }
+                                            #collapseProduct .form-control,
+                                            #collapseProduct .form-select {
+                                                font-size: 0.85rem;
+                                                padding: 0.4rem 0.6rem;
+                                            }
 
-        .fix-width {
-            width: 100px;
-            text-align: center;
-            padding: 6px 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
+                                            .fix-width {
+                                                width: 100px;
+                                                text-align: center;
+                                                padding: 6px 0;
+                                                display: flex;
+                                                justify-content: center;
+                                                align-items: center;
+                                            }
 
-        .btn-outline-primary.fix-width:hover,
-        .btn-outline-danger.fix-width:hover {
-            background-color: inherit !important;
-            color: inherit !important;
-            border-color: inherit !important;
-            box-shadow: none !important;
-            transition: none !important;
-        }
+                                            .btn-outline-primary.fix-width:hover,
+                                            .btn-outline-danger.fix-width:hover {
+                                                background-color: inherit !important;
+                                                color: inherit !important;
+                                                border-color: inherit !important;
+                                                box-shadow: none !important;
+                                                transition: none !important;
+                                            }
 
-        /* #resetPrefsBtn {
-                    height: 30px;
-                    width: 30px;
-                    padding: 0;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                } */
+                                            /* #resetPrefsBtn {
+                                                        height: 30px;
+                                                        width: 30px;
+                                                        padding: 0;
+                                                        display: flex;
+                                                        justify-content: center;
+                                                        align-items: center;
+                                                    } */
 
-        /* Pagination styles */
-        .pagination {
-            margin: 0;
-        }
+                                            /* Pagination styles */
+                                            .pagination {
+                                                margin: 0;
+                                            }
 
-        .pagination-circle .page-item {
-            margin: 0 3px;
-        }
+                                            .pagination-circle .page-item {
+                                                margin: 0 3px;
+                                            }
 
-        .pagination-circle .page-link {
-            width: 32px;
-            height: 32px;
-            padding: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50% !important;
-            border: 1px solid #dee2e6;
-        }
+                                            .pagination-circle .page-link {
+                                                width: 32px;
+                                                height: 32px;
+                                                padding: 0;
+                                                display: flex;
+                                                align-items: center;
+                                                justify-content: center;
+                                                border-radius: 50% !important;
+                                                border: 1px solid #dee2e6;
+                                            }
 
-        .pagination-circle .page-item.active .page-link {
-            background-color: #4d6b8a;
-            border-color: #4d6b8a;
-        }
+                                            .pagination-circle .page-item.active .page-link {
+                                                background-color: #4d6b8a;
+                                                border-color: #4d6b8a;
+                                            }
 
-        .pagination-circle .page-item.disabled .page-link {
-            color: #6c757d;
-        }
-    </style> -->
+                                            .pagination-circle .page-item.disabled .page-link {
+                                                color: #6c757d;
+                                            }
+                                        </style> -->
 @endsection

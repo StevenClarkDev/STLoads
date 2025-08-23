@@ -80,6 +80,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/loads/update/{load}', [LoadController::class, 'update'])->name('loads.update');
     Route::post('/loads/delete/{load}', [LoadController::class, 'delete'])->name('loads.delete');
     Route::get('/loads/view/{load}', [LoadController::class, 'view'])->name('loads.view');
+    Route::post('/load-legs/{load_leg}/book', [LoadController::class, 'book'])->name('load-legs.book');
+
     // Route::get('/loads/bid/{load}', [LoadController::class, 'bid'])->name('loads.bid');
 
     // Chat

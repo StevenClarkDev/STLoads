@@ -145,7 +145,10 @@
                         <ul id="convoList" class="chats-user">
                             @forelse($conversations as $c)
                                 @php
-                                    $other = \Illuminate\Support\Facades\Auth::id() === $c->carrier_id ? $c->shipper : $c->carrier;
+                                    $other =
+                                        \Illuminate\Support\Facades\Auth::id() === $c->carrier_id
+                                            ? $c->shipper
+                                            : $c->carrier;
                                     $last = $c->latestMessage ?? $c->messages()->latest()->first();
                                     $otherHasAvatar = filled($other?->avatar_url);
                                 @endphp
@@ -155,9 +158,9 @@
                                                            {{ isset($conversation) && $c->id === $conversation->id ? 'bg-light p-2 rounded' : '' }}">
                                         <div class="chat-time">
                                             <div class="active-profile me-2">
-                                                @if($otherHasAvatar)
-                                                    <img class="img-fluid rounded-circle" src="{{ $other->avatar_url }}" alt="user"
-                                                        width="36" height="36">
+                                                @if ($otherHasAvatar)
+                                                    <img class="img-fluid rounded-circle" src="{{ $other->avatar_url }}"
+                                                        alt="user" width="36" height="36">
                                                 @else
                                                     <div class="avatar-circle sm">{{ initials($other?->name) }}</div>
                                                 @endif
@@ -172,7 +175,8 @@
                                         <div class="text-end">
                                             <p class="mb-1 text-muted-2">{{ $last?->created_at?->diffForHumans() }}</p>
                                             @if (method_exists($c, 'unread_count_for') && $c->unread_count_for(auth()->user()))
-                                                <div class="badge badge-light-success">{{ $c->unread_count_for(auth()->user()) }}
+                                                <div class="badge badge-light-success">
+                                                    {{ $c->unread_count_for(auth()->user()) }}
                                                 </div>
                                             @endif
                                         </div>
@@ -197,13 +201,15 @@
                                         @php
                                             $other = null;
                                             if ($conversation) {
-                                                $other = \Illuminate\Support\Facades\Auth::id() === $conversation->carrier_id
-                                                    ? $conversation->shipper : $conversation->carrier;
+                                                $other =
+                                                    \Illuminate\Support\Facades\Auth::id() === $conversation->carrier_id
+                                                        ? $conversation->shipper
+                                                        : $conversation->carrier;
                                             }
                                             $hasAvatar = filled($other?->avatar_url);
                                         @endphp
 
-                                        @if($hasAvatar)
+                                        @if ($hasAvatar)
                                             <img class="img-fluid rounded-circle"
                                                 src="{{ $other->avatar_url ?? asset('assets/images/blog/comment.jpg') }}"
                                                 alt="user" width="48" height="48">
@@ -214,7 +220,8 @@
                                     <div class="ms-2">
                                         <span class="fw-semibold">{{ $other?->name ?? 'No active conversation' }}</span>
                                         @if ($conversation)
-                                            <p class="text-muted-2 mb-0 small">Load #{{ $conversation->load_leg?->leg_code }}
+                                            <p class="text-muted-2 mb-0 small">Load
+                                                #{{ $conversation->load_leg?->leg_code }}
                                             </p>
                                         @endif
                                     </div>
@@ -226,15 +233,18 @@
                                         $iAmCarrier = auth()->id() === ($conversation->carrier_id ?? null);
                                         $myLatestOffer = null;
                                         if ($iAmCarrier && $conversation?->load_leg) {
-                                            $myLatestOffer = $conversation->load_leg->offers()
+                                            $myLatestOffer = $conversation->load_leg
+                                                ->offers()
                                                 ->where('carrier_id', auth()->id())
-                                                ->latest()->first();
+                                                ->latest()
+                                                ->first();
                                         }
                                         $statusId = $myLatestOffer->status_id ?? null; // 1 pending, 3 accepted, 0/else declined
-                                        $approvedAmount = $statusId === 3 ? number_format($myLatestOffer->amount, 2) : null;
+                                        $approvedAmount =
+                                            $statusId === 3 ? number_format($myLatestOffer->amount, 2) : null;
                                     @endphp
 
-                                    <div class="d-flex align-items-center">
+                                    <div class="d-flex align-items-center gap-2">
                                         @if ($iAmCarrier && $conversation?->load_leg)
                                             @php
                                                 // Decide label & style
@@ -260,7 +270,13 @@
                                             <button class="{{ $btnClass }}" {!! $btnData !!}>
                                                 <span>{{ $btnLabel }}</span>
                                             </button>
-
+                                        @endif
+                                        @if ($conversation?->load_leg)
+                                            <button class="btn btn-outline-secondary" data-open="offers">
+                                                <i class="fa fa-tags me-1"></i> View offers
+                                                <span id="offersCountPill"
+                                                    class="badge bg-secondary ms-2">{{ $conversation->load_leg->offers()->count() }}</span>
+                                            </button>
                                         @endif
                                     </div>
                                 @endif
@@ -289,13 +305,15 @@
                                             </div>
                                         </div>
                                     @empty
-                                        <div class="text-center text-muted py-4">No messages yet — be the first to say hi 👋</div>
+                                        <div class="text-center text-muted py-4">No messages yet — be the first to say hi
+                                            👋</div>
                                     @endforelse
                                 </div>
 
                                 {{-- SEND FORM --}}
-                                <form id="sendForm" class="msger-inputarea" action="{{ url('/chat/' . $conversation->id) }}"
-                                    method="POST" onsubmit="return false;">
+                                <form id="sendForm" class="msger-inputarea"
+                                    action="{{ url('/chat/' . $conversation->id) }}" method="POST"
+                                    onsubmit="return false;">
                                     @csrf
                                     <input id="msgInput" name="body" class="msger-input two uk-textarea" type="text"
                                         placeholder="Type Message here.." autocomplete="off">
@@ -303,7 +321,8 @@
                                         <div id="emojiBtn" class="second-btn uk-button" title="Emoji"></div>
                                     </div>
                                     <emoji-picker id="emojiPicker"></emoji-picker>
-                                    <button class="msger-send-btn" type="submit"><i class="fa fa-location-arrow"></i></button>
+                                    <button class="msger-send-btn" type="submit"><i
+                                            class="fa fa-location-arrow"></i></button>
                                 </form>
                             </div>
                         </div>
@@ -332,7 +351,8 @@
                             <input type="hidden" name="load_leg_id" value="{{ $conversation->load_leg->id }}">
                             <div class="mb-3">
                                 <label class="form-label">Amount</label>
-                                <input type="number" min="1" step="0.01" name="amount" class="form-control" required>
+                                <input type="number" min="1" step="0.01" name="amount" class="form-control"
+                                    required>
                             </div>
 
                             {{-- Compact history (3 at a time with scroll) --}}
@@ -341,28 +361,35 @@
                                     <h6 class="mb-1">Your previous offers</h6>
                                 </div>
                                 @php
-                                    $myOffers = $conversation->load_leg->offers()
+                                    $myOffers = $conversation->load_leg
+                                        ->offers()
                                         ->where('carrier_id', auth()->id())
-                                        ->latest()->get();
+                                        ->latest()
+                                        ->get();
                                 @endphp
-                                <div class="offer-history" style="max-height:210px">
+                                <div id="previousOffersList" class="offer-history" style="max-height:210px">
                                     @forelse($myOffers as $o)
-                                        <div class="offer-item">
+                                        @php
+                                            $s = (int) $o->status_id;
+                                            $chip =
+                                                $s === 3
+                                                    ? 'bg-success text-white'
+                                                    : ($s === 1
+                                                        ? 'bg-warning text-dark'
+                                                        : 'bg-danger text-white');
+                                            $lab = $s === 3 ? 'Approved' : ($s === 1 ? 'Pending' : 'Rejected');
+                                        @endphp
+                                        <div class="offer-item" data-prev-offer-row="{{ $o->id }}">
                                             <div>
                                                 <div class="offer-amount">${{ number_format($o->amount, 2) }}</div>
                                                 <div class="offer-when"><i class="fa fa-clock"></i>
-                                                    {{ $o->created_at?->format('Y-m-d h:i A') }}
-                                                </div>
+                                                    {{ $o->created_at?->format('Y-m-d h:i A') }}</div>
                                             </div>
-                                            @php
-                                                $s = $o->status_id;
-                                                $chip = $s === 3 ? 'bg-success text-white' : ($s === 1 ? 'bg-warning text-dark' : 'bg-danger text-white');
-                                                $lab = $s === 3 ? 'Approved' : ($s === 1 ? 'Pending' : 'Rejected');
-                                            @endphp
-                                            <span class="status-chip {{ $chip }}">{{ $lab }}</span>
+                                            <span class="status-chip {{ $chip }}"><span
+                                                    class="status-text">{{ $lab }}</span></span>
                                         </div>
                                     @empty
-                                        <div class="text-muted small">No previous offers.</div>
+                                        <div id="previousOffersEmpty" class="text-muted small">No previous offers.</div>
                                     @endforelse
                                 </div>
                             </div>
@@ -388,33 +415,48 @@
                         </div>
                         <div class="modal-body">
                             @php
-                                $myOffersAll = $conversation->load_leg->offers()
+                                $myOffersAll = $conversation->load_leg
+                                    ->offers()
                                     ->where('carrier_id', auth()->id())
-                                    ->orderByDesc('created_at')->get();
+                                    ->orderByDesc('created_at')
+                                    ->get();
                             @endphp
-                            <div class="offer-history">
+
+                            <div id="offerHistoryList" class="offer-history">
                                 @forelse($myOffersAll as $o)
                                     @php
-                                        $s = $o->status_id;
-                                        $chip = $s === 3 ? 'bg-success text-white' : ($s === 1 ? 'bg-warning text-dark' : 'bg-danger text-white');
+                                        $s = (int) $o->status_id;
+                                        $chip =
+                                            $s === 3
+                                                ? 'bg-success text-white'
+                                                : ($s === 1
+                                                    ? 'bg-warning text-dark'
+                                                    : 'bg-danger text-white');
                                         $lab = $s === 3 ? 'Approved' : ($s === 1 ? 'Pending' : 'Rejected');
                                     @endphp
-                                    <div class="offer-item">
+                                    <div class="offer-item" data-history-row="{{ $o->id }}">
                                         <div>
                                             <div class="offer-amount">${{ number_format($o->amount, 2) }}</div>
-                                            <div class="offer-when"><i class="fa fa-clock"></i>
-                                                Offered: {{ $o->created_at?->format('Y-m-d h:i A') }}
+                                            <div class="offer-when">
+                                                <i class="fa fa-clock"></i>
+                                                Offered: <span
+                                                    class="created-at">{{ $o->created_at?->format('Y-m-d h:i A') }}</span>
                                             </div>
-                                            @if($s !== 1 && $o->updated_at)
-                                                <div class="offer-when"><i class="fa fa-flag-checkered"></i>
-                                                    {{ $lab }}: {{ $o->updated_at?->format('Y-m-d h:i A') }}
-                                                </div>
-                                            @endif
+
+                                            {{-- this line is shown only when not pending --}}
+                                            <div class="offer-when finish-line"
+                                                @if ($s === 1) style="display:none" @endif>
+                                                <i class="fa fa-flag-checkered"></i>
+                                                <span class="final-label">{{ $lab }}</span>:
+                                                <span
+                                                    class="updated-at">{{ $o->updated_at?->format('Y-m-d h:i A') }}</span>
+                                            </div>
                                         </div>
-                                        <span class="status-chip {{ $chip }}">{{ $lab }}</span>
+                                        <span class="status-chip {{ $chip }}"><span
+                                                class="status-text">{{ $lab }}</span></span>
                                     </div>
                                 @empty
-                                    <div class="text-muted small">No offers yet.</div>
+                                    <div data-empty="history" class="text-muted small">No offers yet.</div>
                                 @endforelse
                             </div>
                         </div>
@@ -446,6 +488,75 @@
                 </div>
             </div>
         @endif
+        @if ($conversation?->load_leg)
+            @php
+                $initialOffers = $conversation->load_leg
+                    ->offers()
+                    ->latest()
+                    ->take(25)
+                    ->get(['id', 'amount', 'status_id', 'carrier_id', 'created_at']);
+                $isOwner = $conversation && auth()->id() === ($conversation->load_leg->load_master->user_id ?? null);
+            @endphp
+
+            <div class="modal fade" id="offersModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-scrollable modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="fa fa-tags me-2"></i>Offers
+                                <span class="badge bg-light text-dark ms-2"
+                                    id="offersCountModal">{{ $initialOffers->count() }} total</span>
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+
+                        <div class="modal-body">
+                            <div id="offerActionMsgModal" class="small text-muted mb-2"></div>
+
+                            <div id="offersListModal" class="list-group">
+                                @forelse ($initialOffers as $o)
+                                    @php
+                                        $s = (int) $o->status_id;
+                                        $badgeClass =
+                                            $s === 3 ? 'bg-success' : ($s === 1 ? 'bg-warning text-dark' : 'bg-danger');
+                                        $label = $s === 3 ? 'Accepted' : ($s === 1 ? 'Pending' : 'Declined');
+                                    @endphp
+                                    <div class="list-group-item d-flex justify-content-between align-items-center"
+                                        data-offer-row="{{ $o->id }}">
+                                        <div>
+                                            <div class="small text-muted">Carrier #{{ $o->carrier_id }}</div>
+                                            <div>Amount: <strong
+                                                    class="offer-amount">${{ number_format($o->amount, 2) }}</strong>
+                                            </div>
+                                            <div class="small">Status:
+                                                <span class="badge status-badge {{ $badgeClass }}"
+                                                    data-status="{{ $s }}">{{ $label }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="offer-actions">
+                                            @if ($s === 1 && $isOwner)
+                                                <button class="btn btn-success btn-sm me-1"
+                                                    data-offer="{{ $o->id }}" data-action="accept">Accept</button>
+                                                <button class="btn btn-outline-danger btn-sm"
+                                                    data-offer="{{ $o->id }}"
+                                                    data-action="decline">Decline</button>
+                                            @endif
+                                        </div>
+                                    </div>
+                                @empty
+                                    <div id="offerEmpty" class="text-muted small">No offers yet.</div>
+                                @endforelse
+                            </div>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button class="btn btn-light" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
+
     </div>
 
     {{-- expose vars for JS --}}
@@ -471,7 +582,7 @@
     <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
 
     <script>
-        (function () {
+        (function() {
             const token = document.querySelector('meta[name="csrf-token"]').content;
             axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
             axios.defaults.headers.common['X-CSRF-TOKEN'] = token;
@@ -485,9 +596,18 @@
                 forceTLS: true,
                 authorizer: (channel) => ({
                     authorize: (socketId, cb) => {
-                        axios.post('/broadcasting/auth', { socket_id: socketId, channel_name: channel.name }, { withCredentials: true })
-                            .then(r => { cb(null, r.data); })
-                            .catch(e => { cb(e, null); });
+                        axios.post('/broadcasting/auth', {
+                                socket_id: socketId,
+                                channel_name: channel.name
+                            }, {
+                                withCredentials: true
+                            })
+                            .then(r => {
+                                cb(null, r.data);
+                            })
+                            .catch(e => {
+                                cb(e, null);
+                            });
                     }
                 })
             });
@@ -506,12 +626,17 @@
                 if (show === undefined) show = (emojiPicker.style.display === 'none');
                 emojiPicker.style.display = show ? 'block' : 'none';
             }
-            emojiBtn?.addEventListener('click', (e) => { e.preventDefault(); togglePicker(); });
+            emojiBtn?.addEventListener('click', (e) => {
+                e.preventDefault();
+                togglePicker();
+            });
+
             function insertAtCursor(el, text) {
                 const start = el.selectionStart ?? el.value.length;
                 const end = el.selectionEnd ?? el.value.length;
                 el.value = el.value.slice(0, start) + text + el.value.slice(end);
-                const pos = start + text.length; el.setSelectionRange(pos, pos);
+                const pos = start + text.length;
+                el.setSelectionRange(pos, pos);
             }
             emojiPicker?.addEventListener('emoji-click', (ev) => {
                 const emoji = ev.detail?.unicode || '';
@@ -524,17 +649,43 @@
                 if (!emojiPicker || emojiPicker.style.display === 'none') return;
                 if (!emojiPicker.contains(e.target) && !emojiBtn.contains(e.target)) togglePicker(false);
             });
-            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') togglePicker(false); });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') togglePicker(false);
+            });
 
             /* ---------- Realtime channel ---------- */
             if (roomId) {
                 window.Echo.private(`convo.${roomId}`)
                     .listen('.message.sent', (e) => appendMessage(e))
                     .listen('.offer.updated', (e) => {
-                        upsertOfferRow(e.offer);
-                        if (Number(e.offer.status_id) === 3) markOtherPendingsDeclined(e.offer.id);
-                        flashOfferNotice(e.offer);
+                        upsertOfferRowModal(e.offer);
+                        upsertOfferHistory(e.offer);
+                        upsertPreviousOffer(e.offer);
+                        if (Number(e.offer.status_id) === 3) markOtherPendingsDeclinedModal(e.offer.id);
+                        flashOfferNoticeModal(e.offer);
+                        refreshOfferHeader(e.offer);
                     });
+            }
+
+            function refreshOfferHeader(offer) {
+                // Only carriers see this smart button in your Blade, so update it for them
+                const btn = document.querySelector('[data-offer-action]');
+                if (!btn) return;
+                const s = Number(offer.status_id);
+                const text = (t) => `<span>${t}</span>`;
+                if (s === 1) {
+                    btn.className = 'btn btn-outline-light';
+                    btn.setAttribute('data-offer-action', 'pending');
+                    btn.innerHTML = text('Pending — awaiting shipper');
+                } else if (s === 3) {
+                    btn.className = 'btn btn-primary';
+                    btn.setAttribute('data-offer-action', 'approved');
+                    btn.innerHTML = text(`Approved at ${fmtAmount(offer.amount)}`);
+                } else {
+                    btn.className = 'btn btn-outline-primary';
+                    btn.setAttribute('data-offer-action', 'rejected');
+                    btn.innerHTML = text('Make another offer');
+                }
             }
             // Pusher.logToConsole = true;
 
@@ -557,43 +708,83 @@
                 listEl.scrollTop = listEl.scrollHeight;
             }
 
-            function fmtAmount(n) { try { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(Number(n)) } catch { return Number(n).toFixed(2) } }
+            // open the offers modal
+            document.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-open="offers"]');
+                if (!btn) return;
+                const m = new bootstrap.Modal(document.getElementById('offersModal'));
+                m.show();
+            });
 
-            function statusToBadge(status) {
-                if (status === 3) return { badgeClass: 'bg-success', label: 'Accepted' };
-                if (status === 1) return { badgeClass: 'bg-warning text-dark', label: 'Pending' };
-                return { badgeClass: 'bg-danger', label: 'Declined' };
+            // util
+            function fmtAmount(n) {
+                try {
+                    return new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: 'USD',
+                        minimumFractionDigits: 2
+                    }).format(Number(n));
+                } catch {
+                    return Number(n).toFixed(2);
+                }
             }
 
-            function upsertOfferRow(offer) {
-                const list = document.getElementById('offersList');
+            function statusToBadge(status) {
+                if (status === 3) return {
+                    badgeClass: 'bg-success',
+                    label: 'Accepted'
+                };
+                if (status === 1) return {
+                    badgeClass: 'bg-warning text-dark',
+                    label: 'Pending'
+                };
+                return {
+                    badgeClass: 'bg-danger',
+                    label: 'Declined'
+                };
+            }
+
+            // render into the MODAL
+            function upsertOfferRowModal(offer) {
+                const list = document.getElementById('offersListModal');
                 if (!list) return;
-                const countBadge = document.getElementById('offersCount');
+
+                const countBadge = document.getElementById('offersCountModal');
+                const pill = document.getElementById('offersCountPill'); // header mini count
                 let row = list.querySelector(`[data-offer-row="${offer.id}"]`);
                 const status = Number(offer.status_id);
-                const { badgeClass, label } = statusToBadge(status);
+                const {
+                    badgeClass,
+                    label
+                } = statusToBadge(status);
 
                 if (!row) {
                     const div = document.createElement('div');
-                    div.className = 'd-flex justify-content-between align-items-center border-bottom py-2';
+                    div.className = 'list-group-item d-flex justify-content-between align-items-center';
                     div.dataset.offerRow = offer.id;
                     div.innerHTML = `
-                                <div>
-                                    <div class="small text-muted">Carrier #${offer.carrier_id}</div>
-                                    <div>Amount: <strong class="offer-amount">${fmtAmount(offer.amount)}</strong></div>
-                                    <div class="small">Status:
-                                        <span class="badge status-badge ${badgeClass}" data-status="${status}">${label}</span>
-                                    </div>
-                                </div>
-                                <div class="offer-actions"></div>`;
+      <div>
+        <div class="small text-muted">Carrier #${offer.carrier_id}</div>
+        <div>Amount: <strong class="offer-amount">${fmtAmount(offer.amount)}</strong></div>
+        <div class="small">Status:
+          <span class="badge status-badge ${badgeClass}" data-status="${status}">${label}</span>
+        </div>
+      </div>
+      <div class="offer-actions"></div>`;
                     list.prepend(div);
                     row = div;
 
+                    // bump counts
                     if (countBadge) {
                         const m = countBadge.textContent.match(/\d+/);
                         const curr = m ? Number(m[0]) : 0;
                         countBadge.textContent = `${curr + 1} total`;
                     }
+                    if (pill) {
+                        const curr = Number(pill.textContent || 0);
+                        pill.textContent = curr + 1;
+                    }
+                    document.getElementById('offerEmpty')?.remove();
                 } else {
                     row.querySelector('.offer-amount').textContent = fmtAmount(offer.amount);
                     const badge = row.querySelector('.status-badge');
@@ -602,19 +793,20 @@
                     badge.setAttribute('data-status', String(status));
                 }
 
+                // owner actions (accept/decline) only when pending
                 const actions = row.querySelector('.offer-actions');
                 if (actions) {
                     actions.innerHTML = '';
                     if (status === 1 && !!window.CHAT.isOwner) {
                         actions.innerHTML = `
-                                    <button class="btn btn-success btn-sm me-1" data-offer="${offer.id}" data-action="accept">Accept</button>
-                                    <button class="btn btn-outline-danger btn-sm" data-offer="${offer.id}" data-action="decline">Decline</button>`;
+        <button class="btn btn-success btn-sm me-1" data-offer="${offer.id}" data-action="accept">Accept</button>
+        <button class="btn btn-outline-danger btn-sm" data-offer="${offer.id}" data-action="decline">Decline</button>`;
                     }
                 }
             }
 
-            function markOtherPendingsDeclined(acceptedId) {
-                const list = document.getElementById('offersList');
+            function markOtherPendingsDeclinedModal(acceptedId) {
+                const list = document.getElementById('offersListModal');
                 if (!list) return;
                 list.querySelectorAll('[data-offer-row]').forEach(row => {
                     const id = Number(row.getAttribute('data-offer-row'));
@@ -624,38 +816,149 @@
                         badge.className = 'badge status-badge bg-danger';
                         badge.textContent = 'Declined';
                         badge.setAttribute('data-status', '0');
-                        const actions = row.querySelector('.offer-actions'); if (actions) actions.innerHTML = '';
+                        const actions = row.querySelector('.offer-actions');
+                        if (actions) actions.innerHTML = '';
                     }
                 });
             }
 
-            function flashOfferNotice(offer) {
-                const box = document.getElementById('offerActionMsg');
+            function flashOfferNoticeModal(offer) {
+                const box = document.getElementById('offerActionMsgModal');
                 if (!box) return;
                 const s = Number(offer.status_id);
                 box.className = 'small ' + (s === 3 ? 'text-success' : s === 1 ? 'text-muted' : 'text-danger');
-                box.textContent = s === 3 ? `Offer #${offer.id} accepted for ${fmtAmount(offer.amount)}`
-                    : s === 1 ? `Offer #${offer.id} created for ${fmtAmount(offer.amount)}`
-                        : `Offer #${offer.id} declined`;
+                box.textContent = s === 3 ?
+                    `Offer #${offer.id} accepted for ${fmtAmount(offer.amount)}` :
+                    s === 1 ?
+                    `Offer #${offer.id} created for ${fmtAmount(offer.amount)}` :
+                    `Offer #${offer.id} declined`;
             }
+
 
             /* ---------- Send message ---------- */
             form?.addEventListener('submit', (e) => {
                 e.preventDefault();
                 const body = (input?.value || '').trim();
                 if (!body) return;
-                axios.post(form.getAttribute('action'), { body })
-                    .then(() => { input.value = ''; })
+                axios.post(form.getAttribute('action'), {
+                        body
+                    })
+                    .then(() => {
+                        input.value = '';
+                    })
                     .catch(err => {
-                        alert((err?.response?.status === 403) ? 'Forbidden: you are not allowed to send in this conversation.'
-                            : (err?.response?.status === 419) ? 'CSRF token mismatch. Refresh and try again.'
-                                : 'Failed to send message. Check console.');
+                        alert((err?.response?.status === 403) ?
+                            'Forbidden: you are not allowed to send in this conversation.' :
+                            (err?.response?.status === 419) ?
+                            'CSRF token mismatch. Refresh and try again.' :
+                            'Failed to send message. Check console.');
                         console.error(err);
                     });
             });
 
+            function upsertOfferHistory(offer) {
+                // only show MY offers in the history modal
+                if (Number(offer.carrier_id) !== Number(window.CHAT.userId)) return;
+
+                const list = document.getElementById('offerHistoryList');
+                if (!list) return;
+
+                const rowSel = `[data-history-row="${offer.id}"]`;
+                let row = list.querySelector(rowSel);
+
+                const status = Number(offer.status_id);
+                const isPending = status === 1;
+                const statusText = status === 3 ? 'Approved' : (isPending ? 'Pending' : 'Rejected');
+                const chipClass = status === 3 ? 'bg-success text-white' : (isPending ? 'bg-warning text-dark' :
+                    'bg-danger text-white');
+
+                // create row if missing
+                if (!row) {
+                    row = document.createElement('div');
+                    row.className = 'offer-item';
+                    row.setAttribute('data-history-row', String(offer.id));
+                    row.innerHTML = `
+      <div>
+        <div class="offer-amount">${fmtAmount(offer.amount)}</div>
+        <div class="offer-when">
+          <i class="fa fa-clock"></i>
+          Offered: <span class="created-at"></span>
+        </div>
+        <div class="offer-when finish-line" style="${isPending ? 'display:none' : ''}">
+          <i class="fa fa-flag-checkered"></i>
+          <span class="final-label"></span>:
+          <span class="updated-at"></span>
+        </div>
+      </div>
+      <span class="status-chip ${chipClass}"><span class="status-text">${statusText}</span></span>
+    `;
+                    list.prepend(row);
+                    // hide the empty placeholder if it exists
+                    list?.querySelector('[data-empty="history"]')?.remove();;
+                } else {
+                    // update chip
+                    const chip = row.querySelector('.status-chip');
+                    chip.className = `status-chip ${chipClass}`;
+                    chip.querySelector('.status-text').textContent = statusText;
+                    // amount might change if you allow counter-offers
+                    row.querySelector('.offer-amount').textContent = fmtAmount(offer.amount);
+                }
+
+                // set times/labels
+                const createdAt = row.querySelector('.created-at');
+                const updatedAt = row.querySelector('.updated-at');
+                const finalLab = row.querySelector('.final-label');
+                if (createdAt && offer.created_at) {
+                    createdAt.textContent = new Date(offer.created_at).toLocaleString();
+                }
+                if (!isPending) {
+                    finalLab && (finalLab.textContent = statusText);
+                    if (updatedAt && offer.updated_at) {
+                        updatedAt.textContent = new Date(offer.updated_at).toLocaleString();
+                    }
+                    row.querySelector('.finish-line')?.setAttribute('style', ''); // show
+                } else {
+                    row.querySelector('.finish-line')?.setAttribute('style', 'display:none');
+                }
+            }
+
+            function upsertPreviousOffer(offer) {
+                // Only show MY offers in this modal (carrier’s compact history)
+                if (Number(offer.carrier_id) !== Number(window.CHAT.userId)) return;
+
+                const list = document.getElementById('previousOffersList');
+                if (!list) return;
+
+                let row = list.querySelector(`[data-prev-offer-row="${offer.id}"]`);
+                const s = Number(offer.status_id);
+                const label = s === 3 ? 'Approved' : (s === 1 ? 'Pending' : 'Rejected');
+                const chip = s === 3 ? 'bg-success text-white' : (s === 1 ? 'bg-warning text-dark' :
+                    'bg-danger text-white');
+
+                if (!row) {
+                    row = document.createElement('div');
+                    row.className = 'offer-item';
+                    row.dataset.prevOfferRow = String(offer.id);
+                    row.innerHTML = `
+      <div>
+        <div class="offer-amount">${fmtAmount(offer.amount)}</div>
+        <div class="offer-when"><i class="fa fa-clock"></i> ${offer.created_at ? new Date(offer.created_at).toLocaleString() : ''}</div>
+      </div>
+      <span class="status-chip ${chip}"><span class="status-text">${label}</span></span>`;
+                    list.prepend(row);
+                    document.getElementById('previousOffersEmpty')?.remove();
+                } else {
+                    row.querySelector('.offer-amount').textContent = fmtAmount(offer.amount);
+                    const chipEl = row.querySelector('.status-chip');
+                    chipEl.className = `status-chip ${chip}`;
+                    row.querySelector('.status-text').textContent = label;
+                }
+            }
+
+
+
             /* ---------- Search left list ---------- */
-            document.getElementById('chatSearch')?.addEventListener('input', function () {
+            document.getElementById('chatSearch')?.addEventListener('input', function() {
                 const q = this.value.toLowerCase();
                 document.querySelectorAll('#convoList li').forEach(li => {
                     li.style.display = li.textContent.toLowerCase().includes(q) ? '' : 'none';
@@ -673,12 +976,22 @@
                         .then(r => {
                             offerForm.querySelector('#offerError')?.classList.add('d-none');
                             const ok = offerForm.querySelector('#offerSuccess');
-                            if (ok) { ok.textContent = r.data?.message ?? 'Offer submitted.'; ok.classList.remove('d-none'); }
-                            setTimeout(() => { const modalEl = document.getElementById('offerModal'); if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide(); }, 900);
+                            if (ok) {
+                                ok.textContent = r.data?.message ?? 'Offer submitted.';
+                                ok.classList.remove('d-none');
+                            }
+                            setTimeout(() => {
+                                const modalEl = document.getElementById('offerModal');
+                                if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
+                            }, 900);
                         })
                         .catch(err => {
                             const msg = err?.response?.data?.message || 'Failed to send offer.';
-                            const el = offerForm.querySelector('#offerError'); if (el) { el.textContent = msg; el.classList.remove('d-none'); }
+                            const el = offerForm.querySelector('#offerError');
+                            if (el) {
+                                el.textContent = msg;
+                                el.classList.remove('d-none');
+                            }
                         });
                 });
             }
@@ -689,14 +1002,27 @@
                 if (!btn) return;
                 const id = btn.getAttribute('data-offer');
                 const action = btn.getAttribute('data-action');
-                const url = action === 'accept' ? `{{ url('/offers') }}/${id}/accept` : `{{ url('/offers') }}/${id}/decline`;
+                const url = action === 'accept' ? `{{ url('/offers') }}/${id}/accept` :
+                    `{{ url('/offers') }}/${id}/decline`;
                 axios.post(url)
                     .then(r => {
-                        const box = document.getElementById('offerActionMsg'); if (box) { box.className = 'text-success small'; box.textContent = r.data?.message || 'Done.'; }
+                        ['offerActionMsg', 'offerActionMsgModal'].forEach(id => {
+                            const el = document.getElementById(id);
+                            if (el) {
+                                el.className = 'text-success small';
+                                el.textContent = r.data?.message || 'Done.';
+                            }
+                        });
                     })
                     .catch(err => {
                         const msg = err?.response?.data?.message || 'Action failed.';
-                        const box = document.getElementById('offerActionMsg'); if (box) { box.className = 'text-danger small'; box.textContent = msg; }
+                        ['offerActionMsg', 'offerActionMsgModal'].forEach(id => {
+                            const el = document.getElementById(id);
+                            if (el) {
+                                el.className = 'text-danger small';
+                                el.textContent = msg;
+                            }
+                        });
                     });
             });
 
@@ -725,5 +1051,13 @@
                 }
             });
         })();
+    </script>
+    <script>
+        document.getElementById('offerModal')?.addEventListener('show.bs.modal', () => {
+            const f = document.getElementById('offerForm');
+            f?.reset();
+            f?.querySelector('#offerError')?.classList.add('d-none');
+            f?.querySelector('#offerSuccess')?.classList.add('d-none');
+        });
     </script>
 @endpush

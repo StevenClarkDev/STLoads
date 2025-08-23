@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Offers;
+use App\Models\Conversation;
 use App\Models\LoadLeg;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -36,6 +37,9 @@ class OfferController extends Controller
             ->where('status_id', 1)
             ->exists();
 
+        $conversation = Conversation::where('load_leg_id', $loadLeg->id)
+            ->where('carrier_id', $carrierId)->first();
+
         if ($hasPending) {
             return response()->json(['message' => 'You already have a pending offer on this load. Wait for a decision.'], 422);
         }
@@ -44,6 +48,7 @@ class OfferController extends Controller
         $offer = Offers::create([
             'load_leg_id' => $loadLeg->id,
             'carrier_id'  => $carrierId,
+            'conversation_id'  => $conversation->id,
             'amount'      => $data['amount'],
             'status_id'      => 1,
         ]);
