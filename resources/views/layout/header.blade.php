@@ -5,7 +5,7 @@
                 <div class="Typeahead Typeahead--twitterUsers">
                     <div class="u-posRelative">
                         <input class="demo-input Typeahead-input form-control-plaintext w-100" type="text"
-                            placeholder="Search Cuba .." name="q" title="" autofocus>
+                            placeholder="Search St Loads .." name="q" title="" autofocus>
                         <div class="spinner-border Typeahead-spinner" role="status"><span
                                 class="sr-only">Loading...</span></div><i class="close-search" data-feather="x"></i>
                     </div>
@@ -57,10 +57,10 @@
                         </div>
                     </div>
                 </li> -->
-                <li> <span class="header-search">
+                <!-- <li> <span class="header-search">
                         <svg>
                             <use href="../assets/svg/icon-sprite.svg#search"></use>
-                        </svg></span></li>
+                        </svg></span></li> -->
                 <!-- <li class="onhover-dropdown">
                     <svg>
                         <use href="../assets/svg/icon-sprite.svg#star"></use>
@@ -112,13 +112,13 @@
                         </div>
                     </div>
                 </li> -->
-                <li>
+                <!-- <li>
                     <div class="mode">
                         <svg>
                             <use href="../assets/svg/icon-sprite.svg#moon"></use>
                         </svg>
                     </div>
-                </li>
+                </li> -->
                 <!-- <li class="cart-nav onhover-dropdown">
                     <div class="cart-box">
                         <svg>
@@ -177,7 +177,7 @@
                         </ul>
                     </div>
                 </li> -->
-                <li class="onhover-dropdown">
+                <!-- <li class="onhover-dropdown">
                     <div class="notification-box">
                         <svg>
                             <use href="../assets/svg/icon-sprite.svg#notification"></use>
@@ -201,7 +201,7 @@
                             <li><a class="f-w-700" href="#">Check all</a></li>
                         </ul>
                     </div>
-                </li>
+                </li> -->
                 <li class="profile-nav onhover-dropdown pe-0 py-0">
                     <div class="media profile-media">
                         <img class="b-r-10" src="../assets/images/dashboard/profile.png" alt="">

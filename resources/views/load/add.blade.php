@@ -152,52 +152,7 @@
     <!-- Container-fluid Ends-->
 @endsection
 
-<style>
-    .card-header.d-flex {
-        align-items: center;
-        justify-content: space-between;
-    }
 
-    .table-responsive {
-        max-height: 250px;
-        overflow-y: auto;
-        overflow-x: auto;
-    }
-
-    #load_legs-table th,
-    #load_legs-table td {
-        white-space: nowrap;
-        text-align: center;
-        vertical-align: middle;
-    }
-
-    #load_legs-table .form-control,
-    #load_legs-table .form-select {
-        min-width: 150px;
-        padding: 4px 6px;
-        height: 36px;
-    }
-
-    #load_legs-table td:first-child,
-    #load_legs-table th:first-child,
-    #load_legs-table td:nth-last-child(2),
-    #load_legs-table th:nth-last-child(2) {
-        width: 80px;
-    }
-
-    .btn-remove-icon {
-        background: none;
-        border: none;
-        padding: 0;
-        color: #dc3545;
-        font-size: 1.2rem;
-        cursor: pointer;
-    }
-
-    .btn-remove-icon:hover {
-        color: #a71d2a;
-    }
-</style>
 
 <script src="{{ url('assets/js/jquery.min.js') }}"></script>
 
