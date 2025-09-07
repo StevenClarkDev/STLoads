@@ -133,7 +133,7 @@
             {{-- Submit --}}
             <div class="col-12 text-center mt-4">
                 <button type="submit" class="btn btn-primary w-50">Sign Up</button>
-                <p class="mt-3 text-muted">Already have an account? <a href="{{ route('normal-login') }}">Sign In</a>
+                <p class="mt-3 text-muted">Already have an account? <a href="{{ route('normal-login', ['id' => $id]) }}">Sign In</a>
                 </p>
             </div>
 

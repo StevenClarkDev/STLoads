@@ -7,10 +7,10 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
-class KycDocuments extends Models
+class LoadDocuments extends Models
 {
     use HasFactory;
-    protected $table = 'kyc_documents';
+    protected $table = 'load_documents';
     protected $guarded = [];
     public $timestamps = true;
 
@@ -25,7 +25,7 @@ class KycDocuments extends Models
 
     /** Mass-assignable fields */
     protected $fillable = [
-        'user_id',
+        'load_id',
         'document_name',
         'document_type',
         'file_path',
@@ -51,9 +51,9 @@ class KycDocuments extends Models
     ];
 
 
-    public function user()
+    public function load_master()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(Load::class);
     }
 
     /* ----------------------------- Scopes ----------------------------- */
@@ -63,9 +63,9 @@ class KycDocuments extends Models
         return $query->where('document_type', self::TYPE_BLOCKCHAIN);
     }
 
-    public function scopeForUser($query, int $userId)
+    public function scopeForLoad($query, int $loadId)
     {
-        return $query->where('user_id', $userId);
+        return $query->where('load_id', $loadId);
     }
 
     /* ---------------------------- Accessors --------------------------- */

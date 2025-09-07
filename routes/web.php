@@ -28,6 +28,8 @@ Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'role'])->name('login');
     Route::get('/admin/login', [AuthController::class, 'adminLogin'])->name('admin.login');
     Route::post('/login', [AuthController::class, 'verify'])->name('login.post');
+    Route::get('/guest_profile/{user}', [AuthController::class, 'userProfile'])->name('guest.profile');
+    Route::post('/profile/revise/{user}', [AuthController::class, 'save'])->name('profile.revise.save');
     Route::post('/admin/login', [AuthController::class, 'adminVerify'])->name('admin.login.post');
 
     Route::get('/register', [AuthController::class, 'registerForm'])->name('register.form');
@@ -68,12 +70,17 @@ Route::middleware('auth')->group(function () {
     Route::post('/verify-admin-password', [AdminController::class, 'verifyPassword']);
     Route::get('/get-cnic-file/{id}', [AdminController::class, 'getCnicFiles']);
     Route::get('/get-user-file/{id}', [AdminController::class, 'getFiles']);
-    Route::post('/approve-user', [UserController::class, 'approve']);
-    Route::post('/reject-user', [UserController::class, 'reject']);
+    Route::post('/update-status/{id}', [UserController::class, 'updateStatus'])->name('user.update-status');
 
     // Load Management
+    Route::get('/admin-manage-loads', [LoadController::class, 'adminIndex'])->name('admin.manage-loads');
+    Route::post('/load-update-status/{id}', [LoadController::class, 'updateStatus'])->name('load.update-status');
+    Route::get('/admin/loads/view/{load}', [LoadController::class, 'adminView'])->name('admin.loads.view');
     Route::get('/manage-loads', [LoadController::class, 'index'])->name('manage-loads');
+    Route::get('/profile/{user}', [AuthController::class, 'profile'])->name('profile');
     Route::post('/save_preferences', [LoadController::class, 'savePreferences'])->name('savePreferences');
+    Route::get('/loads/view/{load}', [LoadController::class, 'view'])->name('loads.view');
+    Route::post('/load/revise/{load}', [LoadController::class, 'save'])->name('load.revise.save');
     Route::get('/loads/add', [LoadController::class, 'add'])->name('loads.add');
     Route::post('/loads/add', [LoadController::class, 'store'])->name('loads.store');
     Route::get('/loads/edit/{load}', [LoadController::class, 'edit'])->name('loads.edit');

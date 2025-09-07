@@ -49,7 +49,8 @@
                             <label>Business or Personal Name</label>
                             <div class="input-group">
                                 <input id="company_name" class="form-control pe-5 rounded-2" type="text"
-                                    name="company_name" placeholder="Enter your Business or Personal Name" value="{{ old('company_name') }}" required>
+                                    name="company_name" placeholder="Enter your Business or Personal Name"
+                                    value="{{ old('company_name') }}" required>
                                 <i id="name-icon"
                                     class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                             </div>
@@ -58,8 +59,8 @@
                             <label>Business Address (Pickup Location)</label>
                             <div class="input-group">
                                 <input id="company_address" class="form-control pe-5 rounded-2" type="text"
-                                    name="company_address" placeholder="Enter your Business Address (Pickup Location)" value="{{ old('company_address') }}"
-                                    required>
+                                    name="company_address" placeholder="Enter your Business Address (Pickup Location)"
+                                    value="{{ old('company_address') }}" required>
                                 <i id="name-icon"
                                     class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                             </div>
@@ -70,8 +71,8 @@
                             <label>Business Type</label>
                             <div class="input-group">
                                 <input id="business_type" class="form-control pe-5 rounded-2" type="text"
-                                    name="business_type" placeholder="Business Type (e.g., E-commerce, Manufacturer)" value="{{ old('business_type') }}"
-                                    required>
+                                    name="business_type" placeholder="Business Type (e.g., E-commerce, Manufacturer)"
+                                    value="{{ old('business_type') }}" required>
                                 <i id="name-icon"
                                     class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                             </div>
@@ -79,14 +80,14 @@
                         <div class="col-md-6 position-relative">
                             <label>Website</label>
                             <div class="input-group">
-                                <input id="website" class="form-control pe-5 rounded-2" type="text" name="website" value="{{ old('website') }}"
-                                    placeholder="Website (if applicable)">
+                                <input id="website" class="form-control pe-5 rounded-2" type="text" name="website"
+                                    value="{{ old('website') }}" placeholder="Website (if applicable)">
                                 <i id="name-icon"
                                     class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-12 d-flex gap-2 mb-2">
+                    {{-- <div class="col-md-12 d-flex gap-2 mb-2">
                         <div class="col-md-6">
                             <div class="form-floating form-floating-outline">
                                 <input type="file" accept=".jpeg, .jpg, .png, .pdf" name="cnic_front" id="cnic_front"
@@ -101,7 +102,7 @@
                                 <label>CNIC Back</label>
                             </div>
                         </div>
-                    </div>
+                    </div> --}}
                 </div>
 
                 <!-- Step 2: Additional Info -->
@@ -553,6 +554,23 @@
                         <textarea class="form-control" name="special_notes"
                             placeholder="Special logistics needs, hours of operation, dock access info, etc." style="height: 100px"></textarea>
                     </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-header">Documents</h5>
+                        <button type="button" class="btn btn-primary h-75" id="doc-row">Add</button>
+                    </div>
+                    <table class="table table-bordered" id="document-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Ducument Name</th>
+                                <th>Ducument Type</th>
+                                <th>Document</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
@@ -788,11 +806,8 @@
                     const company_name = document.getElementById('company_name').value;
                     const company_address = document.getElementById('company_address').value;
                     const business_type = document.getElementById('business_type').value;
-                    const cnic_front = document.getElementById('cnic_front');
-                    const cnic_back = document.getElementById('cnic_back');
 
-                    if (!company_name || !company_address || !business_type || !cnic_front.files.length || !
-                        cnic_back.files.length) {
+                    if (!company_name || !company_address || !business_type) {
                         Swal.fire({
                             position: 'center',
                             icon: 'error',
@@ -919,6 +934,57 @@
                 const fileName = this.files[0]?.name || 'No file chosen';
                 document.getElementById('user_image_name').textContent = fileName;
             });
+        });
+    </script>
+    <script>
+        $(document).ready(function() {
+            function addMemberRow() {
+                const rowCount = $('#document-table tbody tr').length + 1;
+                const newRow = `
+            <tr>
+                <td>${rowCount}</td>
+                <td><input type="text" name="doc_name[]" class="form-control" required /></td>
+                <td>
+                    <select name="doc_type[]" required class="form-control">
+                        <option value="standard">Standard</option>
+                        <option value="blockchain">Blockchain</option>
+                    </select>
+                </td>
+                <td>
+                    <input type="file" name="documents[]" class="form-control"
+                           accept=".pdf,.jpg,.jpeg,.png,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"
+                           required />
+                </td>
+                <td><button type="button" class="btn btn-danger remove-row">Remove</button></td>
+            </tr>`;
+                $('#document-table tbody').append(newRow);
+                updateSerialNumbers('#document-table');
+                toggleRemoveButtons();
+            }
+
+            function updateSerialNumbers(tableId) {
+                $(tableId + ' tbody tr').each(function(index) {
+                    $(this).find('td:first').text(index + 1);
+                });
+            }
+
+            function toggleRemoveButtons() {
+                const rows = $('#document-table tbody tr');
+                // prevent deleting the last remaining row
+                rows.find('.remove-row').prop('disabled', rows.length === 1);
+            }
+
+            $('#doc-row').on('click', addMemberRow);
+
+            $('body').on('click', '.remove-row', function() {
+                $(this).closest('tr').remove();
+                updateSerialNumbers('#document-table');
+                toggleRemoveButtons();
+                if ($('#document-table tbody tr').length === 0) addMemberRow();
+            });
+
+            // start with one row
+            addMemberRow();
         });
     </script>
 @endsection

@@ -18,6 +18,16 @@
                         <a href="{{ route('normal-login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Cancel</a>
                     </div>
                 </div>
+            @elseif ($user->status == 5)
+                <div class="text-center">
+                    <h4 class="mb-3">Revision</h4>
+                    <p class="text-muted">Your account requires revision. Please complete it in your profile to proceed.</p>
+                    <p class="text-muted">Admin Remarks: {{$remarks}}.</p>
+                    <div class="d-flex justify-content-center gap-2">
+                        <a href="{{ route('guest.profile', $user->id) }}" class="btn btn-primary">Profile</a>
+                        <a href="{{ route('normal-login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </div>
 
             @elseif ($user->status == 3)
                 <div class="text-center">

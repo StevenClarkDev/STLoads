@@ -84,7 +84,7 @@
                                                 <label for="company_address">Company Address</label>
                                             </div>
                                         </div>
-                                        <div class="col-md-6">
+                                        {{-- <div class="col-md-6">
                                             <div class="form-floating form-floating-outline">
                                                 <input type="file" accept=".jpeg, .jpg, .png, .pdf"
                                                     name="cnic_front" class="form-control" />
@@ -97,7 +97,7 @@
                                                     name="cnic_back" class="form-control" />
                                                 <label>CNIC Back</label>
                                             </div>
-                                        </div>
+                                        </div> --}}
 
                                         {{-- Carrier --}}
                                         @if ($role->id == 2)
@@ -115,14 +115,14 @@
                                                     <label>MC Number</label>
                                                 </div>
                                             </div>
-                                            <div class="col-md-6">
+                                            {{-- <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
                                                     <input type="file" accept=".jpeg, .jpg, .png, .pdf"
                                                         name="certificate_of_insurance_carrier"
                                                         class="form-control" />
                                                     <label>Certificate of Insurance</label>
                                                 </div>
-                                            </div>
+                                            </div> --}}
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
                                                     <input type="text" name="equipment_types" class="form-control"
@@ -130,7 +130,7 @@
                                                     <label>Equipment Types</label>
                                                 </div>
                                             </div>
-                                            <div class="col-md-6">
+                                            {{-- <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
                                                     <input type="file" accept=".jpeg, .jpg, .png, .pdf"
                                                         name="driver_roster" class="form-control" />
@@ -143,7 +143,7 @@
                                                         name="safety_scorecard" class="form-control" />
                                                     <label>Safety Scorecard</label>
                                                 </div>
-                                            </div>
+                                            </div> --}}
 
                                             {{-- Shipper --}}
                                         @elseif($role->id == 3)
@@ -154,13 +154,13 @@
                                                     <label>Business Entity ID (EIN)</label>
                                                 </div>
                                             </div>
-                                            <div class="col-md-6">
+                                            {{-- <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
                                                     <input type="file" accept=".jpeg, .jpg, .png, .pdf"
                                                         name="general_liability_insurance" class="form-control" />
                                                     <label>General Liability Insurance</label>
                                                 </div>
-                                            </div>
+                                            </div> --}}
                                             <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
                                                     <input type="text" name="facility_address"
@@ -192,7 +192,7 @@
                                                     <label>MC Authority Number</label>
                                                 </div>
                                             </div>
-                                            <div class="col-md-6">
+                                            {{-- <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
                                                     <input type="file" accept=".jpeg, .jpg, .png, .pdf"
                                                         name="bonding_proof_document" class="form-control" />
@@ -205,7 +205,7 @@
                                                         name="performance_history" class="form-control" />
                                                     <label>Performance History</label>
                                                 </div>
-                                            </div>
+                                            </div> --}}
 
                                             {{-- Forwarder --}}
                                         @elseif($role->id == 5)
@@ -224,7 +224,7 @@
                                                     <label>Customs License</label>
                                                 </div>
                                             </div>
-                                            <div class="col-md-6">
+                                            {{-- <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
                                                     <input type="file" accept=".jpeg, .jpg, .png, .pdf"
                                                         name="certificate_of_insurance_freight_forwarder"
@@ -245,8 +245,26 @@
                                                         name="port_authority_registration" class="form-control" />
                                                     <label>Port Authority Registration</label>
                                                 </div>
-                                            </div>
+                                            </div> --}}
                                         @endif
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <h5 class="card-header">Documents</h5>
+                                            <button type="button" class="btn btn-primary h-75"
+                                                id="doc-row">Add</button>
+                                        </div>
+                                        <table class="table table-bordered" id="document-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>#</th>
+                                                    <th>Ducument Name</th>
+                                                    <th>Ducument Type</th>
+                                                    <th>Document</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                            </tbody>
+                                        </table>
                                     </div>
 
                                     <div class="pt-4">
@@ -304,6 +322,57 @@
     <script src="{{ url('assets/js/theme-customizer/customizer.js') }}"></script>
     <script>
         new WOW().init();
+    </script>
+    <script>
+        $(document).ready(function() {
+            function addMemberRow() {
+                const rowCount = $('#document-table tbody tr').length + 1;
+                const newRow = `
+            <tr>
+                <td>${rowCount}</td>
+                <td><input type="text" name="doc_name[]" class="form-control" required /></td>
+                <td>
+                    <select name="doc_type[]" required class="form-control">
+                        <option value="standard">Standard</option>
+                        <option value="blockchain">Blockchain</option>
+                    </select>
+                </td>
+                <td>
+                    <input type="file" name="documents[]" class="form-control"
+                           accept=".pdf,.jpg,.jpeg,.png,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"
+                           required />
+                </td>
+                <td><button type="button" class="btn btn-danger remove-row">Remove</button></td>
+            </tr>`;
+                $('#document-table tbody').append(newRow);
+                updateSerialNumbers('#document-table');
+                toggleRemoveButtons();
+            }
+
+            function updateSerialNumbers(tableId) {
+                $(tableId + ' tbody tr').each(function(index) {
+                    $(this).find('td:first').text(index + 1);
+                });
+            }
+
+            function toggleRemoveButtons() {
+                const rows = $('#document-table tbody tr');
+                // prevent deleting the last remaining row
+                rows.find('.remove-row').prop('disabled', rows.length === 1);
+            }
+
+            $('#doc-row').on('click', addMemberRow);
+
+            $('body').on('click', '.remove-row', function() {
+                $(this).closest('tr').remove();
+                updateSerialNumbers('#document-table');
+                toggleRemoveButtons();
+                if ($('#document-table tbody tr').length === 0) addMemberRow();
+            });
+
+            // start with one row
+            addMemberRow();
+        });
     </script>
 </body>
 

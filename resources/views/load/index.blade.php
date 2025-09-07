@@ -27,7 +27,7 @@
                             <div class="card-header pb-0 card-no-border">
                                 <div class="d-flex justify-content-between align-items-center flex-wrap">
                                     <div class="mb-2">
-                                        <h4 class="mb-1">Loads List</h4>
+                                        <h4 class="mb-1 text-start">Loads List</h4>
                                         <span>See Registered Loads below.</span>
                                     </div>
                                     <div class="d-flex gap-2">
@@ -124,9 +124,15 @@
                                                     <th>Pickup Date</th>
                                                     <th>Delivery Date</th>
                                                     <th>Status</th>
+                                                    @if ($roleId != 3)
+                                                        <th>Remarks</th>
+                                                    @endif
                                                     <th>Bid Status</th>
                                                     <th>Amount</th>
                                                     <th>Payment</th>
+                                                    @if ($roleId != 3)
+                                                        <th>Action</th>
+                                                    @endif
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -155,6 +161,15 @@
                                                             <span
                                                                 class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
                                                         </td>
+                                                        @if ($roleId != 3)
+                                                            <td>
+                                                                @if ($load_leg->status_id == 0 || $load_leg->status_id == 7)
+                                                                    {{ $load_leg->load_master->latestHistory?->remarks ?? 'No remarks provided.' }}
+                                                                @else
+                                                                    No remarks provided.
+                                                                @endif
+                                                            </td>
+                                                        @endif
                                                         <td>
                                                             @if ($load_leg->bid_status == 'Fixed')
                                                                 <span
@@ -294,6 +309,14 @@
                                                             <span
                                                                 class="badge rounded-pill badge-light-warning p-2">Pending</span>
                                                         </td>
+                                                        @if ($roleId != 3)
+                                                            <td>
+                                                                <a href="{{ route('loads.view', $load_leg->load_master->id) }}"
+                                                                    class="btn btn-sm btn-outline-primary px-3">
+                                                                    View
+                                                                </a>
+                                                            </td>
+                                                        @endif
                                                     </tr>
                                                 @endforeach
                                             </tbody>
@@ -348,32 +371,6 @@
                                                             </td>
                                                             <td>{{ \Carbon\Carbon::parse($load_leg->delivery_date)->format('jS M, Y') }}
                                                             </td>
-                                                            <!-- <td class="text-center">{{ $load_leg->score }}</td> -->
-                                                            <!-- <td>
-                                                                                                    <button class="btn btn-link toggle-debug"
-                                                                                                        data-bs-toggle="collapse"
-                                                                                                        data-bs-target="#debug-info-{{ $i }}"
-                                                                                                        aria-expanded="false"
-                                                                                                        aria-controls="debug-info-{{ $i }}">
-                                                                                                        View Match Info
-                                                                                                    </button>
-                                                                                                    <div id="debug-info-{{ $i }}"
-                                                                                                        class="collapse mt-2">
-                                                                                                        @foreach ($load_leg->debug_info as $debug)
-    <div>{{ $debug }}</div>
-    @endforeach
-                                                                                                    </div>
-                                                                                                </td> -->
-                                                            <!-- <td>
-                                                                                                    <button
-                                                                                                        class="btn btn-link show-ai-debug"
-                                                                                                        data-leg="{{ $load_leg->leg_code }}"
-                                                                                                        data-debug='@json($load_leg->debug_info)'
-                                                                                                        data-bs-toggle="modal"
-                                                                                                        data-bs-target="#aiDebugModal">
-                                                                                                        View Match Info
-                                                                                                    </button>
-                                                                                                </td> -->
                                                             <td>
                                                                 <button
                                                                     class="btn btn-sm show-ai-debug btn-outline-primary px-3 rounded-pill shadow-sm"
@@ -423,8 +420,9 @@
                                                                 <div class="modal fade" id="reCconfirmFixedModal"
                                                                     tabindex="-1" aria-hidden="true">
                                                                     <div class="modal-dialog">
-                                                                        <form id="reCconfirmFixedForm" class="modal-content"
-                                                                            method="POST" action="#">
+                                                                        <form id="reCconfirmFixedForm"
+                                                                            class="modal-content" method="POST"
+                                                                            action="#">
                                                                             @csrf
                                                                             <div class="modal-header">
                                                                                 <h5 class="modal-title">Book this load?
@@ -447,7 +445,8 @@
 
                                                                                 {{-- Hidden value if backend expects it --}}
                                                                                 <input type="hidden" name="amount"
-                                                                                    id="reCfixedAmountInput" value="">
+                                                                                    id="reCfixedAmountInput"
+                                                                                    value="">
                                                                             </div>
 
                                                                             <div class="modal-footer">
@@ -455,7 +454,8 @@
                                                                                     type="button"
                                                                                     data-bs-dismiss="modal">Cancel</button>
                                                                                 <button class="btn btn-primary"
-                                                                                    id="reCconfirmFixedBtn" type="submit">
+                                                                                    id="reCconfirmFixedBtn"
+                                                                                    type="submit">
                                                                                     Proceed
                                                                                 </button>
                                                                             </div>
@@ -1131,148 +1131,148 @@
             });
         });
     </script>
-                                        <script>
-                                            document.querySelectorAll('.toggle-debug').forEach(item => {
-                                                item.addEventListener('click', function() {
-                                                    const target = document.querySelector(this.getAttribute('data-bs-target'));
-                                                    target.classList.toggle('collapse');
-                                                });
-                                            });
-                                        </script>
-                                        <script>
-                                            // Pagination functionality
-                                            document.addEventListener('DOMContentLoaded', function() {
+                                                                <script>
+                                                                    document.querySelectorAll('.toggle-debug').forEach(item => {
+                                                                        item.addEventListener('click', function() {
+                                                                            const target = document.querySelector(this.getAttribute('data-bs-target'));
+                                                                            target.classList.toggle('collapse');
+                                                                        });
+                                                                    });
+                                                                </script>
+                                                                <script>
+                                                                    // Pagination functionality
+                                                                    document.addEventListener('DOMContentLoaded', function() {
 
-                                                // Update switchTab function to handle pagination
-                                                window.switchTab = function(btn, tabType) {
-                                                    document.querySelectorAll('.btn-outline-light').forEach(b => b.classList.remove('active'));
-                                                    btn.classList.add('active');
+                                                                        // Update switchTab function to handle pagination
+                                                                        window.switchTab = function(btn, tabType) {
+                                                                            document.querySelectorAll('.btn-outline-light').forEach(b => b.classList.remove('active'));
+                                                                            btn.classList.add('active');
 
-                                                    const allTabs = document.querySelectorAll('.tab-pane');
-                                                    allTabs.forEach(tab => {
-                                                        tab.classList.remove('show', 'active');
-                                                    });
+                                                                            const allTabs = document.querySelectorAll('.tab-pane');
+                                                                            allTabs.forEach(tab => {
+                                                                                tab.classList.remove('show', 'active');
+                                                                            });
 
-                                                    // Show the selected tab
-                                                    const selectedTab = document.getElementById(`tab-${tabType}`);
-                                                    selectedTab.classList.add('show', 'active');
-
-
-                                                    // Toggle reset preferences button
-                                                    const resetBtn = document.getElementById('resetPrefsBtn');
-                                                    resetBtn.classList.toggle('d-none', tabType !== 'recommended');
-                                                };
-                                            });
-
-                                            function exportToExcel() {
-                                                // Create a workbook
-                                                const workbook = XLSX.utils.book_new();
-
-                                                // Get the table
-                                                const table = document.getElementById('user-approval-table');
-
-                                                // Convert table to worksheet
-                                                const worksheet = XLSX.utils.table_to_sheet(table);
-
-                                                // Add worksheet to workbook
-                                                XLSX.utils.book_append_sheet(workbook, worksheet, "Loads");
-
-                                                // Generate Excel file and download
-                                                XLSX.writeFile(workbook, 'Loads_List.xlsx');
-                                            }
+                                                                            // Show the selected tab
+                                                                            const selectedTab = document.getElementById(`tab-${tabType}`);
+                                                                            selectedTab.classList.add('show', 'active');
 
 
+                                                                            // Toggle reset preferences button
+                                                                            const resetBtn = document.getElementById('resetPrefsBtn');
+                                                                            resetBtn.classList.toggle('d-none', tabType !== 'recommended');
+                                                                        };
+                                                                    });
 
-                                            document.addEventListener('DOMContentLoaded', function() {
-                                                var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-                                                tooltipTriggerList.forEach(function(tooltipTriggerEl) {
-                                                    new bootstrap.Tooltip(tooltipTriggerEl);
-                                                });
-                                            });
-                                            let recommendationPrefsExist = false; // simulate backend check
+                                                                    function exportToExcel() {
+                                                                        // Create a workbook
+                                                                        const workbook = XLSX.utils.book_new();
 
-                                            // Handle form submission (only frontend)
-                                            //document.getElementById('recommendationForm')?.addEventListener('submit', function(e) {
-                                            //  e.preventDefault();
-                                            // Normally this data would be sent to the server
-                                            //const formData = Object.fromEntries(new FormData(this));
-                                            //console.log('Preferences Saved:', formData);
-                                            //bootstrap.Modal.getInstance(document.getElementById('recommendationModal')).hide();
-                                            //});
-                                        </script>
-                                        <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script> -->
+                                                                        // Get the table
+                                                                        const table = document.getElementById('user-approval-table');
+
+                                                                        // Convert table to worksheet
+                                                                        const worksheet = XLSX.utils.table_to_sheet(table);
+
+                                                                        // Add worksheet to workbook
+                                                                        XLSX.utils.book_append_sheet(workbook, worksheet, "Loads");
+
+                                                                        // Generate Excel file and download
+                                                                        XLSX.writeFile(workbook, 'Loads_List.xlsx');
+                                                                    }
+
+
+
+                                                                    document.addEventListener('DOMContentLoaded', function() {
+                                                                        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+                                                                        tooltipTriggerList.forEach(function(tooltipTriggerEl) {
+                                                                            new bootstrap.Tooltip(tooltipTriggerEl);
+                                                                        });
+                                                                    });
+                                                                    let recommendationPrefsExist = false; // simulate backend check
+
+                                                                    // Handle form submission (only frontend)
+                                                                    //document.getElementById('recommendationForm')?.addEventListener('submit', function(e) {
+                                                                    //  e.preventDefault();
+                                                                    // Normally this data would be sent to the server
+                                                                    //const formData = Object.fromEntries(new FormData(this));
+                                                                    //console.log('Preferences Saved:', formData);
+                                                                    //bootstrap.Modal.getInstance(document.getElementById('recommendationModal')).hide();
+                                                                    //});
+                                                                </script>
+                                                                <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script> -->
 
 
     <!-- <style>
-                                            .btn-outline-light.active {
-                                                background-color: #4d6b8a !important;
-                                                color: white !important;
-                                            }
+                                                                    .btn-outline-light.active {
+                                                                        background-color: #4d6b8a !important;
+                                                                        color: white !important;
+                                                                    }
 
-                                            #collapseProduct .form-label {
-                                                font-weight: 500;
-                                            }
+                                                                    #collapseProduct .form-label {
+                                                                        font-weight: 500;
+                                                                    }
 
-                                            #collapseProduct .form-control,
-                                            #collapseProduct .form-select {
-                                                font-size: 0.85rem;
-                                                padding: 0.4rem 0.6rem;
-                                            }
+                                                                    #collapseProduct .form-control,
+                                                                    #collapseProduct .form-select {
+                                                                        font-size: 0.85rem;
+                                                                        padding: 0.4rem 0.6rem;
+                                                                    }
 
-                                            .fix-width {
-                                                width: 100px;
-                                                text-align: center;
-                                                padding: 6px 0;
-                                                display: flex;
-                                                justify-content: center;
-                                                align-items: center;
-                                            }
+                                                                    .fix-width {
+                                                                        width: 100px;
+                                                                        text-align: center;
+                                                                        padding: 6px 0;
+                                                                        display: flex;
+                                                                        justify-content: center;
+                                                                        align-items: center;
+                                                                    }
 
-                                            .btn-outline-primary.fix-width:hover,
-                                            .btn-outline-danger.fix-width:hover {
-                                                background-color: inherit !important;
-                                                color: inherit !important;
-                                                border-color: inherit !important;
-                                                box-shadow: none !important;
-                                                transition: none !important;
-                                            }
+                                                                    .btn-outline-primary.fix-width:hover,
+                                                                    .btn-outline-danger.fix-width:hover {
+                                                                        background-color: inherit !important;
+                                                                        color: inherit !important;
+                                                                        border-color: inherit !important;
+                                                                        box-shadow: none !important;
+                                                                        transition: none !important;
+                                                                    }
 
-                                            /* #resetPrefsBtn {
-                                                        height: 30px;
-                                                        width: 30px;
-                                                        padding: 0;
-                                                        display: flex;
-                                                        justify-content: center;
-                                                        align-items: center;
-                                                    } */
+                                                                    /* #resetPrefsBtn {
+                                                                                height: 30px;
+                                                                                width: 30px;
+                                                                                padding: 0;
+                                                                                display: flex;
+                                                                                justify-content: center;
+                                                                                align-items: center;
+                                                                            } */
 
-                                            /* Pagination styles */
-                                            .pagination {
-                                                margin: 0;
-                                            }
+                                                                    /* Pagination styles */
+                                                                    .pagination {
+                                                                        margin: 0;
+                                                                    }
 
-                                            .pagination-circle .page-item {
-                                                margin: 0 3px;
-                                            }
+                                                                    .pagination-circle .page-item {
+                                                                        margin: 0 3px;
+                                                                    }
 
-                                            .pagination-circle .page-link {
-                                                width: 32px;
-                                                height: 32px;
-                                                padding: 0;
-                                                display: flex;
-                                                align-items: center;
-                                                justify-content: center;
-                                                border-radius: 50% !important;
-                                                border: 1px solid #dee2e6;
-                                            }
+                                                                    .pagination-circle .page-link {
+                                                                        width: 32px;
+                                                                        height: 32px;
+                                                                        padding: 0;
+                                                                        display: flex;
+                                                                        align-items: center;
+                                                                        justify-content: center;
+                                                                        border-radius: 50% !important;
+                                                                        border: 1px solid #dee2e6;
+                                                                    }
 
-                                            .pagination-circle .page-item.active .page-link {
-                                                background-color: #4d6b8a;
-                                                border-color: #4d6b8a;
-                                            }
+                                                                    .pagination-circle .page-item.active .page-link {
+                                                                        background-color: #4d6b8a;
+                                                                        border-color: #4d6b8a;
+                                                                    }
 
-                                            .pagination-circle .page-item.disabled .page-link {
-                                                color: #6c757d;
-                                            }
-                                        </style> -->
+                                                                    .pagination-circle .page-item.disabled .page-link {
+                                                                        color: #6c757d;
+                                                                    }
+                                                                </style> -->
 @endsection

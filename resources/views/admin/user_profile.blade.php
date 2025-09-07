@@ -60,30 +60,6 @@
                                     <div class="social-details text-white text-center">
                                         <h5 class="mb-1 text-white">{{ $user->name }}</h5>
                                         <span class="text-light mb-4 d-block">{{ $user->email }}</span>
-
-                                        <ul
-                                            class="social-follow list-unstyled d-flex justify-content-between mt-4 mb-2 px-2">
-                                            <li class="text-center">
-                                                <h6 class="mb-0 pt-2 text-white">{{ $user->id }}</h6>
-                                                <span class="text-light small">User ID</span>
-                                            </li>
-                                            <li class="text-center">
-                                                <button class="btn btn-sm btn-link p-0 text-white" data-bs-toggle="modal"
-                                                    data-bs-target="#kycModal" title="Download KYC"
-                                                    style="width:18px; height:18px;" data-user-id="{{ $user->id }}">
-                                                    <i class="fa fa-download fa-2x" style="cursor:pointer;"></i>
-                                                </button>
-                                                <span class="d-block text-light small mt-2">Download KYC</span>
-                                            </li>
-                                            <li class="text-center">
-                                                <button class="btn btn-sm btn-link p-0 text-white" data-bs-toggle="modal"
-                                                    data-bs-target="#cnicModal" data-user-id="{{ $user->id }}"
-                                                    title="Download CNIC" style="width:18px; height:18px;">
-                                                    <i class="fa fa-download fa-2x" style="cursor:pointer;"></i>
-                                                </button>
-                                                <span class="d-block text-light small mt-2">Download CNIC</span>
-                                            </li>
-                                        </ul>
                                     </div>
                                 </div>
                             </div>
@@ -92,193 +68,153 @@
                 </div>
             </div>
         </div>
-    </div>
+        <div class="col-md-12">
+            <div class="card p-4 mx-4">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-2">Documents</h5>
+                    <div class="card-options">
+                        <a class="card-options-collapse" href="#" data-bs-toggle="card-collapse">
+                            <i class="fe fe-chevron-up"></i>
+                        </a>
+                        <a class="card-options-remove" href="#" data-bs-toggle="card-remove">
+                            <i class="fe fe-x"></i>
+                        </a>
+                    </div>
+                </div>
 
-    <!-- CNIC Modal -->
-    <div class="modal fade" id="cnicModal" tabindex="-1" aria-labelledby="cnicModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content border border-primary">
-                <div class="modal-header">
-                    <h5 class="modal-title">Admin Verification</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Please enter your admin password to download CNIC:</p>
-                    <input type="password" id="adminPassword" class="form-control" placeholder="Enter admin password">
-                    <div id="passwordError" class="text-danger mt-2 d-none">Incorrect password!</div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="verifyAndDownload()">Confirm</button>
-                    <a id="downloadCnicLink" href="#" class="d-none" download></a>
-                    <button type="button" class="btn btn-dark" data-bs-dismiss="modal">Cancel</button>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <!-- Use Bootstrap class-based height and overflow utilities -->
+                        <div class="overflow-auto px-4" style="max-height: 200px;">
+                            @php
+                                use Illuminate\Support\Facades\Storage;
+
+                                $imageMimes = ['image/jpeg', 'image/png'];
+                                $pdfMimes = ['application/pdf'];
+                                $docxMimes = [
+                                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                ];
+
+                                function human_filesize($bytes, $decimals = 1)
+                                {
+                                    if ($bytes === null) {
+                                        return '—';
+                                    }
+                                    $size = ['B', 'KB', 'MB', 'GB', 'TB'];
+                                    $factor = $bytes > 0 ? floor((strlen((string) $bytes) - 1) / 3) : 0;
+                                    return sprintf("%.{$decimals}f", $bytes / pow(1024, $factor)) .
+                                        ' ' .
+                                        $size[$factor];
+                                }
+                            @endphp
+
+                            <table class="table table-striped w-100 mb-0" id="user-approval-table">
+                                <thead class="sticky-top bg-white z-index-sticky">
+                                    <tr>
+                                        <th style="width:60px">#</th>
+                                        <th>Document Name</th>
+                                        <th style="width:120px">Type</th>
+                                        <th style="width:220px">Preview</th>
+                                        <th style="width:110px">Size</th>
+                                        <th style="width:130px">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse ($user->kycDocuments as $i => $doc)
+                                        @php
+                                            $exists =
+                                                $doc->file_path && Storage::disk('public')->exists($doc->file_path);
+                                            $url = $exists ? $doc->file_url : null;
+                                            $ext = $doc->original_name
+                                                ? strtolower(pathinfo($doc->original_name, PATHINFO_EXTENSION))
+                                                : null;
+                                            $mime = $doc->mime_type;
+                                        @endphp
+                                        <tr>
+                                            <td>{{ $loop->iteration }}</td>
+
+                                            <td>
+                                                <div class="fw-semibold">
+                                                    {{ $doc->document_name ?? 'Untitled' }}
+                                                    @if (($doc->document_type ?? '') === 'blockchain')
+                                                        <span class="badge bg-dark ms-2">Blockchain</span>
+                                                    @endif
+                                                </div>
+                                                <div class="text-muted small">
+                                                    {{ $doc->original_name ?? basename($doc->file_path) }}
+                                                    @if (($doc->document_type ?? '') === 'blockchain' && $doc->hash)
+                                                        <span class="ms-2">• hash:
+                                                            <code>{{ Str::limit($doc->hash, 12, '…') }}</code></span>
+                                                    @endif
+                                                </div>
+                                            </td>
+
+                                            <td class="text-nowrap">
+                                                @if ($ext)
+                                                    {{ strtoupper($ext) }}
+                                                @elseif($mime)
+                                                    {{ $mime }}
+                                                @else
+                                                    —
+                                                @endif
+                                            </td>
+
+                                            <td>
+                                                @if (!$exists)
+                                                    <span class="badge bg-danger">Missing file</span>
+                                                @else
+                                                    @if (in_array($mime, $imageMimes))
+                                                        <a href="{{ $url }}" target="_blank" rel="noopener">
+                                                            <img src="{{ $url }}" alt="preview"
+                                                                class="img-thumbnail"
+                                                                style="max-width: 110px; max-height: 110px;">
+                                                        </a>
+                                                    @elseif(in_array($mime, $pdfMimes))
+                                                        <a href="{{ $url }}" target="_blank" rel="noopener"
+                                                            class="btn btn-outline-secondary btn-sm">
+                                                            View PDF
+                                                        </a>
+                                                    @elseif(in_array($mime, $docxMimes) || $ext === 'docx')
+                                                        <span class="text-muted me-2">DOCX (no preview)</span>
+                                                        <a href="{{ $url }}" target="_blank" rel="noopener"
+                                                            class="btn btn-outline-secondary btn-sm">
+                                                            Open
+                                                        </a>
+                                                    @else
+                                                        <a href="{{ $url }}" target="_blank" rel="noopener"
+                                                            class="btn btn-outline-secondary btn-sm">
+                                                            Open
+                                                        </a>
+                                                    @endif
+                                                @endif
+                                            </td>
+
+                                            <td>{{ human_filesize($doc->file_size) }}</td>
+
+                                            <td>
+                                                @if ($exists)
+                                                    <a href="{{ $url }}"
+                                                        download="{{ $doc->original_name ?? basename($doc->file_path) }}"
+                                                        class="btn btn-primary btn-sm">
+                                                        Download
+                                                    </a>
+                                                @else
+                                                    <button class="btn btn-secondary btn-sm" disabled>Download</button>
+                                                @endif
+                                            </td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="6" class="text-center text-muted py-4">No documents uploaded.
+                                            </td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- KYC Modal -->
-    <div class="modal fade" id="kycModal" tabindex="-1" aria-labelledby="KYCLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content border border-primary">
-                <div class="modal-header">
-                    <h5 class="modal-title">Admin Verification</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Please enter your admin password to download User Docs:</p>
-                    <input type="password" id="adminPasswordKYC" class="form-control"
-                        placeholder="Enter admin password">
-                    <div id="passwordErrorKYC" class="text-danger mt-2 d-none">Incorrect password!</div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="verifyAndDownloadKYC()">Confirm</button>
-                    <a id="downloadKYCLink" href="#" class="d-none" download></a>
-                    <button type="button" class="btn btn-dark" data-bs-dismiss="modal">Cancel</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script src="{{ url('assets/js/jquery.min.js') }}"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // feather.replace();
-
-            let selectedUserId = null;
-            let selectedDocType = null;
-
-            const kycModal = document.getElementById('kycModal');
-            kycModal.addEventListener('show.bs.modal', function(event) {
-                const buttonKYC = event.relatedTarget;
-                selectedUserId = buttonKYC.getAttribute('data-user-id');
-            });
-
-            window.verifyAndDownloadKYC = function() {
-                const passwordKYC = document.getElementById('adminPasswordKYC').value;
-
-                fetch('/verify-admin-password', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                        },
-                        body: JSON.stringify({
-                            password: passwordKYC
-                        })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            document.getElementById('passwordErrorKYC').classList.add('d-none');
-                            const name = document.getElementById('userName').value;
-
-                            const modalKYC = bootstrap.Modal.getInstance(document.getElementById(
-                                'kycModal'));
-                            modalKYC.hide();
-
-                            document.getElementById('adminPasswordKYC').value = '';
-
-
-                            fetch(`/get-user-file/${selectedUserId}`)
-                                .then(response => response.json())
-                                .then(data => {
-                                    if (data.files && data.files.length) {
-                                        data.files.forEach((file) => {
-                                            const link = document.createElement('a');
-                                            link.href = file.url;
-
-                                            const docType = file.type;
-                                            const extension = file.url.split('.').pop().split(
-                                                /\#|\?/)[0]; // e.g., jpg, png, pdf
-                                            const filename = `${docType}_${name}.${extension}`;
-
-                                            link.download = filename;
-                                            document.body.appendChild(link);
-                                            link.click();
-                                            document.body.removeChild(link);
-                                        });
-                                    } else {
-                                        Swal.fire({
-                                            icon: 'warning',
-                                            title: 'No Files Found',
-                                            text: 'The requested documents are not available.',
-                                        });
-                                    }
-                                });
-
-                        } else {
-                            document.getElementById('passwordErrorKYC').classList.remove('d-none');
-                        }
-                    });
-            };
-            const cnicModal = document.getElementById('cnicModal');
-            cnicModal.addEventListener('show.bs.modal', function(event) {
-                const button = event.relatedTarget;
-                selectedUserId = button.getAttribute('data-user-id');
-            });
-
-            window.verifyAndDownload = function() {
-                const password = document.getElementById('adminPassword').value;
-
-                fetch('/verify-admin-password', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                        },
-                        body: JSON.stringify({
-                            password
-                        })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            document.getElementById('passwordError').classList.add('d-none');
-                            const name = document.getElementById('userName').value;
-                            document.getElementById('adminPassword').value = '';
-
-                            const modal = bootstrap.Modal.getInstance(document.getElementById('cnicModal'));
-                            if (document.activeElement) {
-                                document.activeElement.blur();
-                            }
-                            modal.hide();
-
-
-
-                            fetch(`/get-cnic-file/${selectedUserId}`)
-                                .then(response => response.json())
-                                .then(data => {
-                                    if (data.files && data.files.length) {
-                                        data.files.forEach((file) => {
-                                            const link = document.createElement('a');
-                                            link.href = file.url;
-
-                                            const docType = file.type;
-                                            const extension = file.url.split('.').pop().split(
-                                                /\#|\?/)[0]; // e.g., jpg, png, pdf
-                                            const filename = `${docType}_${name}.${extension}`;
-
-                                            link.download = filename;
-                                            document.body.appendChild(link);
-                                            link.click();
-                                            document.body.removeChild(link);
-                                        });
-                                    } else {
-                                        Swal.fire({
-                                            icon: 'warning',
-                                            title: 'No CNIC Files Found',
-                                            text: 'The requested CNIC front/back documents are not available.',
-                                        });
-                                    }
-                                });
-
-                        } else {
-                            document.getElementById('passwordError').classList.remove('d-none');
-                        }
-                    });
-            };
-        });
-    </script>
 @endsection

@@ -63,4 +63,16 @@ class User extends Authenticatable
     {
         return $this->hasOne(CarrierPreference::class, 'user_id');
     }
+    public function kycDocuments()
+    {
+        return $this->hasMany(KycDocuments::class, 'user_id');
+    }
+    public function history()
+    {
+        return $this->hasMany(UserHistory::class, 'user_id');
+    }
+    public function latestHistory()
+    {
+        return $this->hasOne(UserHistory::class, 'user_id')->latestOfMany(); // uses created_at/id
+    }
 }

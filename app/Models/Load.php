@@ -37,6 +37,22 @@ class Load extends Models
     {
         return $this->hasMany(LoadLeg::class, 'load_id');
     }
+    public function latestLegs()
+    {
+        return $this->hasOne(LoadLeg::class, 'load_id')->latestOfMany(); // uses created_at/id
+    }
+    public function loadDocuments()
+    {
+        return $this->hasMany(LoadDocuments::class, 'load_id');
+    }
+    public function history()
+    {
+        return $this->hasMany(LoadHistory::class, 'load_id');
+    }
+    public function latestHistory()
+    {
+        return $this->hasOne(LoadHistory::class, 'load_id')->latestOfMany(); // uses created_at/id
+    }
 
 }
 

@@ -8,6 +8,8 @@ use App\Models\CommodityTypes;
 use App\Models\Locations;
 use App\Models\LoadType;
 use App\Models\User;
+use App\Models\LoadDocuments;
+use App\Models\LoadHistory;
 use Illuminate\Http\Request;
 use App\Models\Load;
 use App\Models\LoadLeg;
@@ -18,6 +20,11 @@ use App\Models\CarrierPreference;
 use App\Models\City;
 use Illuminate\Support\Facades\Validator;
 use App\Support\LoadNumbers;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Mail;
+
 
 class LoadController extends Controller
 {
@@ -28,8 +35,10 @@ class LoadController extends Controller
             $user = User::find($user_id);
             $role     = $user->roles()->first();        // requires HasRoles
             $roleId   = $role?->id;
-            if ($roleId == 1 || $roleId == 3) {
+            if ($roleId == 1) {
                 $load_legs = LoadLeg::all();
+            } else if ($roleId == 3) {
+                $load_legs = LoadLeg::whereNotIn('status_id', [0, 1, 7])->get();
             } else {
                 // $load_legs = LoadLeg::with('load_master')->where('load_master.user_id', $user_id)->get();
                 $load_legs = LoadLeg::with('load_master')
@@ -129,6 +138,90 @@ class LoadController extends Controller
         }
     }
 
+    public function adminIndex(LogsController $logsController)
+    {
+        try {
+            $load_legs = LoadLeg::all();
+            $loadCount = $load_legs->count();
+            $pending_load_legs = LoadLeg::where('status_id', 1)->get();
+            $pendingLoadCount = $pending_load_legs->count();
+            $logsController->createLog(__METHOD__, 'success', 'Admin is attempting to index load in', null, null);
+            return view('admin.load', compact('load_legs', 'loadCount', 'pendingLoadCount', 'pending_load_legs'));
+        } catch (\Exception $e) {
+            $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
+            return redirect()->back()->with('error', 'An error occurred while processing your request.' . $e->getMessage());
+        }
+    }
+
+    public function updateStatus($id, Request $request)
+    {
+        // Minimal validation
+        $request->validate([
+            'status'  => 'required|in:0,2,7',          // 1=approved, 2=rejected, 5=send back
+            'remarks' => 'nullable|string|max:1000',
+        ]);
+
+        // Require remarks for reject or send back
+        if (in_array((int)$request->status, [0, 7]) && !$request->filled('remarks')) {
+            return back()->with('error', 'Remarks are required for Reject or Send Back.');
+        }
+
+        $load = Load::find($id);
+        $user = User::find($load->user_id);
+        if (!$load) {
+            return back()->with('error', 'Load not found');
+        }
+
+        // Update status
+        foreach ($load->legs as $leg) {
+            $leg->status_id = (int)$request->status;
+            $leg->save();
+        }
+
+        // Save history
+        LoadHistory::create([
+            'load_id'  => $load->id,
+            'admin_id' => Auth::id(),
+            'status'   => (int)$request->status,
+            'remarks'  => $request->remarks,
+        ]);
+
+        // Email (kept simple)
+        $fromAddress = config('mail.from.address');
+        $fromName    = config('mail.from.name');
+        $to          = $user->email;
+
+        if ((int)$request->status === 1) {
+            $subject = 'Your Load has been approved';
+            $body = "Hello {$user->name},\n\nYour Load has been approved. You can now log in and start using our system.\n\nThank you,\n{$fromName}";
+        } elseif ((int)$request->status === 2) {
+            $subject = 'Your Load has been rejected';
+            $body = "Hello {$user->name},\n\nYour Load has been rejected.\nAdmin remarks: {$request->remarks}\n\nThank you,\n{$fromName}";
+        } else { // 5 = send back
+            $subject = 'Action needed: Load requires revision';
+            $body = "Hello {$user->name},\n\nYour Load requires revision.\nAdmin remarks: {$request->remarks}\n\nThank you,\n{$fromName}";
+        }
+
+        Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
+            $message->from($fromAddress, $fromName)
+                ->to($to)
+                ->subject($subject);
+        });
+
+        return redirect()->route('admin.manage-loads')->with('success', 'Status updated.');
+    }
+
+    public function adminView(Load $load, LogsController $logsController)
+    {
+        try {
+            $logsController->createLog(__METHOD__, 'success', 'User is attempting to view load', null, null);
+            return view('admin.load_profile', compact('load'));
+        } catch (\Exception $e) {
+            $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
+            return redirect()->back()->with('error', 'An error occurred while processing your request.' . $e->getMessage());
+        }
+    }
+
     // Helper function to match availability days (pickup or delivery)
     private function isAvailableOnDay($date, $availabilityDays)
     {
@@ -201,6 +294,130 @@ class LoadController extends Controller
         }
     }
 
+    public function view(Load $load, LogsController $logsController)
+    {
+        try {
+            $logsController->createLog(__METHOD__, 'success', 'User is attempting to view load', null, null);
+            return view('load.load_profile', compact('load'));
+        } catch (\Exception $e) {
+            $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
+            return redirect()->back()->with('error', 'An error occurred while processing your request.' . $e->getMessage());
+        }
+    }
+
+    public function save(Load $load, Request $request)
+    {
+        // Basic validation
+        $request->validate([
+            'doc_id'      => 'array',
+            'doc_id.*'    => [
+                'nullable',
+                'integer',
+                Rule::exists('load_documents', 'id')->where(fn($q) => $q->where('load_id', $load->id)),
+            ],
+            'doc_name'    => 'required|array|min:1',
+            'doc_name.*'  => 'required|string|max:255',
+            'doc_type'    => 'required|array',
+            'doc_type.*'  => ['required', Rule::in(['standard', 'blockchain'])],
+            'documents'   => 'array',
+            'documents.*' => 'nullable|file|mimes:jpeg,jpg,png,pdf,docx'
+                . '|mimetypes:image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                . '|max:20480',
+        ]);
+
+        $ids   = $request->input('doc_id', []);
+        $names = $request->input('doc_name', []);
+        $types = $request->input('doc_type', []);
+        $files = $request->file('documents', []);
+
+        // Require file for NEW rows (where doc_id is empty)
+        foreach ($names as $i => $name) {
+            if (empty($ids[$i]) && empty($files[$i])) {
+                throw ValidationException::withMessages([
+                    "documents.$i" => "File is required for new document row #" . ($i + 1) . ".",
+                ]);
+            }
+        }
+
+        DB::transaction(function () use ($load, $ids, $names, $types, $files) {
+            $keepIds = [];
+
+            foreach ($names as $i => $name) {
+                $docId = $ids[$i] ?? null;
+                $type  = strtolower($types[$i] ?? 'standard');
+                $file  = $files[$i] ?? null;
+
+                if ($docId) {
+                    // Update existing
+                    $doc = LoadDocuments::where('load_id', $load->id)->where('id', $docId)->firstOrFail();
+                } else {
+                    // Create new
+                    $doc = new LoadDocuments(['load_id' => $load->id]);
+                }
+
+                // If a new file is uploaded, replace file + metadata
+                if ($file) {
+                    if ($doc->exists && $doc->file_path) {
+                        Storage::disk('public')->delete($doc->file_path);
+                    }
+                    $path = $file->store('loads/documents', 'public');
+
+                    $doc->file_path     = $path;
+                    $doc->original_name = $file->getClientOriginalName();
+                    $doc->mime_type     = $file->getClientMimeType();
+                    $doc->file_size     = $file->getSize();
+                }
+
+                // Always update name/type
+                $doc->document_name = trim($name);
+                $doc->document_type = $type;
+
+                // Blockchain handling
+                if ($type === 'blockchain') {
+                    // Need a file_path (either existing or just uploaded)
+                    if (!$doc->file_path) {
+                        throw ValidationException::withMessages([
+                            "documents.$i" => "A file is required to anchor blockchain document row #" . ($i + 1) . ".",
+                        ]);
+                    }
+                    $abs = Storage::disk('public')->path($doc->file_path);
+                    $hash = hash_file('sha256', $abs);
+
+                    $doc->hash           = $hash;
+                    $doc->hash_algorithm = 'sha256';
+
+                    // Create a new mock tx when there is a new upload or no tx yet
+                    if ($file || empty($doc->mock_blockchain_tx)) {
+                        $doc->mock_blockchain_tx        = (string) Str::uuid();
+                        $doc->mock_blockchain_timestamp = now();
+                    }
+                } else {
+                    // Clear blockchain fields when switching to standard
+                    $doc->hash = null;
+                    $doc->hash_algorithm = null;
+                    $doc->mock_blockchain_tx = null;
+                    $doc->mock_blockchain_timestamp = null;
+                }
+
+                $doc->save();
+                $keepIds[] = $doc->id;
+            }
+
+            // Delete documents removed in the UI (i.e., not submitted)
+            LoadDocuments::where('load_id', $load->id)
+                ->whereNotIn('id', $keepIds)
+                ->delete();
+
+            // Set status back to "Awaiting admin approval"
+            foreach ($load->legs as $leg) {
+                $leg->status_id = 1;
+                $leg->save();
+            }
+        });
+
+        return back()->with('success', 'Laod updated. We’ll review your changes shortly.');
+    }
+
     public function store(Request $request, LogsController $logsController)
     {
         $validator = Validator::make($request->all(), [
@@ -235,6 +452,15 @@ class LoadController extends Controller
 
             'price'               => ['required', 'array', 'min:1'],
             'price.*'             => ['required', 'numeric', 'min:0'],
+
+            'doc_name'        => 'required|array|min:1',
+            'doc_name.*'      => 'required|string|max:255',
+            'doc_type'        => 'required|array',
+            'doc_type.*'      => ['required', Rule::in(['standard', 'blockchain'])],
+            'documents'       => 'required|array|min:1',
+            'documents.*'     => 'required|file|mimes:jpeg,jpg,png,pdf,docx'
+                . '|mimetypes:image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                . '|max:20480',
         ]);
 
         // per-index date check
@@ -250,6 +476,15 @@ class LoadController extends Controller
         });
 
         $validated = $validator->validate();
+
+        if (
+            count($request->input('doc_name', [])) !== count($request->input('doc_type', [])) ||
+            count($request->input('doc_name', [])) !== count($request->file('documents', []))
+        ) {
+            throw ValidationException::withMessages([
+                'documents' => 'Document name, type, and file count must match.',
+            ]);
+        }
 
         // Make sure all leg arrays have the same length
         $counts = [
@@ -282,12 +517,48 @@ class LoadController extends Controller
             $load->user_id = Auth::id();
             $load->status = 1;
 
-            if ($request->hasFile('documents')) {
-                $path = $request->file('documents')->store('loads/documents', 'public');
-                $load->document_path = $path;
-            }
+            // if ($request->hasFile('documents')) {
+            //     $path = $request->file('documents')->store('loads/documents', 'public');
+            //     $load->document_path = $path;
+            // }
 
             $load->save();
+
+            $names = $request->input('doc_name', []);
+            $types = $request->input('doc_type', []);
+            $files = $request->file('documents', []);
+
+            foreach ($names as $i => $name) {
+                $file = $files[$i];
+                $storedPath = $file->store('loads/documents', 'public');
+
+                // $storedPath = $file->store("load_documents/{$load->id}", 'public');
+
+                $documentType = strtolower($types[$i] ?? 'standard');
+
+                $payload = [
+                    'load_id'       => $load->id,
+                    'document_name' => trim($name),
+                    'document_type' => $documentType,
+                    'file_path'     => $storedPath,
+                    'original_name' => $file->getClientOriginalName(),
+                    'mime_type'     => $file->getClientMimeType(),
+                    'file_size'     => $file->getSize(),
+                ];
+
+                // Mock blockchain anchoring for blockchain docs
+                if ($documentType === 'blockchain') {
+                    $absPath = Storage::disk('public')->path($storedPath);
+                    $hash = hash_file('sha256', $absPath);
+
+                    $payload['hash']                     = $hash;
+                    $payload['hash_algorithm']           = 'sha256';
+                    $payload['mock_blockchain_tx']       = (string) Str::uuid(); // fake tx id
+                    $payload['mock_blockchain_timestamp'] = now();
+                }
+
+                LoadDocuments::create($payload);
+            }
 
             $user_id = Auth::user()->id;
             $user = User::find($user_id);

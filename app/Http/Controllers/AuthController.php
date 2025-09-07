@@ -16,7 +16,10 @@ use App\Models\UserDetail;
 use Carbon\Carbon;
 use App\Models\ShipperDetail;
 use Validator;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 
 class AuthController extends Controller
@@ -85,8 +88,9 @@ class AuthController extends Controller
             if ($user->roles()->where('id', $request->id)->exists()) {
                 if ($user->status != 1 && $user->status != 4) {
                     $role = $user->roles()->first();
+                    $remarks = $user->latestHistory?->remarks ?? 'No remarks provided.';
                     $logsController->createLog(__METHOD__, 'error', 'Login denied: User not approved', null, json_encode(['email' => $request->email, 'role_id' => $request->id]));
-                    return view('user_login_denial', compact('user', 'role'));
+                    return view('user_login_denial', compact('user', 'role', 'remarks'));
                 } elseif ($user->status == 4) {
                     $logsController->createLog(__METHOD__, 'error', 'Login denied: User not verified', null, json_encode(['email' => $request->email, 'role_id' => $request->id]));
                     return redirect()->route('otp', ['email' => $request->email])->with('error', 'Please verify your email first.');
@@ -109,6 +113,148 @@ class AuthController extends Controller
             return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
         }
     }
+
+    public function userProfile(User $user, LogsController $logsController)
+    {
+        try {
+            $role = $user->roles()->first();
+            $logsController->createLog(__METHOD__, 'success', 'user is viewing ' . $user . ' profile', null, null);
+            return view('user_profile', compact('user', 'role'));
+        } catch (\Exception $e) {
+            // Handle the exception, log it, or return an error response
+            $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
+            return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
+        }
+        // Create a log entry for the login attempt
+
+    }
+
+    public function profile(User $user, LogsController $logsController)
+    {
+        try {
+            $role = $user->roles()->first();
+            $logsController->createLog(__METHOD__, 'success', 'user is viewing ' . $user . ' profile', null, null);
+            return view('users.user_profile', compact('user', 'role'));
+        } catch (\Exception $e) {
+            // Handle the exception, log it, or return an error response
+            $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
+            return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
+        }
+        // Create a log entry for the login attempt
+
+    }
+
+    public function save(User $user, Request $request)
+    {
+        // Basic validation
+        $request->validate([
+            'doc_id'      => 'array',
+            'doc_id.*'    => [
+                'nullable',
+                'integer',
+                Rule::exists('kyc_documents', 'id')->where(fn($q) => $q->where('user_id', $user->id)),
+            ],
+            'doc_name'    => 'required|array|min:1',
+            'doc_name.*'  => 'required|string|max:255',
+            'doc_type'    => 'required|array',
+            'doc_type.*'  => ['required', Rule::in(['standard', 'blockchain'])],
+            'documents'   => 'array',
+            'documents.*' => 'nullable|file|mimes:jpeg,jpg,png,pdf,docx'
+                . '|mimetypes:image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                . '|max:20480',
+        ]);
+
+        $ids   = $request->input('doc_id', []);
+        $names = $request->input('doc_name', []);
+        $types = $request->input('doc_type', []);
+        $files = $request->file('documents', []);
+
+        // Require file for NEW rows (where doc_id is empty)
+        foreach ($names as $i => $name) {
+            if (empty($ids[$i]) && empty($files[$i])) {
+                throw ValidationException::withMessages([
+                    "documents.$i" => "File is required for new document row #" . ($i + 1) . ".",
+                ]);
+            }
+        }
+
+        DB::transaction(function () use ($user, $ids, $names, $types, $files) {
+            $keepIds = [];
+
+            foreach ($names as $i => $name) {
+                $docId = $ids[$i] ?? null;
+                $type  = strtolower($types[$i] ?? 'standard');
+                $file  = $files[$i] ?? null;
+
+                if ($docId) {
+                    // Update existing
+                    $doc = KycDocuments::where('user_id', $user->id)->where('id', $docId)->firstOrFail();
+                } else {
+                    // Create new
+                    $doc = new KycDocuments(['user_id' => $user->id]);
+                }
+
+                // If a new file is uploaded, replace file + metadata
+                if ($file) {
+                    if ($doc->exists && $doc->file_path) {
+                        Storage::disk('public')->delete($doc->file_path);
+                    }
+                    $path = $file->store("kyc_documents/{$user->id}", 'public');
+
+                    $doc->file_path     = $path;
+                    $doc->original_name = $file->getClientOriginalName();
+                    $doc->mime_type     = $file->getClientMimeType();
+                    $doc->file_size     = $file->getSize();
+                }
+
+                // Always update name/type
+                $doc->document_name = trim($name);
+                $doc->document_type = $type;
+
+                // Blockchain handling
+                if ($type === 'blockchain') {
+                    // Need a file_path (either existing or just uploaded)
+                    if (!$doc->file_path) {
+                        throw ValidationException::withMessages([
+                            "documents.$i" => "A file is required to anchor blockchain document row #" . ($i + 1) . ".",
+                        ]);
+                    }
+                    $abs = Storage::disk('public')->path($doc->file_path);
+                    $hash = hash_file('sha256', $abs);
+
+                    $doc->hash           = $hash;
+                    $doc->hash_algorithm = 'sha256';
+
+                    // Create a new mock tx when there is a new upload or no tx yet
+                    if ($file || empty($doc->mock_blockchain_tx)) {
+                        $doc->mock_blockchain_tx        = (string) Str::uuid();
+                        $doc->mock_blockchain_timestamp = now();
+                    }
+                } else {
+                    // Clear blockchain fields when switching to standard
+                    $doc->hash = null;
+                    $doc->hash_algorithm = null;
+                    $doc->mock_blockchain_tx = null;
+                    $doc->mock_blockchain_timestamp = null;
+                }
+
+                $doc->save();
+                $keepIds[] = $doc->id;
+            }
+
+            // Delete documents removed in the UI (i.e., not submitted)
+            KycDocuments::where('user_id', $user->id)
+                ->whereNotIn('id', $keepIds)
+                ->delete();
+
+            // Set status back to "Awaiting admin approval"
+            $user->status = 3;
+            $user->save();
+        });
+
+        return back()->with('success', 'Profile updated. We’ll review your changes shortly.');
+    }
+
     public function adminVerify(Request $request, LogsController $logsController)
     {
         try {
@@ -364,6 +510,9 @@ class AuthController extends Controller
             $email = $request->email;
             if ($referer && str_contains($referer, 'forget-password')) {
                 $user = User::where('email', $email)->first();
+                if (!$user || !$user->roles()->where('id', $request->id)->exists()) {
+                    return back()->withErrors(['error' => 'User not found for the selected role.']);
+                }
                 $user->roles()->where('id', $request->id)->exists() ? $user : null;
             } else {
                 $user = User::where('email', $email)->first();
@@ -535,200 +684,244 @@ class AuthController extends Controller
     public function onboardingFormSave(User $user, Request $request)
     {
         $role = $user->roles()->first();
+        if (!$role) {
+            abort(422, 'User role not found.');
+        }
 
-        // Validate common fields
+        // Validate common fields + dynamic docs
         $request->validate([
-            'company_name' => 'required|string|max:255',
+            'company_name'    => 'required|string|max:255',
             'company_address' => 'required|string|max:255',
-            'cnic_front' => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:2048',
-            'cnic_back' => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:2048',
+
+            'doc_name'        => 'required|array|min:1',
+            'doc_name.*'      => 'required|string|max:255',
+            'doc_type'        => 'required|array',
+            'doc_type.*'      => 'required|in:standard,blockchain',
+            'documents'       => 'required|array|min:1',
+            'documents.*'     => 'required|file|mimes:jpeg,jpg,png,pdf,docx|mimetypes:image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document|max:20480',
         ]);
+
+        if (
+            count($request->input('doc_name', [])) !== count($request->input('doc_type', [])) ||
+            count($request->input('doc_name', [])) !== count($request->file('documents', []))
+        ) {
+            throw ValidationException::withMessages([
+                'documents' => 'Document name, type, and file count must match.',
+            ]);
+        }
 
         $roleId = $role->id;
         $detailsData = [
-            'company_name' => $request->company_name,
+            'company_name'    => $request->company_name,
             'company_address' => $request->company_address,
         ];
-
-        $documents = [];
 
         switch ($roleId) {
             case 2: // Carrier
                 $detailsData['dot_number'] = $request->dot_number;
                 $detailsData['mc_number'] = $request->mc_number;
                 $detailsData['equipment_types'] = $request->equipment_types;
-
-                $documents['certificate_of_insurance_carrier'] = $request->file('certificate_of_insurance_carrier');
-                $documents['driver_roster'] = $request->file('driver_roster');
-                $documents['safety_scorecard'] = $request->file('safety_scorecard');
                 break;
-
             case 3: // Shipper
                 $detailsData['business_entity_id'] = $request->business_entity_id;
                 $detailsData['facility_address'] = $request->facility_address;
                 $detailsData['fulfillment_contact_info'] = $request->fulfillment_contact_info;
-
-                $documents['general_liability_insurance'] = $request->file('general_liability_insurance');
                 break;
-
             case 4: // Broker
                 $detailsData['fmcsa_broker_license_no'] = $request->fmcsa_broker_license_no;
                 $detailsData['mc_authority_number'] = $request->mc_authority_number;
-
-                $documents['bonding_proof_document'] = $request->file('bonding_proof_document');
-                $documents['performance_history'] = $request->file('performance_history');
                 break;
-
             case 5: // Forwarder
                 $detailsData['freight_forwarder_license'] = $request->freight_forwarder_license;
                 $detailsData['customs_license'] = $request->customs_license;
-
-                $documents['certificate_of_insurance_freight_forwarder'] = $request->file('certificate_of_insurance_freight_forwarder');
-                $documents['international_docs'] = $request->file('international_docs');
-                $documents['port_authority_registration'] = $request->file('port_authority_registration');
                 break;
         }
 
-        if ($request->hasFile('cnic_front')) {
-            $documents['cnic_front'] = $request->file('cnic_front');
-        }
+        DB::transaction(function () use ($user, $detailsData, $request) {
+            // Save user_details (create or update)
+            $userDetail = $user->details ?: new UserDetail();
+            $userDetail->fill($detailsData);
+            $userDetail->user_id = $user->id;
+            $userDetail->save();
 
-        if ($request->hasFile('cnic_back')) {
-            $documents['cnic_back'] = $request->file('cnic_back');
-        }
+            // Save KYC docs
+            $names = $request->input('doc_name', []);
+            $types = $request->input('doc_type', []);
+            $files = $request->file('documents', []);
 
-        // Save user_details (create or update)
-        $userDetail = $user->details ?: new UserDetail();
-        $userDetail->fill($detailsData);
-        $userDetail->user_id = $user->id;
-        $userDetail->save();
+            foreach ($names as $i => $name) {
+                $file = $files[$i];
+                $storedPath = $file->store("kyc_documents/{$user->id}", 'public');
 
-        // Save uploaded documents
-        foreach ($documents as $key => $file) {
-            if ($file) {
-                $path = $file->store("kyc_documents/{$user->id}", 'public');
+                $documentType = strtolower($types[$i] ?? 'standard');
 
-                KycDocuments::create([
-                    'user_id' => $user->id,
-                    'document_type' => $key,
-                    'file_path' => $path,
-                ]);
+                $payload = [
+                    'user_id'       => $user->id,
+                    'document_name' => trim($name),
+                    'document_type' => $documentType,
+                    'file_path'     => $storedPath,
+                    'original_name' => $file->getClientOriginalName(),
+                    'mime_type'     => $file->getClientMimeType(),
+                    'file_size'     => $file->getSize(),
+                ];
+
+                // Mock blockchain anchoring for blockchain docs
+                if ($documentType === 'blockchain') {
+                    $absPath = Storage::disk('public')->path($storedPath);
+                    $hash = hash_file('sha256', $absPath);
+
+                    $payload['hash']                     = $hash;
+                    $payload['hash_algorithm']           = 'sha256';
+                    $payload['mock_blockchain_tx']       = (string) Str::uuid(); // fake tx id
+                    $payload['mock_blockchain_timestamp'] = now();
+                }
+
+                KycDocuments::create($payload);
             }
-        }
 
-        // Only update the user's status
-        $user->status = 3;
-        $user->save();
+            // Only update the user's status
+            $user->status = 3;
+            $user->save();
+        });
 
         return redirect()->route('role')->with('success', 'Onboarding submitted. Awaiting admin approval.');
     }
 
     public function onboardingFormSaveForShipper(User $user, Request $request)
     {
-        // Step 1: Validation
+        // --- Validate Shipper fields + dynamic docs (no CNIC) ---
         $request->validate([
-            'company_name' => 'required|string|max:255',
+            // common
+            'company_name'    => 'required|string|max:255',
             'company_address' => 'required|string|max:255',
-            'business_type' => 'required|string|max:255',
-            'website' => 'nullable',
-            'cnic_front' => 'required|file|mimes:jpeg,jpg,png,pdf',
-            'cnic_back' => 'required|file|mimes:jpeg,jpg,png,pdf',
-            'shipments_per_week' => 'required|numeric',
-            'volume_or_weight_per_shipment' => 'required|string|max:255',
-            'types_of_goods_being_shipped' => 'required|array',
-            'packaging_type' => 'required|array',
-            'types_of_delivery_services_needed' => 'required|array',
-            'preferred_pickup_days' => 'required|array',
-            'preferred_pickup_from_time' => 'required',
-            'preferred_pickup_to_time' => 'required',
-            'logistics_provider' => 'nullable|string',
-            'preferred_payment_method' => 'required|array',
-            'billing_contact_name' => 'required|string|max:255',
-            'billing_email_address' => 'required|email|max:255',
-            'tax_id' => 'required|string|max:255',
-            'invoice_frequency' => 'required|string',
-            'shipment_tracking' => 'required|string',
-            'pickup_materials_supplied' => 'required|string',
-            'demo_or_onboarding_call' => 'required|string',
-            'preferred_communication_method' => 'required|array',
-            'special_notes' => 'nullable|string|max:1000',
+
+            // shipper-specific
+            'business_type'                         => 'required|string|max:255',
+            'website'                               => 'nullable|url',
+            'shipments_per_week'                    => 'required|numeric',
+            'volume_or_weight_per_shipment'         => 'required|string|max:255',
+            'types_of_goods_being_shipped'          => 'required|array',
+            'packaging_type'                        => 'required|array',
+            'types_of_delivery_services_needed'     => 'required|array',
+            'preferred_pickup_days'                 => 'required|array',
+            'preferred_pickup_from_time'            => 'required',
+            'preferred_pickup_to_time'              => 'required',
+            'logistics_provider'                    => 'nullable|string',
+            'preferred_payment_method'              => 'required|array',
+            'billing_contact_name'                  => 'required|string|max:255',
+            'billing_email_address'                 => 'required|email|max:255',
+            'tax_id'                                => 'required|string|max:255',
+            'invoice_frequency'                     => 'required|string',
+            'shipment_tracking'                     => 'required|string',
+            'pickup_materials_supplied'             => 'required|string',
+            'demo_or_onboarding_call'               => 'required|string',
+            'preferred_communication_method'        => 'required|array',
+            'special_notes'                         => 'nullable|string|max:1000',
+            'other_goods'                           => 'nullable|string|max:255',
+            'other_payment'                         => 'nullable|string|max:255',
+
+            // dynamic docs (same as onboardingFormSave)
+            'doc_name'        => 'required|array|min:1',
+            'doc_name.*'      => 'required|string|max:255',
+            'doc_type'        => 'required|array',
+            'doc_type.*'      => ['required', Rule::in(['standard', 'blockchain'])],
+            'documents'       => 'required|array|min:1',
+            'documents.*'     => 'required|file|mimes:jpeg,jpg,png,pdf,docx'
+                . '|mimetypes:image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                . '|max:20480',
         ]);
 
-        // Begin a transaction to ensure data consistency
-        DB::beginTransaction();
+        if (
+            count($request->input('doc_name', [])) !== count($request->input('doc_type', [])) ||
+            count($request->input('doc_name', [])) !== count($request->file('documents', []))
+        ) {
+            throw ValidationException::withMessages([
+                'documents' => 'Document name, type, and file count must match.',
+            ]);
+        }
 
-        try {
-            // Step 2: Handle file uploads
-            $documents = [];
-            if ($request->hasFile('cnic_front') || $request->hasFile('cnic_back')) {
-                $documents['cnic_front'] = $request->file('cnic_front');
-                $documents['cnic_back'] = $request->file('cnic_back');
-                foreach ($documents as $key => $file) {
-                    if ($file) {
-                        $path = $file->store("kyc_documents/{$user->id}", 'public');
+        $detailsData = [
+            'company_name'    => $request->company_name,
+            'company_address' => $request->company_address,
+        ];
 
-                        // Create a record for each uploaded file
-                        KycDocuments::create([
-                            'user_id' => $user->id,
-                            'document_type' => $key,
-                            'file_path' => $path,
-                        ]);
-                    }
+        DB::transaction(function () use ($user, $detailsData, $request) {
+            // --- Save/Update UserDetail ---
+            $userDetail = $user->details ?: new UserDetail();
+            $userDetail->fill($detailsData);
+            $userDetail->user_id = $user->id;
+            $userDetail->save();
+
+            // --- Save ShipperDetail (create or update) ---
+            // If you have relation: $user->shipperDetail()
+            $shipper = ShipperDetail::firstOrNew(['user_id' => $user->id]);
+            $shipper->company_name                         = $request->company_name;
+            $shipper->company_address                      = $request->company_address;
+            $shipper->business_type                        = $request->business_type;
+            $shipper->website                              = $request->website;
+            $shipper->shipments_per_week                   = $request->shipments_per_week;
+            $shipper->volume_or_weight_per_shipment        = $request->volume_or_weight_per_shipment;
+            $shipper->types_of_goods_being_shipped         = json_encode($request->types_of_goods_being_shipped);
+            $shipper->packaging_type                       = json_encode($request->packaging_type);
+            $shipper->types_of_delivery_services_needed    = json_encode($request->types_of_delivery_services_needed);
+            $shipper->preferred_pickup_days                = json_encode($request->preferred_pickup_days);
+            $shipper->preferred_pickup_from_time           = $request->preferred_pickup_from_time;
+            $shipper->preferred_pickup_to_time             = $request->preferred_pickup_to_time;
+            $shipper->logistics_provider                   = $request->logistics_provider;
+            $shipper->preferred_payment_method             = json_encode($request->preferred_payment_method);
+            $shipper->billing_contact_name                 = $request->billing_contact_name;
+            $shipper->billing_email_address                = $request->billing_email_address;
+            $shipper->tax_id                               = $request->tax_id;
+            $shipper->invoice_frequency                    = $request->invoice_frequency;
+            $shipper->shipment_tracking                    = $request->shipment_tracking;
+            $shipper->pickup_materials_supplied            = $request->pickup_materials_supplied;
+            $shipper->demo_or_onboarding_call              = $request->demo_or_onboarding_call;
+            $shipper->preferred_communication_method       = json_encode($request->preferred_communication_method);
+            $shipper->special_notes                        = $request->special_notes;
+            $shipper->other_goods                          = $request->other_goods;
+            $shipper->other_payment                        = $request->other_payment;
+            $shipper->user_id                              = $user->id;
+            $shipper->save();
+
+            // --- Save dynamic KYC documents (with metadata + mock blockchain) ---
+            $names = $request->input('doc_name', []);
+            $types = $request->input('doc_type', []);
+            $files = $request->file('documents', []);
+
+            foreach ($names as $i => $name) {
+                $file = $files[$i];
+                $storedPath = $file->store("kyc_documents/{$user->id}", 'public');
+
+                $documentType = strtolower($types[$i] ?? 'standard');
+
+                $payload = [
+                    'user_id'       => $user->id,
+                    'document_name' => trim($name),
+                    'document_type' => $documentType,
+                    'file_path'     => $storedPath,
+                    'original_name' => $file->getClientOriginalName(),
+                    'mime_type'     => $file->getClientMimeType(),
+                    'file_size'     => $file->getSize(),
+                ];
+
+                if ($documentType === 'blockchain') {
+                    $absPath = Storage::disk('public')->path($storedPath);
+                    $hash = hash_file('sha256', $absPath);
+
+                    $payload['hash']                      = $hash;
+                    $payload['hash_algorithm']            = 'sha256';
+                    $payload['mock_blockchain_tx']        = (string) Str::uuid();
+                    $payload['mock_blockchain_timestamp'] = now();
                 }
+
+                KycDocuments::create($payload);
             }
 
-            // Step 3: Create or update the UserDetail
-            $user_detail = UserDetail::create([
-                'user_id' => $user->id,
-                'company_name' => $request->input('company_name'),
-                'company_address' => $request->input('company_address'),
-            ]);
-
-            // Step 4: Store the onboarding data in ShipperDetail
-            $onboarding = new ShipperDetail();
-            $onboarding->company_name = $request->input('company_name');
-            $onboarding->company_address = $request->input('company_address');
-            $onboarding->business_type = $request->input('business_type');
-            $onboarding->website = $request->input('website');
-            $onboarding->shipments_per_week = $request->input('shipments_per_week');
-            $onboarding->volume_or_weight_per_shipment = $request->input('volume_or_weight_per_shipment');
-            $onboarding->types_of_goods_being_shipped = json_encode($request->input('types_of_goods_being_shipped'));
-            $onboarding->packaging_type = json_encode($request->input('packaging_type'));
-            $onboarding->types_of_delivery_services_needed = json_encode($request->input('types_of_delivery_services_needed'));
-            $onboarding->preferred_pickup_days = json_encode($request->input('preferred_pickup_days'));
-            $onboarding->preferred_pickup_from_time = $request->input('preferred_pickup_from_time');
-            $onboarding->preferred_pickup_to_time = $request->input('preferred_pickup_to_time');
-            $onboarding->logistics_provider = $request->input('logistics_provider');
-            $onboarding->preferred_payment_method = json_encode($request->input('preferred_payment_method'));
-            $onboarding->billing_contact_name = $request->input('billing_contact_name');
-            $onboarding->billing_email_address = $request->input('billing_email_address');
-            $onboarding->tax_id = $request->input('tax_id');
-            $onboarding->invoice_frequency = $request->input('invoice_frequency');
-            $onboarding->shipment_tracking = $request->input('shipment_tracking');
-            $onboarding->pickup_materials_supplied = $request->input('pickup_materials_supplied');
-            $onboarding->demo_or_onboarding_call = $request->input('demo_or_onboarding_call');
-            $onboarding->preferred_communication_method = json_encode($request->input('preferred_communication_method'));
-            $onboarding->special_notes = $request->input('special_notes');
-            $onboarding->other_goods = $request->input('other_goods');
-            $onboarding->other_payment = $request->input('other_payment');
-            $onboarding->user_id = $user->id; // assuming you are saving this for a specific user
-            $onboarding->save();
-
-            // Step 5: Update the user's status
+            // --- Set status back to "Awaiting admin approval" ---
             $user->status = 3;
             $user->save();
+        });
 
-            // Commit the transaction
-            DB::commit();
-
-            // Redirect with success message
-            return redirect()->route('role')->with('success', 'Onboarding submitted. Awaiting admin approval.');
-        } catch (\Exception $e) {
-            // If something goes wrong, rollback the transaction
-            DB::rollBack();
-
-            // Return error message
-            return redirect()->back()->with('error', 'There was an error while saving the onboarding data. ' . $e->getMessage());
-        }
+        return redirect()->route('role')->with('success', 'Onboarding submitted. Awaiting admin approval.');
     }
 }

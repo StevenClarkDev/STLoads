@@ -78,12 +78,12 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="col-md-6">
+                            {{-- <div class="col-md-6">
                                 <label class="form-label" for="formFile1">Documents</label>
                                 <input class="form-control" id="formFile1" type="file" name="documents"
                                     accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" />
                                 <div class="invalid-feedback">Invalid form file selected</div>
-                            </div>
+                            </div> --}}
                             <div class="col-md-6">
                                 <div class="d-flex flex-row mt-4">
                                     <div class="form-check my-2 me-4">
@@ -98,11 +98,39 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-mb-12 mb-3">
+                            <div class="col-mb-6 mb-3">
                                 <label class="form-label" for="validationTextarea">Special Instructions</label>
                                 <textarea class="form-control" id="validationTextarea" name="special_instructions"
                                     placeholder="Enter your Special Instructions"></textarea>
                                 <div class="invalid-feedback">Please enter a message in the textarea.</div>
+                            </div>
+
+                            <div class="col-xl-12">
+                                <div class="card">
+                                    <div class="card-header d-flex">
+                                        <h4 class="mb-0">Documents</h4>
+                                        <button type="button" class="btn btn-primary btn-sm" id="doc-row">
+                                            <i class="bi bi-plus-lg"></i> Add
+                                        </button>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="table-responsive">
+                                            <table class="table table-bordered" id="document-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>#</th>
+                                                        <th>Ducument Name</th>
+                                                        <th>Ducument Type</th>
+                                                        <th>Document</th>
+                                                        <th>Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- Load Legs Table -->
@@ -157,24 +185,24 @@
 <script src="{{ url('assets/js/jquery.min.js') }}"></script>
 
 <script>
-  $(function () {
-    // ----- Server-rendered snippets (NO Blade inside JS strings below) -----
-    const locationOptions = `{!! collect($locations)->map(function($l){
-        $label = trim(($l->name ?? '') . ' ' . ($l->city->name ?? '') . ' ' . ($l->country->name ?? ''));
-        return '<option value="'.$l->id.'">'.e($label).'</option>';
-      })->implode('') !!}`;
+    $(function() {
+        // ----- Server-rendered snippets (NO Blade inside JS strings below) -----
+        const locationOptions = `{!! collect($locations)->map(function ($l) {
+                $label = trim(($l->name ?? '') . ' ' . ($l->city->name ?? '') . ' ' . ($l->country->name ?? ''));
+                return '<option value="' . $l->id . '">' . e($label) . '</option>';
+            })->implode('') !!}`;
 
-    const canEditLegs = {{ $roleId == 5 ? 'true' : 'false' }};
+        const canEditLegs = {{ $roleId == 5 ? 'true' : 'false' }};
 
-    function renumberRows() {
-      $('#load_legs-table tbody tr').each(function (i) {
-        $(this).find('input.leg-id').val(i + 1);
-      });
-    }
+        function renumberRows() {
+            $('#load_legs-table tbody tr').each(function(i) {
+                $(this).find('input.leg-id').val(i + 1);
+            });
+        }
 
-    // ----- Row template (pure JS; inject prebuilt options) -----
-    function rowTemplate() {
-      return `
+        // ----- Row template (pure JS; inject prebuilt options) -----
+        function rowTemplate() {
+            return `
         <tr>
           <td><input type="text" name="leg_id[]" class="form-control leg-id" value="" readonly /></td>
 
@@ -222,23 +250,74 @@
           ` : ``}
         </tr>
       `;
-    }
+        }
 
-    function addRow() {
-      const $row = $(rowTemplate());
-      $('#load_legs-table tbody').append($row);
-      renumberRows();
-    }
+        function addRow() {
+            const $row = $(rowTemplate());
+            $('#load_legs-table tbody').append($row);
+            renumberRows();
+        }
 
-    // ----- Events -----
-    $('#add-load_legs-row').on('click', addRow);
+        // ----- Events -----
+        $('#add-load_legs-row').on('click', addRow);
 
-    $('#load_legs-table').on('click', '.remove-row-load_legs', function () {
-      $(this).closest('tr').remove();
-      renumberRows();
+        $('#load_legs-table').on('click', '.remove-row-load_legs', function() {
+            $(this).closest('tr').remove();
+            renumberRows();
+        });
+
+        // ----- Init -----
+        addRow();
     });
+</script>
+<script>
+    $(document).ready(function() {
+        function addMemberRow() {
+            const rowCount = $('#document-table tbody tr').length + 1;
+            const newRow = `
+            <tr>
+                <td>${rowCount}</td>
+                <td><input type="text" name="doc_name[]" class="form-control" required /></td>
+                <td>
+                    <select name="doc_type[]" required class="form-control">
+                        <option value="standard">Standard</option>
+                        <option value="blockchain">Blockchain</option>
+                    </select>
+                </td>
+                <td>
+                    <input type="file" name="documents[]" class="form-control"
+                           accept=".pdf,.jpg,.jpeg,.png,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"
+                           required />
+                </td>
+                <td><button type="button" class="btn btn-danger remove-row">Remove</button></td>
+            </tr>`;
+            $('#document-table tbody').append(newRow);
+            updateSerialNumbers('#document-table');
+            toggleRemoveButtons();
+        }
 
-    // ----- Init -----
-    addRow();
-  });
+        function updateSerialNumbers(tableId) {
+            $(tableId + ' tbody tr').each(function(index) {
+                $(this).find('td:first').text(index + 1);
+            });
+        }
+
+        function toggleRemoveButtons() {
+            const rows = $('#document-table tbody tr');
+            // prevent deleting the last remaining row
+            rows.find('.remove-row').prop('disabled', rows.length === 1);
+        }
+
+        $('#doc-row').on('click', addMemberRow);
+
+        $('body').on('click', '.remove-row', function() {
+            $(this).closest('tr').remove();
+            updateSerialNumbers('#document-table');
+            toggleRemoveButtons();
+            if ($('#document-table tbody tr').length === 0) addMemberRow();
+        });
+
+        // start with one row
+        addMemberRow();
+    });
 </script>

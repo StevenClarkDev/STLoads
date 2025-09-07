@@ -5,12 +5,14 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\UserHistory;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 
 
@@ -149,62 +151,58 @@ class UserController extends Controller
         return view('admin.users_by_role', compact('users', 'role'));
     }
 
-    public function approve(Request $request)
+    public function updateStatus($id, Request $request)
     {
-        $user = User::find($request->user_id);
+        // Minimal validation
+        $request->validate([
+            'status'  => 'required|in:1,2,5',          // 1=approved, 2=rejected, 5=send back
+            'remarks' => 'nullable|string|max:1000',
+        ]);
 
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'User not found']);
+        // Require remarks for reject or send back
+        if (in_array((int)$request->status, [2, 5]) && !$request->filled('remarks')) {
+            return back()->with('error', 'Remarks are required for Reject or Send Back.');
         }
 
-        // Approve the user
-        $user->status = 1;
+        $user = User::find($id);
+        if (!$user) {
+            return back()->with('error', 'User not found');
+        }
+
+        // Update status
+        $user->status = (int)$request->status;
         $user->save();
 
-        // Email details
-        $fromAddress = config('mail.from.address');
-        $fromName = config('mail.from.name');
-        $to = $user->email;
-        $subject = 'Your account has been approved';
-        $body = "Hello {$user->name},\n\nYour account has been approved. You can now log in and start using our system.\n\nThank you,\n{$fromName}";
+        // Save history
+        UserHistory::create([
+            'user_id'  => $user->id,
+            'admin_id' => Auth::id(),
+            'status'   => (int)$request->status,
+            'remarks'  => $request->remarks,
+        ]);
 
-        // Send email
+        // Email (kept simple)
+        $fromAddress = config('mail.from.address');
+        $fromName    = config('mail.from.name');
+        $to          = $user->email;
+
+        if ((int)$request->status === 1) {
+            $subject = 'Your account has been approved';
+            $body = "Hello {$user->name},\n\nYour account has been approved. You can now log in and start using our system.\n\nThank you,\n{$fromName}";
+        } elseif ((int)$request->status === 2) {
+            $subject = 'Your account has been rejected';
+            $body = "Hello {$user->name},\n\nYour account has been rejected.\nAdmin remarks: {$request->remarks}\n\nThank you,\n{$fromName}";
+        } else { // 5 = send back
+            $subject = 'Action needed: account requires revision';
+            $body = "Hello {$user->name},\n\nYour account requires revision.\nAdmin remarks: {$request->remarks}\n\nThank you,\n{$fromName}";
+        }
+
         Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
             $message->from($fromAddress, $fromName)
                 ->to($to)
                 ->subject($subject);
         });
 
-        return response()->json(['success' => true, 'message' => 'User approved successfully']);
-    }
-
-
-    public function reject(Request $request)
-    {
-        $user = User::find($request->user_id);
-
-        if (!$user) {
-            return response()->json(['success' => false, 'message' => 'User not found']);
-        }
-
-        // Set user status to rejected
-        $user->status = 2;
-        $user->save();
-
-        // Email details
-        $fromAddress = config('mail.from.address');
-        $fromName = config('mail.from.name');
-        $to = $user->email;
-        $subject = 'Your account has been rejected';
-        $body = "Hello {$user->name},\n\nWe regret to inform you that your account has been rejected.\nIf you believe this is a mistake, please contact support.\n\nThank you,\n{$fromName}";
-
-        // Send email
-        Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
-            $message->from($fromAddress, $fromName)
-                ->to($to)
-                ->subject($subject);
-        });
-
-        return response()->json(['success' => true, 'message' => 'User rejected successfully']);
+        return redirect()->route('user_approval')->with('success', 'Status updated.');
     }
 }
