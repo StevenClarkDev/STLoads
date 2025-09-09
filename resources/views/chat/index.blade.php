@@ -41,7 +41,7 @@
                 <div class="card left-sidebar-wrapper flex-fill">
                     <div class="left-sidebar-chat">
                         <div class="input-group">
-                            <span class="input-group-text"><i class="search-icon text-gray"
+                            <span class="input-group-text p-2"><i class="search-icon text-gray"
                                     data-feather="search"></i></span>
                             <input id="chatSearch" class="form-control" type="text" placeholder="Search here..">
                         </div>

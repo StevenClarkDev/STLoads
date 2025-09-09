@@ -94,7 +94,7 @@
                             readonly>
                     </div>
                 </form>
-                <div class="d-flex justify-content-center gap-3">
+                <!-- <div class="d-flex justify-content-center gap-3">
                     <a href="#" class="text-decoration-none" data-bs-toggle="modal"
                         data-bs-target="#serviceUnavailableModal">
                         <i class="fab fa-whatsapp text-success" style="font-size: 1.5rem;"></i>
@@ -115,7 +115,7 @@
                         data-bs-target="#serviceUnavailableModal">
                         <i class="fas fa-envelope text-warning" style="font-size: 1.5rem;"></i>
                     </a>
-                </div>
+                </div> -->
             </div>
         </div>
     </div>

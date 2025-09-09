@@ -199,35 +199,33 @@
 <script src="{{ url('assets/js/jquery.min.js') }}"></script>
 
       <script>
-          (function() {
-              const table = document.getElementById('docs-table').querySelector('tbody');
-              const addBtn = document.getElementById('add-doc-row');
-              const ACCEPT =
-                  '.pdf,.jpg,.jpeg,.png,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png';
+(function() {
+    const table = document.getElementById('docs-table').querySelector('tbody');
+    const addBtn = document.getElementById('add-doc-row');
+    const ACCEPT =
+        '.pdf,.jpg,.jpeg,.png,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png';
 
-              function renumber() {
-                  table.querySelectorAll('tr .serial').forEach((td, i) => td.textContent = i + 1);
-                  // show blockchain cell if type==blockchain
-                  table.querySelectorAll('tr').forEach(tr => {
-                      const sel = tr.querySelector('.doc-type');
-                      const bcCell = tr.querySelector('.bc-cell');
-                      if (!sel || !bcCell) return;
-                      if (sel.value === 'blockchain') {
-                          if (!bcCell.querySelector('.verify-btn')) {
-                              bcCell.innerHTML = `
-                          <div class="d-flex align-items-center gap-2">
-                              <small class="text-muted">Stored hash:</small>
-                              <code class="small">${(tr.dataset.hash || '—').substring(0,12)}${tr.dataset.hash ? '…' : ''}</code>
-                              <button type="button" class="btn btn-outline-secondary btn-sm verify-btn">Verify</button>
-                          </div>`;
-                          }
-                      } else {
-                          bcCell.innerHTML = '<span class="text-muted">—</span>';
-                      }
-                  });
-              }
+    function renumber() {
+        table.querySelectorAll('tr .serial').forEach((td, i) => td.textContent = i + 1);
 
-              function addRow() {
+        table.querySelectorAll('tr').forEach(tr => {
+            const sel = tr.querySelector('.doc-type');
+            const bcCell = tr.querySelector('.bc-cell');
+            if (!sel || !bcCell) return;
+
+            if (sel.value === 'blockchain') {
+                // keep Blade's blockchain UI intact
+                if (bcCell.querySelector('.verify-btn')) {
+                    bcCell.querySelector('.verify-btn').classList.remove('d-none');
+                }
+            } else {
+                // replace with simple dash if not blockchain
+                bcCell.innerHTML = '<span class="text-muted">—</span>';
+            }
+        });
+    }
+
+    function addRow() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td class="serial"></td>
@@ -252,71 +250,76 @@
           <td><button type="button" class="btn btn-danger btn-sm remove-row">Remove</button></td>`;
         table.appendChild(tr);
         renumber();
-      }
+    }
 
-              table.addEventListener('change', function(e) {
-                  if (e.target.classList.contains('doc-type')) {
-                      renumber();
-                  }
-              });
+    table.addEventListener('change', function(e) {
+        if (e.target.classList.contains('doc-type')) {
+            renumber();
+        }
+    });
 
-              table.addEventListener('click', function(e) {
-                  if (e.target.classList.contains('remove-row')) {
-                      const rows = table.querySelectorAll('tr');
-                      if (rows.length <= 1) {
-                          // keep at least one row
-                          return;
-                      }
-                      e.target.closest('tr').remove();
-                      renumber();
-                  } else if (e.target.classList.contains('verify-btn')) {
-                      const tr = e.target.closest('tr');
-                      openVerifyModal(tr.dataset.hash || '');
-                  }
-              });
+    table.addEventListener('click', function(e) {
+    if (e.target.classList.contains('remove-row')) {
+        const rows = table.querySelectorAll('tr');
+        if (rows.length <= 1) return;
+        e.target.closest('tr').remove();
+        renumber();
+    } else if (e.target.closest('.verify-btn')) {
+        const btn = e.target.closest('.verify-btn');
+        openVerifyModal(btn.dataset.hash || '');
+    }
+});
 
-              addBtn.addEventListener('click', addRow);
-              renumber();
 
-              // ---- Blockchain verify (client-side SHA-256 with Web Crypto) ----
-              const verifyModalEl = document.getElementById('verifyModal');
-              const verifyFile = document.getElementById('verifyFile');
-              const verifyResult = document.getElementById('verifyResult');
-              let verifyModal, storedHash = '';
+    addBtn.addEventListener('click', addRow);
+    renumber();
 
-              function openVerifyModal(hash) {
-                  storedHash = (hash || '').toLowerCase();
-                  verifyResult.innerHTML = storedHash ?
-                      `<div class="mt-4 ">Stored hash: <span class= "badge bg-primary rounded-pill py-2">${storedHash}</span></div>` :
-                      `<div class="mt-4 text-warning">No stored hash on this document yet.</div>`;
-                  verifyFile.value = '';
-                  verifyModal = new bootstrap.Modal(verifyModalEl);
-                  verifyModal.show();
-              }
+    // ---- Blockchain verify (client-side SHA-256 with Web Crypto) ----
+    const verifyModalEl = document.getElementById('verifyModal');
+    const verifyFile = document.getElementById('verifyFile');
+    const verifyResult = document.getElementById('verifyResult');
+    let verifyModal, storedHash = '';
 
-              verifyFile.addEventListener('change', async function() {
-                  verifyResult.innerHTML = '<div class="text-muted">Computing hash…</div>';
-                  const file = this.files[0];
-                  if (!file) return;
-                  try {
-                      const ab = await file.arrayBuffer();
-                      const digest = await crypto.subtle.digest('SHA-256', ab);
-                      const hex = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0'))
-                          .join('');
-                      const match = storedHash && hex === storedHash;
-                      verifyResult.innerHTML = `
-                  <div class="small">Computed: <code>${hex}</code></div>
-                  ${storedHash
-                      ? (match
-                          ? '<div class="my-2 alert alert-success py-1 mb-0"><i class="fa fa-check-circle me-1"></i>Verified</div>'
-                          : '<div class="mt-2 alert alert-danger py-1 mb-0"><i class="fa fa-exclamation-triangle me-1"></i>Mismatch</div>')
-                      : '<div class="mt-2 alert alert-info py-1 mb-0">Hash computed. This will be saved after you upload as blockchain.</div>'
-                  }`;
-                  } catch (err) {
-                      verifyResult.innerHTML =
-                          `<div class="text-danger">Failed to compute hash: ${err}</div>`;
-                  }
-              });
-          })();
-      </script>
+    function openVerifyModal(hash) {
+        storedHash = (hash || '').toLowerCase();
+        verifyResult.innerHTML = storedHash ?
+            `<div class="mt-4">Stored hash: <span class="badge bg-primary rounded-pill py-2">${storedHash}</span></div>` :
+            `<div class="mt-4 text-warning">No stored hash on this document yet.</div>`;
+        verifyFile.value = '';
+        verifyModal = new bootstrap.Modal(verifyModalEl);
+        verifyModal.show();
+    }
+
+    verifyFile.addEventListener('change', async function() {
+        verifyResult.innerHTML = '<div class="text-muted">Computing hash…</div>';
+        const file = this.files[0];
+        if (!file) return;
+        try {
+            const ab = await file.arrayBuffer();
+            const digest = await crypto.subtle.digest('SHA-256', ab);
+            const hex = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+            const match = storedHash && hex === storedHash;
+            verifyResult.innerHTML = `
+                <div class="small">Computed: <code>${hex}</code></div>
+                ${storedHash
+                    ? (match
+                        ? '<div class="my-2 alert alert-success py-1 mb-0"><i class="fa fa-check-circle me-1"></i> Verified</div>'
+                        : '<div class="mt-2 alert alert-danger py-1 mb-0"><i class="fa fa-exclamation-triangle me-1"></i> Mismatch</div>')
+                    : '<div class="mt-2 alert alert-info py-1 mb-0">Hash computed. This will be saved after you upload as blockchain.</div>'
+                }`;
+        } catch (err) {
+            verifyResult.innerHTML =
+                `<div class="text-danger">Failed to compute hash: ${err}</div>`;
+        }
+    });
+
+    verifyModalEl.addEventListener('hidden.bs.modal', () => {
+        document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('padding-right');
+    });
+
+})();
+</script>
+
 @endsection

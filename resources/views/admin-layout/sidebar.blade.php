@@ -41,7 +41,7 @@
                                 <a href="{{ route('users_by_role', 4) }}">
                                     <div
                                         class="btn btn-{{ $currentRoute === 'users_by_role' && $currentRoleId == 4 ? 'primary' : 'light' }}">
-                                        <i data-feather="user-check"></i> Brookers
+                                        <i data-feather="user-check"></i> Brokers
                                     </div>
                                 </a>
                             </li>
@@ -90,7 +90,7 @@
                                 Str::startsWith($currentRoute, 'locations');
                         @endphp
 
-                        <ul class="nav flex-column mb-2">
+                        <ul class="nav flex-column my-2">
                             <li class="nav-item mb-2">
                                 <button
                                     class="btn btn-{{ $isMasterActive ? 'primary' : 'light' }} w-100 d-flex align-items-center justify-content-start"

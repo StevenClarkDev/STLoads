@@ -131,95 +131,100 @@
                 </div>
                 <div class="card-body">
                     <div class="table-responsive user-datatable">
-                        <table class="table table-striped" id="user-approval-table">
-                            <thead>
-                                <tr>
-                                    <th>S No.</th>
-                                    <th>Name</th>
-                                    <th>Email</th>
-                                    <th>Role</th>
-                                    <th>Date</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @forelse ($users as $user)
+                        <div style="max-height: 500px; overflow: auto;">
+                            <table class="table table-striped align-middle text-nowrap" id="user-approval-table">
+                                <thead>
                                     <tr>
-                                        <td>{{ $loop->iteration }}</td>
-                                        <td>{{ ucwords($user->name) }}</td>
-                                        <td>{{ $user->email }}</td>
-                                        <td>
-                                            @foreach ($user->getRoleNames() as $v)
-                                                {{ $v }}
-                                            @endforeach
-                                        </td>
-                                        <td>{{ $user->created_at->format('jS F Y') }}</td>
-                                        <!-- <td>
-                                                                    <a href="{{ route('user.profile', $user->id) }}"
-                                                                        class="btn btn-info btn-sm">Profile</a>
-                                                                    <button type="button" data-bs-toggle="modal"
-                                                                        data-bs-target="#updateStatus-{{ $user->id }}"
-                                                                        class="btn btn-primary d-flex align-items-center">
-                                                                        <i class="mdi mdi-cog-outline mdi-20px me-1"></i> Action
-                                                                    </button>
-                                                                </td> -->
-
-                                        <td class="d-flex gap-1">
-                                            <a href="{{ route('user.profile', $user->id) }}"
-                                                class="btn btn-info btn-sm w-80">Profile</a>
-                                            <button type="button" data-bs-toggle="modal"
-                                                data-bs-target="#updateStatus-{{ $user->id }}"
-                                                class="btn btn-primary btn-sm w-80">Action</button>
-                                        </td>
+                                        <th>S No.</th>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Role</th>
+                                        <th>Date</th>
+                                        <th>Action</th>
                                     </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="6" class="text-center">No data available.</td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                        @forelse ($users as $user)
-                            <div class="modal fade" id="updateStatus-{{ $user->id }}" tabindex="-1" aria-hidden="true">
-                                <div class="modal-dialog modal-md modal-dialog-centered">
-                                    <div class="modal-content border-0 shadow-sm rounded-3">
-                                        <div class="modal-header border-0">
-                                            <h5 class="modal-title">User Forwarding</h5>
-                                            <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                                aria-label="Close"></button>
-                                        </div>
+                                </thead>
+                                <tbody>
+                                    @forelse ($users as $user)
+                                        <tr>
+                                            <td>{{ $loop->iteration }}</td>
+                                            <td>{{ ucwords($user->name) }}</td>
+                                            <td>{{ $user->email }}</td>
+                                            <td>
+                                                @foreach ($user->getRoleNames() as $v)
+                                                    {{ $v }}
+                                                @endforeach
+                                            </td>
+                                            <td>{{ $user->created_at->format('jS F Y') }}</td>
+                                            <!-- <td>
+                                                                            <a href="{{ route('user.profile', $user->id) }}"
+                                                                                class="btn btn-info btn-sm">Profile</a>
+                                                                            <button type="button" data-bs-toggle="modal"
+                                                                                data-bs-target="#updateStatus-{{ $user->id }}"
+                                                                                class="btn btn-primary d-flex align-items-center">
+                                                                                <i class="mdi mdi-cog-outline mdi-20px me-1"></i> Action
+                                                                            </button>
+                                                                        </td> -->
 
-                                        <form method="POST" action="{{ route('user.update-status', $user->id) }}">
-                                            @csrf
-                                            <div class="modal-body">
-                                                <div class="mb-3">
-                                                    <label for="remarks" class="form-label fw-medium">Remarks</label>
-                                                    <textarea class="form-control" name="remarks" id="remarks" rows="3"
-                                                        placeholder="Enter remarks (optional for Approve, required for Reject/Send Back)"></textarea>
+                                            <td class="d-flex gap-1">
+                                                <a href="{{ route('user.profile', $user->id) }}"
+                                                    class="btn btn-info btn-sm w-80">Profile</a>
+                                                <button type="button" data-bs-toggle="modal"
+                                                    data-bs-target="#updateStatus-{{ $user->id }}"
+                                                    class="btn btn-primary btn-sm w-80">Action</button>
+                                            </td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="6" class="text-center">No data available.</td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                            @forelse ($users as $user)
+                                <div class="modal fade" id="updateStatus-{{ $user->id }}" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog modal-md modal-dialog-centered">
+                                        <div class="modal-content border-0 shadow-sm rounded-3">
+                                            <div class="modal-header border-0">
+                                                <h5 class="modal-title">User Forwarding</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                                    aria-label="Close"></button>
+                                            </div>
+
+                                            <form method="POST" action="{{ route('user.update-status', $user->id) }}">
+                                                @csrf
+                                                <div class="modal-body">
+                                                    <div class="mb-3">
+                                                        <label for="remarks" class="form-label fw-medium">Remarks</label>
+                                                        <textarea class="form-control" name="remarks" id="remarks" rows="3"
+                                                            placeholder="Enter remarks (optional for Approve, required for Reject/Send Back)"></textarea>
+                                                    </div>
                                                 </div>
-                                            </div>
 
-                                            <div class="modal-footer border-0 d-flex justify-content-end gap-1">
-                                                <!-- Send Back -->
-                                                <button type="submit" class="btn btn-secondary btn-sm" name="status" value="5">
-                                                    Send Back
-                                                </button>
-                                                <!-- Approve -->
-                                                <button type="submit" class="btn btn-primary btn-sm" name="status" value="1">
-                                                    Approve
-                                                </button>
-                                                <!-- Reject -->
-                                                <button type="submit" class="btn btn-danger btn-sm" name="status" value="2">
-                                                    Reject
-                                                </button>
-                                            </div>
-                                        </form>
+                                                <div class="modal-footer border-0 d-flex justify-content-end gap-1">
+                                                    <!-- Send Back -->
+                                                    <button type="submit" class="btn btn-secondary btn-sm" name="status"
+                                                        value="5">
+                                                        Send Back
+                                                    </button>
+                                                    <!-- Approve -->
+                                                    <button type="submit" class="btn btn-primary btn-sm" name="status"
+                                                        value="1">
+                                                        Approve
+                                                    </button>
+                                                    <!-- Reject -->
+                                                    <button type="submit" class="btn btn-danger btn-sm" name="status" value="2">
+                                                        Reject
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                        @empty
-                        @endforelse
+                            @empty
+                            @endforelse
+                        </div>
+
                     </div>
                 </div>
             </div>
