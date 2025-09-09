@@ -44,51 +44,51 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                @foreach ($load_legs as $i => $load_leg)
+                                                @if(count($load_legs) > 0)
+                                                    @foreach ($load_legs as $i => $load_leg)
+                                                        <tr>
+                                                            <td>{{ $load_leg->leg_code }}</td>
+                                                            <td>
+                                                                <span class="badge rounded-circle p-2 badge-primary"
+                                                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                    title="{{ $load_leg->pickupLocation?->name }} - {{ $load_leg->pickupLocation?->city->name }} - {{ $load_leg->pickupLocation?->country?->name }}">
+                                                                    <i data-feather="map-pin"></i>
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                <span class="badge rounded-circle p-2 badge-primary"
+                                                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                    title="{{ $load_leg->deliveryLocation?->name }} - {{ $load_leg->deliveryLocation?->city->name }} - {{ $load_leg->deliveryLocation?->country?->name }}">
+                                                                    <i data-feather="map-pin"></i>
+                                                                </span>
+                                                            </td>
+                                                            <td>{{ \Carbon\Carbon::parse($load_leg->pickup_date)->format('jS M, Y') }}</td>
+                                                            <td>{{ \Carbon\Carbon::parse($load_leg->delivery_date)->format('jS M, Y') }}</td>
+                                                            <td>
+                                                                <span class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
+                                                            </td>
+                                                            <td>
+                                                                @if ($load_leg->bid_status == 'Fixed')
+                                                                    <span class="badge rounded-pill bg-primary p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
+                                                                @else
+                                                                    <span class="badge rounded-pill bg-info p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
+                                                                @endif
+                                                            </td>
+                                                            <td>
+                                                                <button class="btn btn-outline-primary btn-sm fix-width">
+                                                                    ${{ number_format($load_leg->price, 0) }}
+                                                                </button>
+                                                            </td>
+                                                            <td>
+                                                                <span class="badge rounded-pill badge-light-warning p-2">Pending</span>
+                                                            </td>
+                                                        </tr>
+                                                    @endforeach
+                                                @else
                                                     <tr>
-                                                        <td>{{ $load_leg->leg_code }}</td>
-                                                        <td>
-                                                            <span class="badge rounded-circle p-2 badge-primary"
-                                                                data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                title="{{ $load_leg->pickupLocation?->name }} - {{ $load_leg->pickupLocation?->city->name }} - {{ $load_leg->pickupLocation?->country?->name }}">
-                                                                <i data-feather="map-pin"></i>
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            <span class="badge rounded-circle p-2 badge-primary"
-                                                                data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                title="{{ $load_leg->deliveryLocation?->name }} - {{ $load_leg->deliveryLocation?->city->name }} - {{ $load_leg->deliveryLocation?->country?->name }}">
-                                                                <i data-feather="map-pin"></i>
-                                                            </span>
-                                                        </td>
-                                                        <td>{{ \Carbon\Carbon::parse($load_leg->pickup_date)->format('jS M, Y') }}
-                                                        </td>
-                                                        <td>{{ \Carbon\Carbon::parse($load_leg->delivery_date)->format('jS M, Y') }}
-                                                        </td>
-                                                        <td>
-                                                            <span
-                                                                class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
-                                                        </td>
-                                                        <td>
-                                                            @if ($load_leg->bid_status == 'Fixed')
-                                                                <span
-                                                                    class="badge rounded-pill bg-primary p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
-                                                            @else
-                                                                <span
-                                                                    class="badge rounded-pill bg-info p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
-                                                            @endif
-                                                        </td>
-                                                        <td>
-                                                            <button class="btn btn-outline-primary btn-sm fix-width">
-                                                                ${{ number_format($load_leg->price, 0) }}
-                                                            </button>
-                                                        </td>
-                                                        <td>
-                                                            <span
-                                                                class="badge rounded-pill badge-light-warning p-2">Pending</span>
-                                                        </td>
+                                                        <td colspan="9" class="text-center py-4">No loads found.</td>
                                                     </tr>
-                                                @endforeach
+                                                @endif
                                             </tbody>
                                         </table>
                                     </div>
@@ -112,62 +112,62 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                @foreach ($pending_load_legs as $i => $load_leg)
+                                                @if(count($pending_load_legs) > 0)
+                                                    @foreach ($pending_load_legs as $i => $load_leg)
+                                                        <tr>
+                                                            <td>{{ $load_leg->leg_code }}</td>
+                                                            <td>
+                                                                <span class="badge rounded-circle p-2 badge-primary"
+                                                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                    title="{{ $load_leg->pickupLocation?->name }} - {{ $load_leg->pickupLocation?->city->name }} - {{ $load_leg->pickupLocation?->country?->name }}">
+                                                                    <i data-feather="map-pin"></i>
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                <span class="badge rounded-circle p-2 badge-primary"
+                                                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                    title="{{ $load_leg->deliveryLocation?->name }} - {{ $load_leg->deliveryLocation?->city->name }} - {{ $load_leg->deliveryLocation?->country?->name }}">
+                                                                    <i data-feather="map-pin"></i>
+                                                                </span>
+                                                            </td>
+                                                            <td>{{ \Carbon\Carbon::parse($load_leg->pickup_date)->format('jS M, Y') }}</td>
+                                                            <td>{{ \Carbon\Carbon::parse($load_leg->delivery_date)->format('jS M, Y') }}</td>
+                                                            <td>
+                                                                <span class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
+                                                            </td>
+                                                            <td>
+                                                                @if ($load_leg->bid_status == 'Fixed')
+                                                                    <span class="badge rounded-pill bg-primary p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
+                                                                @else
+                                                                    <span class="badge rounded-pill bg-info p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
+                                                                @endif
+                                                            </td>
+                                                            <td>
+                                                                <button class="btn btn-outline-primary btn-sm fix-width">
+                                                                    ${{ number_format($load_leg->price, 0) }}
+                                                                </button>
+                                                            </td>
+                                                            <td>
+                                                                <span class="badge rounded-pill badge-light-warning p-2">Pending</span>
+                                                            </td>
+                                                            <td>
+                                                                <a href="{{ route('admin.loads.view', $load_leg->load_master->id) }}"
+                                                                    class="btn btn-sm btn-outline-primary px-3">
+                                                                    View
+                                                                </a>
+                                                                <button type="button" data-bs-toggle="modal"
+                                                                    data-bs-target="#updateStatus-{{ $load_leg->load_master->id }}"
+                                                                    class="btn btn-primary d-flex align-items-center"></button>
+                                                                    <i class="mdi mdi-cog-outline mdi-20px me-1"></i> Action
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    @endforeach
+                                                @else
                                                     <tr>
-                                                        <td>{{ $load_leg->leg_code }}</td>
-                                                        <td>
-                                                            <span class="badge rounded-circle p-2 badge-primary"
-                                                                data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                title="{{ $load_leg->pickupLocation?->name }} - {{ $load_leg->pickupLocation?->city->name }} - {{ $load_leg->pickupLocation?->country?->name }}">
-                                                                <i data-feather="map-pin"></i>
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            <span class="badge rounded-circle p-2 badge-primary"
-                                                                data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                title="{{ $load_leg->deliveryLocation?->name }} - {{ $load_leg->deliveryLocation?->city->name }} - {{ $load_leg->deliveryLocation?->country?->name }}">
-                                                                <i data-feather="map-pin"></i>
-                                                            </span>
-                                                        </td>
-                                                        <td>{{ \Carbon\Carbon::parse($load_leg->pickup_date)->format('jS M, Y') }}
-                                                        </td>
-                                                        <td>{{ \Carbon\Carbon::parse($load_leg->delivery_date)->format('jS M, Y') }}
-                                                        </td>
-                                                        <td>
-                                                            <span
-                                                                class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
-                                                        </td>
-                                                        <td>
-                                                            @if ($load_leg->bid_status == 'Fixed')
-                                                                <span
-                                                                    class="badge rounded-pill bg-primary p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
-                                                            @else
-                                                                <span
-                                                                    class="badge rounded-pill bg-info p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
-                                                            @endif
-                                                        </td>
-                                                        <td>
-                                                            <button class="btn btn-outline-primary btn-sm fix-width">
-                                                                ${{ number_format($load_leg->price, 0) }}
-                                                            </button>
-                                                        </td>
-                                                        <td>
-                                                            <span
-                                                                class="badge rounded-pill badge-light-warning p-2">Pending</span>
-                                                        </td>
-                                                        <td>
-                                                            <a href="{{ route('admin.loads.view', $load_leg->load_master->id) }}"
-                                                                class="btn btn-sm btn-outline-primary px-3">
-                                                                View
-                                                            </a>
-                                                            <button type="button" data-bs-toggle="modal"
-                                                                data-bs-target="#updateStatus-{{ $load_leg->load_master->id }}"
-                                                                class="btn btn-primary d-flex align-items-center">
-                                                                <i class="mdi mdi-cog-outline mdi-20px me-1"></i> Action
-                                                            </button>
-                                                        </td>
+                                                        <td colspan="10" class="text-center py-4">No pending loads found.</td>
                                                     </tr>
-                                                @endforeach
+                                                @endif
                                             </tbody>
                                         </table>
                                         @foreach ($pending_load_legs as $i => $load_leg)

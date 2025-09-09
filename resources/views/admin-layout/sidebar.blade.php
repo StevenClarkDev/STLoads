@@ -12,7 +12,8 @@
                         <ul class="nav flex-column">
                             <li class="nav-item mb-2">
                                 <a href="{{ route('user_approval') }}">
-                                    <div class="btn btn-{{ request()->routeIs('user_approval') ? 'primary' : 'light' }}">
+                                    <div
+                                        class="btn btn-{{ request()->routeIs('user_approval') ? 'primary' : 'light' }}">
                                         <i data-feather="home"></i> Home
                                     </div>
                                 </a>
@@ -156,3 +157,9 @@
         </div>
     </div>
 </div>
+
+<link rel="stylesheet" type="text/css" href="{{ url('assets/css/vendors/feather-icon.css') }}">
+<script src="https://unpkg.com/feather-icons"></script>
+<script>
+    feather.replace();
+</script>

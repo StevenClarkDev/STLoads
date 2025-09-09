@@ -65,36 +65,36 @@
                     <div class="col-xl-12 box-col-6 p-3">
                         <div class="card mx-4">
                             <div class="card-body">
-                                <h5 class="mb-3">Onboarding Form</h5>
+                                <h4 class="mb-3">Onboarding Form</h4>
                                 <form class="card-body" method="POST" enctype="multipart/form-data"
                                     action="{{ route('onboarding-form-save', $user->id) }}">
                                     @csrf
                                     <div class="row g-4">
                                         <div class="col-md-6">
-                                            <div class="form-floating form-floating-outline">
+                                            <label>Company Name</label>
+                                            <div class="input-group">
                                                 <input type="text" id="company_name" class="form-control"
-                                                    placeholder="Enter Company Name" name="company_name" />
-                                                <label for="company_name">Company Name</label>
+                                                    name="company_name" placeholder="Enter Company Name" required>
                                             </div>
                                         </div>
                                         <div class="col-md-6">
-                                            <div class="form-floating form-floating-outline">
+                                            <label>Company Address</label>
+                                            <div class="input-group">
                                                 <input type="text" id="company_address" class="form-control"
-                                                    placeholder="Enter Company Address" name="company_address" />
-                                                <label for="company_address">Company Address</label>
+                                                    name="company_address" placeholder="Enter Company Address" required>
                                             </div>
                                         </div>
                                         {{-- <div class="col-md-6">
                                             <div class="form-floating form-floating-outline">
-                                                <input type="file" accept=".jpeg, .jpg, .png, .pdf"
-                                                    name="cnic_front" class="form-control" />
+                                                <input type="file" accept=".jpeg, .jpg, .png, .pdf" name="cnic_front"
+                                                    class="form-control" />
                                                 <label>CNIC Front</label>
                                             </div>
                                         </div>
                                         <div class="col-md-6">
                                             <div class="form-floating form-floating-outline">
-                                                <input type="file" accept=".jpeg, .jpg, .png, .pdf"
-                                                    name="cnic_back" class="form-control" />
+                                                <input type="file" accept=".jpeg, .jpg, .png, .pdf" name="cnic_back"
+                                                    class="form-control" />
                                                 <label>CNIC Back</label>
                                             </div>
                                         </div> --}}
@@ -102,38 +102,37 @@
                                         {{-- Carrier --}}
                                         @if ($role->id == 2)
                                             <div class="col-md-6">
-                                                <div class="form-floating form-floating-outline">
-                                                    <input type="text" name="dot_number" class="form-control"
-                                                        placeholder="DOT Number" />
-                                                    <label>DOT Number</label>
+                                                <label>DOT Number</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" name="dot_number"
+                                                        placeholder="Enter DOT Number" required>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
-                                                <div class="form-floating form-floating-outline">
-                                                    <input type="text" name="mc_number" class="form-control"
-                                                        placeholder="MC Number" />
-                                                    <label>MC Number</label>
+                                                <label>MC Number</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" name="mc_number"
+                                                        placeholder="Enter MC Number" required>
                                                 </div>
                                             </div>
                                             {{-- <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
                                                     <input type="file" accept=".jpeg, .jpg, .png, .pdf"
-                                                        name="certificate_of_insurance_carrier"
-                                                        class="form-control" />
+                                                        name="certificate_of_insurance_carrier" class="form-control" />
                                                     <label>Certificate of Insurance</label>
                                                 </div>
                                             </div> --}}
                                             <div class="col-md-6">
-                                                <div class="form-floating form-floating-outline">
-                                                    <input type="text" name="equipment_types" class="form-control"
-                                                        placeholder="Equipment Types" />
-                                                    <label>Equipment Types</label>
+                                                <label>Equipment Types</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" name="equipment_types"
+                                                        placeholder="Enter Equipment Types" required>
                                                 </div>
                                             </div>
                                             {{-- <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
-                                                    <input type="file" accept=".jpeg, .jpg, .png, .pdf"
-                                                        name="driver_roster" class="form-control" />
+                                                    <input type="file" accept=".jpeg, .jpg, .png, .pdf" name="driver_roster"
+                                                        class="form-control" />
                                                     <label>Driver Roster</label>
                                                 </div>
                                             </div>
@@ -148,10 +147,10 @@
                                             {{-- Shipper --}}
                                         @elseif($role->id == 3)
                                             <div class="col-md-6">
-                                                <div class="form-floating form-floating-outline">
-                                                    <input type="text" name="business_entity_id"
-                                                        class="form-control" placeholder="Business Entity ID (EIN)" />
-                                                    <label>Business Entity ID (EIN)</label>
+                                                <label>Business Entity ID (EIN)</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" name="business_entity_id"
+                                                        placeholder="Enter EIN" required>
                                                 </div>
                                             </div>
                                             {{-- <div class="col-md-6">
@@ -162,34 +161,33 @@
                                                 </div>
                                             </div> --}}
                                             <div class="col-md-6">
-                                                <div class="form-floating form-floating-outline">
-                                                    <input type="text" name="facility_address"
-                                                        class="form-control" placeholder="Facility Address" />
-                                                    <label>Facility Address</label>
+                                                <label>Facility Address</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" name="facility_address"
+                                                        placeholder="Enter Facility Address" required>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
-                                                <div class="form-floating form-floating-outline">
-                                                    <input type="text" name="fulfillment_contact_info"
-                                                        class="form-control" placeholder="Fulfillment Contact Info" />
-                                                    <label>Fulfillment Contact Info</label>
+                                                <label>Fulfillment Contact Info</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" name="fulfillment_contact_info"
+                                                        placeholder="Enter Fulfillment Contact Info" required>
                                                 </div>
                                             </div>
-
                                             {{-- Broker --}}
                                         @elseif($role->id == 4)
                                             <div class="col-md-6">
-                                                <div class="form-floating form-floating-outline">
-                                                    <input type="text" name="fmcsa_broker_license_no"
-                                                        class="form-control" placeholder="FMCSA Broker License No." />
-                                                    <label>FMCSA Broker License No.</label>
+                                                <label>FMCSA Broker License No.</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" name="fmcsa_broker_license_no"
+                                                        placeholder="Enter FMCSA Broker License No." required>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
-                                                <div class="form-floating form-floating-outline">
-                                                    <input type="text" name="mc_authority_number"
-                                                        class="form-control" placeholder="MC Authority Number" />
-                                                    <label>MC Authority Number</label>
+                                                <label>MC Authority Number</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" name="mc_authority_number"
+                                                        placeholder="Enter MC Authority Number" required>
                                                 </div>
                                             </div>
                                             {{-- <div class="col-md-6">
@@ -210,20 +208,20 @@
                                             {{-- Forwarder --}}
                                         @elseif($role->id == 5)
                                             <div class="col-md-6">
-                                                <div class="form-floating form-floating-outline">
-                                                    <input type="text" name="freight_forwarder_license"
-                                                        class="form-control"
-                                                        placeholder="Freight Forwarder License" />
-                                                    <label>Freight Forwarder License</label>
+                                                <label>Freight Forwarder License</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" name="freight_forwarder_license"
+                                                        placeholder="Enter Freight Forwarder License" required>
                                                 </div>
                                             </div>
                                             <div class="col-md-6">
-                                                <div class="form-floating form-floating-outline">
-                                                    <input type="text" name="customs_license" class="form-control"
-                                                        placeholder="Customs License" />
-                                                    <label>Customs License</label>
+                                                <label>Customs License</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" name="customs_license"
+                                                        placeholder="Enter Customs License" required>
                                                 </div>
                                             </div>
+
                                             {{-- <div class="col-md-6">
                                                 <div class="form-floating form-floating-outline">
                                                     <input type="file" accept=".jpeg, .jpg, .png, .pdf"
@@ -248,9 +246,8 @@
                                             </div> --}}
                                         @endif
                                         <div class="d-flex justify-content-between align-items-center">
-                                            <h5 class="card-header">Documents</h5>
-                                            <button type="button" class="btn btn-primary h-75"
-                                                id="doc-row">Add</button>
+                                            <h5>Documents</h5>
+                                            <button type="button" class="btn btn-primary" id="doc-row">Add</button>
                                         </div>
                                         <table class="table table-bordered" id="document-table">
                                             <thead>
@@ -324,7 +321,7 @@
         new WOW().init();
     </script>
     <script>
-        $(document).ready(function() {
+        $(document).ready(function () {
             function addMemberRow() {
                 const rowCount = $('#document-table tbody tr').length + 1;
                 const newRow = `
@@ -332,10 +329,13 @@
                 <td>${rowCount}</td>
                 <td><input type="text" name="doc_name[]" class="form-control" required /></td>
                 <td>
-                    <select name="doc_type[]" required class="form-control">
-                        <option value="standard">Standard</option>
-                        <option value="blockchain">Blockchain</option>
-                    </select>
+                    <div class="input-group">
+                        <select name="doc_type[]" required class="form-control">
+                            <option value="standard">Standard</option>
+                            <option value="blockchain">Blockchain</option>
+                        </select>
+                        <span class="input-group-text"><i class="fa fa-chevron-down"></i></span>
+                    </div>
                 </td>
                 <td>
                     <input type="file" name="documents[]" class="form-control"
@@ -350,7 +350,7 @@
             }
 
             function updateSerialNumbers(tableId) {
-                $(tableId + ' tbody tr').each(function(index) {
+                $(tableId + ' tbody tr').each(function (index) {
                     $(this).find('td:first').text(index + 1);
                 });
             }
@@ -363,7 +363,7 @@
 
             $('#doc-row').on('click', addMemberRow);
 
-            $('body').on('click', '.remove-row', function() {
+            $('body').on('click', '.remove-row', function () {
                 $(this).closest('tr').remove();
                 updateSerialNumbers('#document-table');
                 toggleRemoveButtons();

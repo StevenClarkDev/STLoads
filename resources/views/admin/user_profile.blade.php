@@ -84,7 +84,6 @@
 
                 <div class="card-body p-0">
                     <div class="table-responsive">
-                        <!-- Use Bootstrap class-based height and overflow utilities -->
                         <div class="overflow-auto px-4" style="max-height: 200px;">
                             @php
                                 use Illuminate\Support\Facades\Storage;
@@ -111,44 +110,41 @@
                             <table class="table table-striped w-100 mb-0" id="user-approval-table">
                                 <thead class="sticky-top bg-white z-index-sticky">
                                     <tr>
-                                        <th style="width:60px">#</th>
-                                        <th>Document Name</th>
-                                        <th style="width:120px">Type</th>
-                                        <th style="width:220px">Preview</th>
-                                        <th style="width:110px">Size</th>
-                                        <th style="width:130px">Action</th>
+                                        <th>#</th>
+                                        <th>Document</th>
+                                        <th>File</th>
+                                        <th>Type</th>
+                                        <th>Size</th>
+                                        <th>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @forelse ($user->kycDocuments as $i => $doc)
                                         @php
-                                            $exists =
-                                                $doc->file_path && Storage::disk('public')->exists($doc->file_path);
+                                            $exists = $doc->file_path && Storage::disk('public')->exists($doc->file_path);
                                             $url = $exists ? $doc->file_url : null;
-                                            $ext = $doc->original_name
-                                                ? strtolower(pathinfo($doc->original_name, PATHINFO_EXTENSION))
-                                                : null;
+                                            $ext = $doc->original_name ? strtolower(pathinfo($doc->original_name, PATHINFO_EXTENSION)) : null;
                                             $mime = $doc->mime_type;
                                         @endphp
                                         <tr>
                                             <td>{{ $loop->iteration }}</td>
 
+                                            <!-- Document Name -->
                                             <td>
-                                                <div class="fw-semibold">
-                                                    {{ $doc->document_name ?? 'Untitled' }}
+                                                <div class="text-uppercase">
+                                                    {{ $doc->document_name ?? 'UNTITLED' }}
                                                     @if (($doc->document_type ?? '') === 'blockchain')
-                                                        <span class="badge bg-dark ms-2">Blockchain</span>
-                                                    @endif
-                                                </div>
-                                                <div class="text-muted small">
-                                                    {{ $doc->original_name ?? basename($doc->file_path) }}
-                                                    @if (($doc->document_type ?? '') === 'blockchain' && $doc->hash)
-                                                        <span class="ms-2">• hash:
-                                                            <code>{{ Str::limit($doc->hash, 12, '…') }}</code></span>
+                                                        <span class="badge bg-primary ms-2">BLOCKCHAIN</span>
                                                     @endif
                                                 </div>
                                             </td>
+                                            <td>
+                                                <div class="text-muted small">
+                                                    {{ $doc->original_name ?? basename($doc->file_path) }}
+                                                </div>
+                                            </td>
 
+                                            <!-- Type -->
                                             <td class="text-nowrap">
                                                 @if ($ext)
                                                     {{ strtoupper($ext) }}
@@ -159,54 +155,44 @@
                                                 @endif
                                             </td>
 
-                                            <td>
-                                                @if (!$exists)
-                                                    <span class="badge bg-danger">Missing file</span>
-                                                @else
-                                                    @if (in_array($mime, $imageMimes))
-                                                        <a href="{{ $url }}" target="_blank" rel="noopener">
-                                                            <img src="{{ $url }}" alt="preview"
-                                                                class="img-thumbnail"
-                                                                style="max-width: 110px; max-height: 110px;">
-                                                        </a>
-                                                    @elseif(in_array($mime, $pdfMimes))
-                                                        <a href="{{ $url }}" target="_blank" rel="noopener"
-                                                            class="btn btn-outline-secondary btn-sm">
-                                                            View PDF
-                                                        </a>
-                                                    @elseif(in_array($mime, $docxMimes) || $ext === 'docx')
-                                                        <span class="text-muted me-2">DOCX (no preview)</span>
-                                                        <a href="{{ $url }}" target="_blank" rel="noopener"
-                                                            class="btn btn-outline-secondary btn-sm">
-                                                            Open
-                                                        </a>
-                                                    @else
-                                                        <a href="{{ $url }}" target="_blank" rel="noopener"
-                                                            class="btn btn-outline-secondary btn-sm">
-                                                            Open
-                                                        </a>
-                                                    @endif
-                                                @endif
-                                            </td>
-
+                                            <!-- Size -->
                                             <td>{{ human_filesize($doc->file_size) }}</td>
 
-                                            <td>
+                                            <!-- Action -->
+                                            <td class="d-flex align-items-center gap-1">
                                                 @if ($exists)
+
+                                                    {{-- Hash: only if blockchain hash exists --}}
+                                                    @if (($doc->document_type ?? '') === 'blockchain' && $doc->hash)
+                                                        <button type="button" class="btn btn-sm btn-light" data-bs-toggle="tooltip"
+                                                            data-bs-placement="top" title="Hash: {{ $doc->hash }}">
+                                                            Hash
+                                                        </button>
+                                                    @endif
+                                                    {{-- Preview: only for images and PDFs --}}
+                                                    @if (in_array($mime, $imageMimes) || in_array($mime, $pdfMimes))
+                                                        <a href="{{ $url }}" target="_blank" rel="noopener"
+                                                            class="btn btn-sm btn-secondary" data-bs-toggle="tooltip"
+                                                            data-bs-placement="top" title="Preview">
+                                                            Preview
+                                                        </a>
+                                                    @endif
+                                                    {{-- Download --}}
                                                     <a href="{{ $url }}"
                                                         download="{{ $doc->original_name ?? basename($doc->file_path) }}"
-                                                        class="btn btn-primary btn-sm">
+                                                        class="btn btn-sm btn-primary" data-bs-toggle="tooltip"
+                                                        data-bs-placement="top" title="Download">
                                                         Download
                                                     </a>
                                                 @else
-                                                    <button class="btn btn-secondary btn-sm" disabled>Download</button>
+                                                    <span class="badge bg-danger">Missing</span>
                                                 @endif
                                             </td>
+
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="6" class="text-center text-muted py-4">No documents uploaded.
-                                            </td>
+                                            <td colspan="5" class="text-center text-muted py-4">No documents uploaded.</td>
                                         </tr>
                                     @endforelse
                                 </tbody>
@@ -217,4 +203,16 @@
             </div>
         </div>
     </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            if (typeof feather !== "undefined") {
+                feather.replace();
+            }
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl)
+            })
+        });
+    </script>
 @endsection

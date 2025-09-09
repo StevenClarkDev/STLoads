@@ -20,7 +20,7 @@
 
                         <div class="card-body">
                             <div class="table-responsive">
-                                <div style="max-height:500px; overflow-y:auto;">
+                                <div style="max-height:500px;">
                                     <table class="table table-striped w-100" id="user-approval-table">
                                         <thead style="position: sticky; top: 0; background: #fff; z-index: 2;">
                                             <tr>

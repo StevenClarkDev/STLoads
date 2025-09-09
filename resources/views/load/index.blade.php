@@ -136,189 +136,197 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                @foreach ($load_legs as $i => $load_leg)
-                                                    <tr>
-                                                        <td>{{ $load_leg->leg_code }}</td>
-                                                        <td>
-                                                            <span class="badge rounded-circle p-2 badge-primary"
-                                                                data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                title="{{ $load_leg->pickupLocation?->name }} - {{ $load_leg->pickupLocation?->city->name }} - {{ $load_leg->pickupLocation?->country?->name }}">
-                                                                <i data-feather="map-pin"></i>
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            <span class="badge rounded-circle p-2 badge-primary"
-                                                                data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                title="{{ $load_leg->deliveryLocation?->name }} - {{ $load_leg->deliveryLocation?->city->name }} - {{ $load_leg->deliveryLocation?->country?->name }}">
-                                                                <i data-feather="map-pin"></i>
-                                                            </span>
-                                                        </td>
-                                                        <td>{{ \Carbon\Carbon::parse($load_leg->pickup_date)->format('jS M, Y') }}
-                                                        </td>
-                                                        <td>{{ \Carbon\Carbon::parse($load_leg->delivery_date)->format('jS M, Y') }}
-                                                        </td>
-                                                        <td>
-                                                            <span
-                                                                class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
-                                                        </td>
-                                                        @if ($roleId != 3)
+                                                @if(count($load_legs) > 0)
+                                                    @foreach ($load_legs as $i => $load_leg)
+                                                        <tr>
+                                                            <td>{{ $load_leg->leg_code }}</td>
                                                             <td>
-                                                                @if ($load_leg->status_id == 0 || $load_leg->status_id == 7)
-                                                                    {{ $load_leg->load_master->latestHistory?->remarks ?? 'No remarks provided.' }}
+                                                                <span class="badge rounded-circle p-2 badge-primary"
+                                                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                    title="{{ $load_leg->pickupLocation?->name }} - {{ $load_leg->pickupLocation?->city->name }} - {{ $load_leg->pickupLocation?->country?->name }}">
+                                                                    <i data-feather="map-pin"></i>
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                <span class="badge rounded-circle p-2 badge-primary"
+                                                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                                                    title="{{ $load_leg->deliveryLocation?->name }} - {{ $load_leg->deliveryLocation?->city->name }} - {{ $load_leg->deliveryLocation?->country?->name }}">
+                                                                    <i data-feather="map-pin"></i>
+                                                                </span>
+                                                            </td>
+                                                            <td>{{ \Carbon\Carbon::parse($load_leg->pickup_date)->format('jS M, Y') }}
+                                                            </td>
+                                                            <td>{{ \Carbon\Carbon::parse($load_leg->delivery_date)->format('jS M, Y') }}
+                                                            </td>
+                                                            <td>
+                                                                <span
+                                                                    class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
+                                                            </td>
+                                                            @if ($roleId != 3)
+                                                                <td>
+                                                                    @if ($load_leg->status_id == 0 || $load_leg->status_id == 7)
+                                                                        {{ $load_leg->load_master->latestHistory?->remarks ?? 'No remarks provided.' }}
+                                                                    @else
+                                                                        No remarks provided.
+                                                                    @endif
+                                                                </td>
+                                                            @endif
+                                                            <td>
+                                                                @if ($load_leg->bid_status == 'Fixed')
+                                                                    <span
+                                                                        class="badge rounded-pill bg-primary p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
                                                                 @else
-                                                                    No remarks provided.
+                                                                    <span
+                                                                        class="badge rounded-pill bg-info p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
                                                                 @endif
                                                             </td>
-                                                        @endif
-                                                        <td>
-                                                            @if ($load_leg->bid_status == 'Fixed')
-                                                                <span
-                                                                    class="badge rounded-pill bg-primary p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
-                                                            @else
-                                                                <span
-                                                                    class="badge rounded-pill bg-info p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
-                                                            @endif
-                                                        </td>
-                                                        <td>
-                                                            @if ($load_leg->status_id == 4 || $roleId != 3)
-                                                                <button class="btn btn-primary btn-sm fix-width">
-                                                                    ${{ number_format($load_leg->booked_amount > 0 ? $load_leg->booked_amount : $load_leg->price, 0) }}
-                                                                </button>
-                                                            @elseif ($load_leg->bid_status == 'Fixed')
-                                                                <button class="btn btn-primary btn-sm fix-width"
-                                                                    data-bs-toggle="modal"
-                                                                    data-bs-target="#confirmFixedModal"
-                                                                    data-book-url="{{ route('load-legs.book', $load_leg) }}"
-                                                                    data-amount="{{ $load_leg->price }}"
-                                                                    data-leg-code="{{ $load_leg->leg_code ?? '' }}">
-                                                                    ${{ number_format($load_leg->price, 0) }}
-                                                                </button>
-                                                            @else
-                                                                <button class="btn btn-outline-primary btn-sm fix-width"
-                                                                    data-bs-toggle="modal"
-                                                                    data-bs-target="#bidModal-{{ $i }}">
-                                                                    ${{ number_format($load_leg->price, 0) }}
-                                                                </button>
-                                                            @endif
+                                                            <td>
+                                                                @if ($load_leg->status_id == 4 || $roleId != 3)
+                                                                    <button class="btn btn-primary btn-sm fix-width">
+                                                                        ${{ number_format($load_leg->booked_amount > 0 ? $load_leg->booked_amount : $load_leg->price, 0) }}
+                                                                    </button>
+                                                                @elseif ($load_leg->bid_status == 'Fixed')
+                                                                    <button class="btn btn-primary btn-sm fix-width"
+                                                                        data-bs-toggle="modal"
+                                                                        data-bs-target="#confirmFixedModal"
+                                                                        data-book-url="{{ route('load-legs.book', $load_leg) }}"
+                                                                        data-amount="{{ $load_leg->price }}"
+                                                                        data-leg-code="{{ $load_leg->leg_code ?? '' }}">
+                                                                        ${{ number_format($load_leg->price, 0) }}
+                                                                    </button>
+                                                                @else
+                                                                    <button class="btn btn-outline-primary btn-sm fix-width"
+                                                                        data-bs-toggle="modal"
+                                                                        data-bs-target="#bidModal-{{ $i }}">
+                                                                        ${{ number_format($load_leg->price, 0) }}
+                                                                    </button>
+                                                                @endif
 
-                                                            {{-- Reusable Fixed-Price Booking Modal --}}
-                                                            <div class="modal fade" id="confirmFixedModal" tabindex="-1"
-                                                                aria-hidden="true">
-                                                                <div class="modal-dialog">
-                                                                    <form id="confirmFixedForm" class="modal-content"
-                                                                        method="POST" action="#">
-                                                                        @csrf
-                                                                        <div class="modal-header">
-                                                                            <h5 class="modal-title">Book this load?</h5>
-                                                                            <button type="button" class="btn-close"
-                                                                                data-bs-dismiss="modal"></button>
-                                                                        </div>
-
-                                                                        <div class="modal-body">
-                                                                            <p class="mb-2">
-                                                                                You’re about to <strong>book</strong>
-                                                                                <span id="fixedLegLabel"></span>
-                                                                                at <strong id="fixedAmountLabel"></strong>.
-                                                                            </p>
-                                                                            <p class="text-muted small mb-0">
-                                                                                This will reserve the load at the fixed
-                                                                                price.
-                                                                            </p>
-
-                                                                            {{-- Hidden value if backend expects it --}}
-                                                                            <input type="hidden" name="amount"
-                                                                                id="fixedAmountInput" value="">
-                                                                        </div>
-
-                                                                        <div class="modal-footer">
-                                                                            <button class="btn btn-light" type="button"
-                                                                                data-bs-dismiss="modal">Cancel</button>
-                                                                            <button class="btn btn-primary"
-                                                                                id="confirmFixedBtn" type="submit">
-                                                                                Proceed
-                                                                            </button>
-                                                                        </div>
-                                                                    </form>
-                                                                </div>
-                                                            </div>
-
-
-                                                            <!-- Bid Modal -->
-                                                            <div class="modal fade" id="bidModal-{{ $i }}"
-                                                                tabindex="-1" aria-hidden="true">
-                                                                <div class="modal-dialog modal-dialog-centered"
-                                                                    style="max-width: 600px;">
-                                                                    <div class="modal-content p-4">
-                                                                        <div class="modal-header border-0">
-                                                                            <h5 class="modal-title">Submit Your Bid</h5>
-                                                                            <button type="button" class="btn-close"
-                                                                                data-bs-dismiss="modal"
-                                                                                aria-label="Close"></button>
-                                                                        </div>
-
-                                                                        <form method="POST"
-                                                                            action="{{ route('loads.bid', $load_leg->id) }}">
+                                                                {{-- Reusable Fixed-Price Booking Modal --}}
+                                                                <div class="modal fade" id="confirmFixedModal" tabindex="-1"
+                                                                    aria-hidden="true">
+                                                                    <div class="modal-dialog">
+                                                                        <form id="confirmFixedForm" class="modal-content"
+                                                                            method="POST" action="#">
                                                                             @csrf
-                                                                            <div class="modal-body">
-                                                                                <p class="text-muted mb-4">Please review
-                                                                                    the client's offer and submit your bid
-                                                                                    below.</p>
-                                                                                <div class="row my-3">
-                                                                                    <div class="col-md-6">
-                                                                                        <label class="form-label">Client
-                                                                                            Price</label>
-                                                                                        <input class="form-control"
-                                                                                            value="${{ number_format($load_leg->price, 0) }}"
-                                                                                            readonly>
-                                                                                    </div>
-                                                                                    <div class="col-md-6">
-                                                                                        <label class="form-label">Your
-                                                                                            Bid</label>
-                                                                                        <input type="number"
-                                                                                            min="1" step="1"
-                                                                                            name="amount"
-                                                                                            class="form-control"
-                                                                                            placeholder="Enter your bid"
-                                                                                            required>
-                                                                                    </div>
-                                                                                </div>
-                                                                                <label class="form-label mt-2">Note
-                                                                                    (optional)
-                                                                                </label>
-                                                                                <input type="text" name="note"
-                                                                                    class="form-control"
-                                                                                    placeholder="Any additional info">
+                                                                            <div class="modal-header">
+                                                                                <h5 class="modal-title">Book this load?</h5>
+                                                                                <button type="button" class="btn-close"
+                                                                                    data-bs-dismiss="modal"></button>
                                                                             </div>
-                                                                            @if ($roleId == 3)
-                                                                                <div
-                                                                                    class="modal-footer border-0 d-flex justify-content-end gap-2">
-                                                                                    <button type="button"
-                                                                                        class="btn btn-outline-secondary"
-                                                                                        data-bs-dismiss="modal">Cancel</button>
-                                                                                    <button type="submit"
-                                                                                        class="btn btn-primary">Submit Bid
-                                                                                        &amp; Chat</button>
-                                                                                </div>
-                                                                            @endif
+
+                                                                            <div class="modal-body">
+                                                                                <p class="mb-2">
+                                                                                    You’re about to <strong>book</strong>
+                                                                                    <span id="fixedLegLabel"></span>
+                                                                                    at <strong id="fixedAmountLabel"></strong>.
+                                                                                </p>
+                                                                                <p class="text-muted small mb-0">
+                                                                                    This will reserve the load at the fixed
+                                                                                    price.
+                                                                                </p>
+
+                                                                                {{-- Hidden value if backend expects it --}}
+                                                                                <input type="hidden" name="amount"
+                                                                                    id="fixedAmountInput" value="">
+                                                                            </div>
+
+                                                                            <div class="modal-footer">
+                                                                                <button class="btn btn-light" type="button"
+                                                                                    data-bs-dismiss="modal">Cancel</button>
+                                                                                <button class="btn btn-primary"
+                                                                                    id="confirmFixedBtn" type="submit">
+                                                                                    Proceed
+                                                                                </button>
+                                                                            </div>
                                                                         </form>
                                                                     </div>
                                                                 </div>
-                                                            </div>
-                                                        </td>
-                                                        <td>
-                                                            <span
-                                                                class="badge rounded-pill badge-light-warning p-2">Pending</span>
-                                                        </td>
-                                                        @if ($roleId != 3)
-                                                            <td>
-                                                                <a href="{{ route('loads.view', $load_leg->load_master->id) }}"
-                                                                    class="btn btn-sm btn-outline-primary px-3">
-                                                                    View
-                                                                </a>
+
+
+                                                                <!-- Bid Modal -->
+                                                                <div class="modal fade" id="bidModal-{{ $i }}"
+                                                                    tabindex="-1" aria-hidden="true">
+                                                                    <div class="modal-dialog modal-dialog-centered"
+                                                                        style="max-width: 600px;">
+                                                                        <div class="modal-content p-4">
+                                                                            <div class="modal-header border-0">
+                                                                                <h5 class="modal-title">Submit Your Bid</h5>
+                                                                                <button type="button" class="btn-close"
+                                                                                    data-bs-dismiss="modal"
+                                                                                    aria-label="Close"></button>
+                                                                            </div>
+
+                                                                            <form method="POST"
+                                                                                action="{{ route('loads.bid', $load_leg->id) }}">
+                                                                                @csrf
+                                                                                <div class="modal-body">
+                                                                                    <p class="text-muted mb-4">Please review
+                                                                                        the client's offer and submit your bid
+                                                                                        below.</p>
+                                                                                    <div class="row my-3">
+                                                                                        <div class="col-md-6">
+                                                                                            <label class="form-label">Client
+                                                                                                Price</label>
+                                                                                            <input class="form-control"
+                                                                                                value="${{ number_format($load_leg->price, 0) }}"
+                                                                                                readonly>
+                                                                                        </div>
+                                                                                        <div class="col-md-6">
+                                                                                            <label class="form-label">Your
+                                                                                                Bid</label>
+                                                                                            <input type="number"
+                                                                                                min="1" step="1"
+                                                                                                name="amount"
+                                                                                                class="form-control"
+                                                                                                placeholder="Enter your bid"
+                                                                                                required>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <label class="form-label mt-2">Note
+                                                                                        (optional)
+                                                                                    </label>
+                                                                                    <input type="text" name="note"
+                                                                                        class="form-control"
+                                                                                        placeholder="Any additional info">
+                                                                                </div>
+                                                                                @if ($roleId == 3)
+                                                                                    <div
+                                                                                        class="modal-footer border-0 d-flex justify-content-end gap-2">
+                                                                                        <button type="button"
+                                                                                            class="btn btn-outline-secondary"
+                                                                                            data-bs-dismiss="modal">Cancel</button>
+                                                                                        <button type="submit"
+                                                                                            class="btn btn-primary">Submit Bid
+                                                                                            &amp; Chat</button>
+                                                                                    </div>
+                                                                                @endif
+                                                                            </form>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
                                                             </td>
-                                                        @endif
-                                                    </tr>
-                                                @endforeach
+                                                            <td>
+                                                                <span
+                                                                    class="badge rounded-pill badge-light-warning p-2">Pending</span>
+                                                            </td>
+                                                            @if ($roleId != 3)
+                                                                <td>
+                                                                    <a href="{{ route('loads.view', $load_leg->load_master->id) }}"
+                                                                        class="btn btn-sm btn-outline-primary px-3">
+                                                                        View
+                                                                    </a>
+                                                                </td>
+                                                            @endif
+                                                        </tr>
+                                                    @endforeach
+                                                    @else
+                                                        <tr>
+                                                            <td colspan="{{ $roleId != 3 ? 11 : 9 }}" class="text-center py-4">
+                                                                No loads found.
+                                                            </td>
+                                                        </tr>
+                                                    @endif
                                             </tbody>
                                         </table>
                                     </div>
@@ -346,7 +354,7 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                @if ($recommendedLoadLegs != null)
+                                                @if($recommendedLoadLegs != null && count($recommendedLoadLegs) > 0)
                                                     @foreach ($recommendedLoadLegs as $i => $load_leg)
                                                         <tr>
                                                             <td>{{ $load_leg->leg_code }}</td>
@@ -544,7 +552,7 @@
                                                     </tr>
                                                 @else
                                                     <tr>
-                                                        <td colspan="14"> No recommendation available </td>
+                                                        <td colspan="14" class="text-center py-4">No recommended loads found.</td>
                                                     </tr>
                                                 @endif
 
