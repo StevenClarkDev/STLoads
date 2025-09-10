@@ -1,6 +1,6 @@
 @extends('admin-layout.app')
 @section('content')
-    <div class="row gy-3 py-2">
+        <div class="row gy-3 py-2">
         <!-- Users Summary Card -->
         <div class="col-12 col-xl-4">
             <div class="card h-100">

@@ -150,7 +150,7 @@
                                                             <td>
                                                                 <span class="badge rounded-pill badge-light-warning p-2">Pending</span>
                                                             </td>
-                                                            <td>
+                                                            <!-- <td>
                                                                 <a href="{{ route('admin.loads.view', $load_leg->load_master->id) }}"
                                                                     class="btn btn-sm btn-outline-primary px-3">
                                                                     View
@@ -160,7 +160,14 @@
                                                                     class="btn btn-primary d-flex align-items-center"></button>
                                                                     <i class="mdi mdi-cog-outline mdi-20px me-1"></i> Action
                                                                 </button>
-                                                            </td>
+                                                            </td> -->
+                                                            <td class="d-flex gap-1">
+                                                <a href="{{ route('admin.loads.view', $load_leg->load_master->id) }}"
+                                                    class="btn btn-info btn-sm w-80">Profile</a>
+                                                <button type="button" data-bs-toggle="modal"
+                                                    data-bs-target="#updateStatus-{{ $load_leg->load_master->id }}"
+                                                    class="btn btn-primary btn-sm w-80">Action</button>
+                                            </td>
                                                         </tr>
                                                     @endforeach
                                                 @else
@@ -171,48 +178,44 @@
                                             </tbody>
                                         </table>
                                         @foreach ($pending_load_legs as $i => $load_leg)
-                                            <div class="modal fade" id="updateStatus-{{ $load_leg->load_master->id }}" tabindex="-1"
-                                                aria-hidden="true">
-                                                <div
-                                                    class="modal-dialog modal-lg modal-simple modal-enable-otp modal-dialog-centered">
-                                                    <div class="p-3 modal-content p-md-5">
-                                                        <div class="py-3 modal-body py-md-0">
-                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                                                aria-label="Close"></button>
-                                                            <div class="mb-4 text-center">
-                                                                <h3 class="mb-2">Load Forwarding</h3>
-                                                            </div>
-                                                            <form method="POST" class="row g-4"
-                                                                action="{{ route('load.update-status', $load_leg->load_master->id) }}">
-                                                                @csrf
-                                                                <div class="col-12 col-md-12">
-                                                                    <div class="form-floating form-floating-outline">
-                                                                        <textarea class="form-control h-px-100" name="remarks" id="remarks" placeholder="Enter Remarks here..."></textarea>
-                                                                        <label for="remarks">Remarks</label>
-                                                                    </div>
-                                                                </div>
-                                                                <div class="text-center col-12">
-                                                                    <button type="submit"
-                                                                        class="btn btn-danger me-sm-3 me-1" name="status"
-                                                                        value="7">
-                                                                        Send Back
-                                                                    </button>
-                                                                    <button type="submit"
-                                                                        class="btn btn-primary me-sm-3 me-1"
-                                                                        name="status" value="2">
-                                                                        Approved
-                                                                    </button>
-                                                                    <button type="submit"
-                                                                        class="btn btn-danger me-sm-3 me-1" name="status"
-                                                                        value="0">
-                                                                        Reject
-                                                                    </button>
-                                                                </div>
-                                                            </form>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                            <div class="modal fade" id="updateStatus-{{ $load_leg->load_master->id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-md modal-dialog-centered">
+        <div class="modal-content border-0 shadow-sm rounded-3">
+            <div class="modal-header border-0">
+                <h5 class="modal-title">Load Forwarding</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                    aria-label="Close"></button>
+            </div>
+
+            <form method="POST" action="{{ route('load.update-status', $load_leg->load_master->id) }}">
+                @csrf
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="remarks" class="form-label fw-medium">Remarks</label>
+                        <textarea class="form-control" name="remarks" id="remarks" rows="3"
+                            placeholder="Enter remarks (optional for Approve, required for Reject/Send Back)"></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer border-0 d-flex justify-content-end gap-1">
+                    <!-- Send Back -->
+                    <button type="submit" class="btn btn-secondary btn-sm" name="status" value="7">
+                        Send Back
+                    </button>
+                    <!-- Approve -->
+                    <button type="submit" class="btn btn-primary btn-sm" name="status" value="2">
+                        Approved
+                    </button>
+                    <!-- Reject -->
+                    <button type="submit" class="btn btn-danger btn-sm" name="status" value="0">
+                        Reject
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
                                         @endforeach
                                     </div>
                                 </div>

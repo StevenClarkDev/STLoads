@@ -313,8 +313,8 @@
                                                             @if ($roleId != 3)
                                                                 <td>
                                                                     <a href="{{ route('loads.view', $load_leg->load_master->id) }}"
-                                                                        class="btn btn-sm btn-outline-primary px-3">
-                                                                        View
+                                                                        class="btn align-items-center">
+                                                                        <i class="bi bi-eye text-primary"></i>
                                                                     </a>
                                                                 </td>
                                                             @endif
