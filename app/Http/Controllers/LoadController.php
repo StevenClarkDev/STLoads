@@ -191,13 +191,13 @@ class LoadController extends Controller
         $fromName    = config('mail.from.name');
         $to          = $user->email;
 
-        if ((int)$request->status === 1) {
+        if ((int)$request->status === 2) {
             $subject = 'Your Load has been approved';
             $body = "Hello {$user->name},\n\nYour Load has been approved. You can now log in and start using our system.\n\nThank you,\n{$fromName}";
-        } elseif ((int)$request->status === 2) {
+        } elseif ((int)$request->status === 0) {
             $subject = 'Your Load has been rejected';
             $body = "Hello {$user->name},\n\nYour Load has been rejected.\nAdmin remarks: {$request->remarks}\n\nThank you,\n{$fromName}";
-        } else { // 5 = send back
+        } else { // 7 = send back
             $subject = 'Action needed: Load requires revision';
             $body = "Hello {$user->name},\n\nYour Load requires revision.\nAdmin remarks: {$request->remarks}\n\nThank you,\n{$fromName}";
         }
