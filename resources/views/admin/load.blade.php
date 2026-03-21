@@ -22,6 +22,9 @@
                                         <button type="button" class="btn btn-sm btn-outline-light rounded-4 border"
                                             onclick="switchTab(this, 'pending')">Pending Loads
                                             ({{ $pendingLoadCount }})</button>
+                                        <button type="button" class="btn btn-sm btn-outline-light rounded-4 border"
+                                            onclick="switchTab(this, 'release-funds')">Fund Release
+                                            ({{ $releasedLoadCount }})</button>
                                     </div>
                                 </div>
                             </div>
@@ -40,7 +43,6 @@
                                                     <th>Status</th>
                                                     <th>Bid Status</th>
                                                     <th>Amount</th>
-                                                    <th>Payment</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -78,9 +80,6 @@
                                                                 <button class="btn btn-outline-primary btn-sm fix-width">
                                                                     ${{ number_format($load_leg->price, 0) }}
                                                                 </button>
-                                                            </td>
-                                                            <td>
-                                                                <span class="badge rounded-pill badge-light-warning p-2">Pending</span>
                                                             </td>
                                                         </tr>
                                                     @endforeach
@@ -219,6 +218,124 @@
                                         @endforeach
                                     </div>
                                 </div>
+                                
+<div class="tab-pane fade" id="tab-release-funds">
+    <div class="table-responsive">
+        <table class="table table-striped align-middle text-nowrap" id="user-pending-table"
+            style="font-size: 0.875rem;">
+            <thead class="bg-white" style="position: sticky; top: 0; z-index: 2;">
+                <tr>
+                    <th>Load ID</th>
+                    <th>Carrier</th>
+                    <th>User</th>
+                    <th>Status</th>
+                    <th>Amount</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if(count($release_load_legs) > 0)
+                    @foreach ($release_load_legs as $i => $load_leg)
+                        <tr>
+                            <td>{{ $load_leg->leg_code }}</td>
+                            <td>{{ $load_leg->carrier?->name }}</td>
+                            <td>{{ $load_leg->load_master?->user?->name }}</td>
+                            <td>
+                                <span class="badge rounded-pill bg-light-success p-2 text-capitalize">
+                                    {{ $load_leg->status_master?->name }}
+                                </span>
+                            </td>
+                            <td>
+                                <button class="btn btn-outline-primary btn-sm fix-width">
+                                    ${{ number_format($load_leg->booked_amount ?? $load_leg->price ?? 0, 0) }}
+                                </button>
+                            </td>
+                            <td class="d-flex gap-1">
+                                <a href="{{ route('admin.loads.view', $load_leg->load_master->id) }}"
+                                   class="btn btn-info btn-sm w-80">
+                                    Profile
+                                </a>
+
+                                {{-- Open Release Funds Modal --}}
+                                <button type="button"
+                                        class="btn btn-success btn-sm w-80"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#releaseFunds-{{ $load_leg->escrow?->id }}">
+                                     Release Funds
+                                </button>
+                            </td>
+                        </tr>
+                    @endforeach
+                @else
+                    <tr>
+                        <td colspan="10" class="text-center py-4">No funds to release.</td>
+                    </tr>
+                @endif
+            </tbody>
+        </table>
+
+        {{-- Release Funds Modals --}}
+        @foreach ($release_load_legs as $i => $load_leg)
+            <div class="modal fade" id="releaseFunds-{{ $load_leg->escrow->id }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-md modal-dialog-centered">
+                    <div class="modal-content border-0 shadow-sm rounded-3">
+                        <div class="modal-header border-0">
+                            <h5 class="modal-title">Release Funds</h5>
+                            <button type="button" class="btn-close"
+                                    data-bs-dismiss="modal"
+                                    aria-label="Close"></button>
+                        </div>
+
+                        <form method="POST" action="{{ route('admin.escrows.release', $load_leg->escrow->id) }}">
+                            @csrf
+                            <div class="modal-body">
+                                <p class="mb-3">
+                                    Are you sure you want to release funds to this carrier?
+                                </p>
+
+                                <ul class="list-unstyled small mb-0">
+                                    <li class="mb-2">
+                                        <div class="row">
+                                            <div class="col-6">
+                                                <strong>Load ID:</strong> {{ $load_leg->leg_code }}
+                                            </div>
+                                            <div class="col-6">
+                                                <strong>Carrier:</strong> {{ $load_leg->carrier?->name }}
+                                            </div>
+                                        </div>
+                                    </li>
+                                    <li class="mb-2">
+                                        <div class="row">
+                                            <div class="col-6">
+                                                <strong>Amount:</strong>
+                                        ${{ number_format($load_leg->booked_amount ?? $load_leg->price ?? 0, 0) }}
+                                            </div>
+                                            <div class="col-6">
+                                                <strong>Status:</strong>
+                                        <span class="badge rounded-pill bg-primary p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
+                                        
+                                            </div>
+                                        </div>
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div class="modal-footer border-0 d-flex justify-content-end">
+                                <button type="button" class="btn btn-secondary btn-sm"
+                                        data-bs-dismiss="modal">
+                                    Cancel
+                                </button>
+                                <button type="submit" class="btn btn-success btn-sm">
+                                    <i class="fas fa-money-bill"></i> Confirm Release
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        @endforeach
+    </div>
+</div>
 
                             </div>
                         </div>
@@ -227,7 +344,11 @@
             </div>
         </div>
     </div>
+    <!-- Font Awesome (for the money-bill icon) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+
     <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/feather-icons"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // --- Tabs ---
@@ -257,6 +378,16 @@
                     if (body) body.classList.add('d-none');
                     if (gen) gen.classList.remove('d-none');
                 });
+            }
+
+            // Initialize feather icons (renders elements with data-feather)
+            try {
+                if (window.feather && typeof window.feather.replace === 'function') {
+                    window.feather.replace();
+                }
+            } catch (e) {
+                // fail silently if feather is not available
+                console.warn('Feather icons init failed', e);
             }
         });
     </script>

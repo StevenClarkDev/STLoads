@@ -13,7 +13,7 @@
     @endphp
 
 
-    <div class="container-fluid">
+    <div>
         <div class="page-title">
             <div class="row">
                 <div class="col-6">
@@ -34,7 +34,7 @@
         </div>
     </div>
 
-    <div class="container-fluid">
+    <div>
         <div class="row g-0 min-vh-100">
             {{-- LEFT: recent chats --}}
             <div class="col-xxl-3 col-xl-4 col-md-5 d-flex flex-column">

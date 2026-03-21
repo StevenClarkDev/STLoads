@@ -246,7 +246,7 @@
                             <div class="role-content">
                                 <i class="fas fa-boxes role-icon"></i>
                                 <h3 class="role-title">Shipper</h3>
-                                <p class="role-count">Count 40</p>
+                                <p class="role-count">Count {{ $count_shipper ?? 0 }}</p>
                                 <a href="{{ route('normal-login', ['id' => 2]) }}">
                                     <i class="fas fa-arrow-right role-arrow"></i>
                                 </a>
@@ -258,7 +258,7 @@
                             <div class="role-content">
                                 <i class="fas fa-truck-fast role-icon"></i>
                                 <h3 class="role-title">Carrier</h3>
-                                <p class="role-count">Count 40</p>
+                                <p class="role-count">Count {{ $count_carrier ?? 0 }}</p>
                                 <a href="{{ route('normal-login', ['id' => 3]) }}">
                                     <i class="fas fa-arrow-right role-arrow"></i>
                                 </a>
@@ -270,7 +270,7 @@
                             <div class="role-content">
                                 <i class="fas fa-handshake-angle role-icon"></i>
                                 <h3 class="role-title">Broker</h3>
-                                <p class="role-count">Count 40</p>
+                                <p class="role-count">Count {{ $count_broker ?? 0 }}</p>
                                 <a href="{{ route('normal-login', ['id' => 4]) }}">
                                     <i class="fas fa-arrow-right role-arrow"></i>
                                 </a>
@@ -282,7 +282,7 @@
                             <div class="role-content">
                                 <i class="fas fa-ship role-icon"></i>
                                 <h3 class="role-title">Freight Forwarder</h3>
-                                <p class="role-count">Count 40</p>
+                                <p class="role-count">Count {{ $count_freight_forwarder ?? 0 }}</p>
                                 <a href="{{ route('normal-login', ['id' => 5]) }}">
                                     <i class="fas fa-arrow-right role-arrow"></i>
                                 </a>

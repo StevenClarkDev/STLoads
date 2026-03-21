@@ -145,7 +145,8 @@ class UserController extends Controller
     public function usersByRole($id): View
     {
         $role = Role::findOrFail($id);
-        $users = $role->users()->get();
+        $allusers = $role->users()->get();
+        $users = $allusers->where('status', 1);
         // dd($users);
 
         return view('admin.users_by_role', compact('users', 'role'));
@@ -155,12 +156,12 @@ class UserController extends Controller
     {
         // Minimal validation
         $request->validate([
-            'status'  => 'required|in:1,2,5',          // 1=approved, 2=rejected, 5=send back
+            'status' => 'required|in:1,2,5',          // 1=approved, 2=rejected, 5=send back
             'remarks' => 'nullable|string|max:1000',
         ]);
 
         // Require remarks for reject or send back
-        if (in_array((int)$request->status, [2, 5]) && !$request->filled('remarks')) {
+        if (in_array((int) $request->status, [2, 5]) && !$request->filled('remarks')) {
             return back()->with('error', 'Remarks are required for Reject or Send Back.');
         }
 
@@ -168,28 +169,32 @@ class UserController extends Controller
         if (!$user) {
             return back()->with('error', 'User not found');
         }
-
+        if ((int) $request->status === 2) {
+            $user->rejected_at = now();
+        } else if ((int) $request->status === 1) {
+            $user->approved_at = now();
+        }
         // Update status
-        $user->status = (int)$request->status;
+        $user->status = (int) $request->status;
         $user->save();
 
         // Save history
         UserHistory::create([
-            'user_id'  => $user->id,
+            'user_id' => $user->id,
             'admin_id' => Auth::id(),
-            'status'   => (int)$request->status,
-            'remarks'  => $request->remarks,
+            'status' => (int) $request->status,
+            'remarks' => $request->remarks,
         ]);
 
         // Email (kept simple)
         $fromAddress = config('mail.from.address');
-        $fromName    = config('mail.from.name');
-        $to          = $user->email;
+        $fromName = config('mail.from.name');
+        $to = $user->email;
 
-        if ((int)$request->status === 1) {
+        if ((int) $request->status === 1) {
             $subject = 'Your account has been approved';
             $body = "Hello {$user->name},\n\nYour account has been approved. You can now log in and start using our system.\n\nThank you,\n{$fromName}";
-        } elseif ((int)$request->status === 2) {
+        } elseif ((int) $request->status === 2) {
             $subject = 'Your account has been rejected';
             $body = "Hello {$user->name},\n\nYour account has been rejected.\nAdmin remarks: {$request->remarks}\n\nThank you,\n{$fromName}";
         } else { // 5 = send back

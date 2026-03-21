@@ -1,6 +1,6 @@
 @extends('layout.app')
 @section('content')
-    <div class="container-fluid">
+    <div>
         <div class="page-title">
             <div class="row">
                 <div class="col-6">
@@ -18,7 +18,7 @@
             </div>
         </div>
     </div>
-    <div class="container-fluid">
+    <div>
         <div class="row">
             <div class="col-sm-12">
                 <div class="card">
@@ -126,13 +126,12 @@
                                                     <th>Status</th>
                                                     @if ($roleId != 3)
                                                         <th>Remarks</th>
+                                                        <th>Carrier</th>
                                                     @endif
                                                     <th>Bid Status</th>
                                                     <th>Amount</th>
                                                     <th>Payment</th>
-                                                    @if ($roleId != 3)
-                                                        <th>Action</th>
-                                                    @endif
+                                                    <th>Action</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -170,6 +169,13 @@
                                                                         No remarks provided.
                                                                     @endif
                                                                 </td>
+                                                                <td>
+                                                                    @if ($load_leg->carrier)
+                                                                        {{ $load_leg->carrier->name }}
+                                                                    @else
+                                                                        -
+                                                                    @endif
+                                                                </td>
                                                             @endif
                                                             <td>
                                                                 @if ($load_leg->bid_status == 'Fixed')
@@ -181,14 +187,13 @@
                                                                 @endif
                                                             </td>
                                                             <td>
-                                                                @if ($load_leg->status_id == 4 || $roleId != 3)
+                                                                @if ($load_leg->status_id >= 4 || $roleId != 3)
                                                                     <button class="btn btn-primary btn-sm fix-width">
                                                                         ${{ number_format($load_leg->booked_amount > 0 ? $load_leg->booked_amount : $load_leg->price, 0) }}
                                                                     </button>
                                                                 @elseif ($load_leg->bid_status == 'Fixed')
                                                                     <button class="btn btn-primary btn-sm fix-width"
-                                                                        data-bs-toggle="modal"
-                                                                        data-bs-target="#confirmFixedModal"
+                                                                        data-bs-toggle="modal" data-bs-target="#confirmFixedModal"
                                                                         data-book-url="{{ route('load-legs.book', $load_leg) }}"
                                                                         data-amount="{{ $load_leg->price }}"
                                                                         data-leg-code="{{ $load_leg->leg_code ?? '' }}">
@@ -196,9 +201,8 @@
                                                                     </button>
                                                                 @else
                                                                     <button class="btn btn-outline-primary btn-sm fix-width"
-                                                                        data-bs-toggle="modal"
-                                                                        data-bs-target="#bidModal-{{ $i }}">
-                                                                        ${{ number_format($load_leg->price, 0) }}
+                                                                        data-bs-toggle="modal" data-bs-target="#bidModal-{{ $i }}">
+                                                                        ${{ number_format($load_leg->booked_amount > 0 ? $load_leg->booked_amount : $load_leg->price, 0) }}
                                                                     </button>
                                                                 @endif
 
@@ -234,8 +238,8 @@
                                                                             <div class="modal-footer">
                                                                                 <button class="btn btn-light" type="button"
                                                                                     data-bs-dismiss="modal">Cancel</button>
-                                                                                <button class="btn btn-primary"
-                                                                                    id="confirmFixedBtn" type="submit">
+                                                                                <button class="btn btn-primary" id="confirmFixedBtn"
+                                                                                    type="submit">
                                                                                     Proceed
                                                                                 </button>
                                                                             </div>
@@ -245,8 +249,8 @@
 
 
                                                                 <!-- Bid Modal -->
-                                                                <div class="modal fade" id="bidModal-{{ $i }}"
-                                                                    tabindex="-1" aria-hidden="true">
+                                                                <div class="modal fade" id="bidModal-{{ $i }}" tabindex="-1"
+                                                                    aria-hidden="true">
                                                                     <div class="modal-dialog modal-dialog-centered"
                                                                         style="max-width: 600px;">
                                                                         <div class="modal-content p-4">
@@ -275,10 +279,8 @@
                                                                                         <div class="col-md-6">
                                                                                             <label class="form-label">Your
                                                                                                 Bid</label>
-                                                                                            <input type="number"
-                                                                                                min="1" step="1"
-                                                                                                name="amount"
-                                                                                                class="form-control"
+                                                                                            <input type="number" min="1" step="1"
+                                                                                                name="amount" class="form-control"
                                                                                                 placeholder="Enter your bid"
                                                                                                 required>
                                                                                         </div>
@@ -306,31 +308,114 @@
                                                                     </div>
                                                                 </div>
                                                             </td>
+                                                            @php
+                                                                $esc = $load_leg->escrow ?? null;
+                                                                $isOwner = $user->id == $load_leg->load_master->user_id;
+                                                                $displayAmount = $load_leg->booked_amount > 0 ? $load_leg->booked_amount : $load_leg->price;
+                                                            @endphp
                                                             <td>
-                                                                <span
-                                                                    class="badge rounded-pill badge-light-warning p-2">Pending</span>
+                                                                @if ($isOwner && (int)$load_leg->status_id === 4)
+                                                                    {{-- Booked but not initiated --}}
+                                                                    <button type="button" class="btn btn-sm btn-success open-pay-modal"
+                                                                            data-leg-id="{{ $load_leg->id }}"
+                                                                            data-leg-code="{{ $load_leg->leg_code }}"
+                                                                            data-amount="{{ $displayAmount }}"
+                                                                            data-fund-url="{{ route('legs.escrow.fund', $load_leg->id) }}">
+                                                                        Pay
+                                                                    </button>
+
+                                                                @elseif ((int)$load_leg->status_id >= 5)
+                                                                    @if ($esc && $esc->status === 'funded')
+                                                                        <span class="badge rounded-pill badge-light-success p-2">Paid</span>
+                                                                    @elseif ($esc && $esc->status === 'released')
+                                                                        <span class="badge rounded-pill badge-light-success p-2">Released</span>
+                                                                    @elseif($isOwner)
+                                                                        {{-- uninitiated/unfunded/failed/null → allow retry --}}
+                                                                        <button type="button" class="btn btn-sm btn-success open-pay-modal"
+                                                                                data-leg-id="{{ $load_leg->id }}"
+                                                                                data-leg-code="{{ $load_leg->leg_code }}"
+                                                                                data-amount="{{ $displayAmount }}"
+                                                                                data-fund-url="{{ route('legs.escrow.fund', $load_leg->id) }}">
+                                                                            {{ $esc && $esc->status === 'failed' ? 'Failed — Try again' : 'Unpaid — Pay now' }}
+                                                                        </button>
+                                                                    @else
+                                                                        <span class="badge rounded-pill badge-light-warning p-2">Pending</span>
+                                                                    @endif
+                                                                @else
+                                                                    <span class="badge rounded-pill badge-light-warning p-2">Pending</span>
+                                                                @endif
                                                             </td>
-                                                            @if ($roleId != 3)
-                                                                <td>
+                                                            <td>
+                                                                @if ($roleId != 3)
                                                                     <a href="{{ route('loads.view', $load_leg->load_master->id) }}"
                                                                         class="btn align-items-center">
                                                                         <i class="bi bi-eye text-primary"></i>
                                                                     </a>
-                                                                </td>
-                                                            @endif
-                                                        </tr>
-                                                    @endforeach
-                                                    @else
-                                                        <tr>
-                                                            <td colspan="{{ $roleId != 3 ? 11 : 9 }}" class="text-center py-4">
-                                                                No loads found.
+                                                                @elseif($roleId == 3 && $load_leg->status_id == 8 && $load_leg->booked_carrier_id == $user->id && !$load_leg->pickup_started_at)
+                                                                    <form method="POST"
+                                                                        action="{{ route('leg.pickup.start', $load_leg->id) }}">
+                                                                        @csrf
+                                                                        <button class="btn btn-success btn-sm"
+                                                                            type="submit">
+                                                                            Start Pickup
+                                                                        </button>
+                                                                    </form>
+                                                                @endif
+                                                                @if ($load_leg->status_id >= 5)
+                                                                    <a href="{{ route('leg.track', $load_leg->id) }}" class="btn btn-info btn-sm">
+                                                                        Track Leg
+                                                                    </a>
+                                                                @endif
                                                             </td>
                                                         </tr>
-                                                    @endif
+                                                    @endforeach
+                                                @else
+                                                    <tr>
+                                                        <td colspan="{{ $roleId != 3 ? 11 : 9 }}" class="text-center py-4">
+                                                            No loads found.
+                                                        </td>
+                                                    </tr>
+                                                @endif
                                             </tbody>
                                         </table>
                                     </div>
                                 </div>
+                                {{-- Stripe Pay Modal --}}
+                                <div class="modal fade" id="payModal" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered" style="max-width: 520px;">
+                                        <div class="modal-content p-3">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title">
+                                                    Pay for Load <span id="payModalLegLabel" class="text-muted"></span>
+                                                </h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                                    aria-label="Close"></button>
+                                            </div>
+
+                                            <div class="modal-body">
+                                                <div class="mb-2 small text-muted">
+                                                    Amount: <strong id="payModalAmountLabel">—</strong>
+                                                </div>
+
+                                                <div id="card-element-container" class="border rounded p-3">
+                                                    <div id="card-element"></div>
+                                                </div>
+
+                                                <div id="payError" class="alert alert-danger d-none mt-3"></div>
+                                                <div id="paySuccess" class="alert alert-success d-none mt-3"></div>
+                                            </div>
+
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-light"
+                                                    data-bs-dismiss="modal">Cancel</button>
+                                                <button id="payConfirmBtn" type="button" class="btn btn-primary">
+                                                    Pay now
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="tab-pane fade" id="tab-recommended">
                                     <div class="table-responsive">
                                         <table class="table table-striped align-middle text-nowrap"
@@ -350,7 +435,6 @@
                                                     <th>Status</th>
                                                     <th>Bid Status</th>
                                                     <th>Amount</th>
-                                                    <th>Payment</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -383,8 +467,8 @@
                                                                 <button
                                                                     class="btn btn-sm show-ai-debug btn-outline-primary px-3 rounded-pill shadow-sm"
                                                                     data-leg="{{ $load_leg->leg_code }}"
-                                                                    data-debug='@json($load_leg->debug_info)'
-                                                                    data-bs-toggle="modal" data-bs-target="#aiDebugModal">
+                                                                    data-debug='@json($load_leg->debug_info)' data-bs-toggle="modal"
+                                                                    data-bs-target="#aiDebugModal">
                                                                     {{ $load_leg->score }}
                                                                     <i class="bi bi-eye"></i>
                                                                 </button>
@@ -409,28 +493,24 @@
                                                                     </button>
                                                                 @elseif ($load_leg->bid_status == 'Fixed')
                                                                     <button class="btn btn-primary btn-sm fix-width"
-                                                                        data-bs-toggle="modal"
-                                                                        data-bs-target="#reCconfirmFixedModal"
+                                                                        data-bs-toggle="modal" data-bs-target="#reCconfirmFixedModal"
                                                                         data-book-url="{{ route('load-legs.book', $load_leg) }}"
                                                                         data-amount="{{ $load_leg->price }}"
                                                                         data-leg-code="{{ $load_leg->leg_code ?? '' }}">
                                                                         ${{ number_format($load_leg->price, 0) }}
                                                                     </button>
                                                                 @else
-                                                                    <button
-                                                                        class="btn btn-outline-primary btn-sm fix-width"
-                                                                        data-bs-toggle="modal"
-                                                                        data-bs-target="#bidrecModal-{{ $i }}">
+                                                                    <button class="btn btn-outline-primary btn-sm fix-width"
+                                                                        data-bs-toggle="modal" data-bs-target="#bidrecModal-{{ $i }}">
                                                                         ${{ number_format($load_leg->price, 0) }}
                                                                     </button>
                                                                 @endif
 
-                                                                <div class="modal fade" id="reCconfirmFixedModal"
-                                                                    tabindex="-1" aria-hidden="true">
+                                                                <div class="modal fade" id="reCconfirmFixedModal" tabindex="-1"
+                                                                    aria-hidden="true">
                                                                     <div class="modal-dialog">
-                                                                        <form id="reCconfirmFixedForm"
-                                                                            class="modal-content" method="POST"
-                                                                            action="#">
+                                                                        <form id="reCconfirmFixedForm" class="modal-content"
+                                                                            method="POST" action="#">
                                                                             @csrf
                                                                             <div class="modal-header">
                                                                                 <h5 class="modal-title">Book this load?
@@ -443,8 +523,7 @@
                                                                                 <p class="mb-2">
                                                                                     You’re about to <strong>book</strong>
                                                                                     <span id="reCfixedLegLabel"></span>
-                                                                                    at <strong
-                                                                                        id="reCfixedAmountLabel"></strong>.
+                                                                                    at <strong id="reCfixedAmountLabel"></strong>.
                                                                                 </p>
                                                                                 <p class="text-muted small mb-0">
                                                                                     This will reserve the load at the fixed
@@ -453,17 +532,14 @@
 
                                                                                 {{-- Hidden value if backend expects it --}}
                                                                                 <input type="hidden" name="amount"
-                                                                                    id="reCfixedAmountInput"
-                                                                                    value="">
+                                                                                    id="reCfixedAmountInput" value="">
                                                                             </div>
 
                                                                             <div class="modal-footer">
-                                                                                <button class="btn btn-light"
-                                                                                    type="button"
+                                                                                <button class="btn btn-light" type="button"
                                                                                     data-bs-dismiss="modal">Cancel</button>
                                                                                 <button class="btn btn-primary"
-                                                                                    id="reCconfirmFixedBtn"
-                                                                                    type="submit">
+                                                                                    id="reCconfirmFixedBtn" type="submit">
                                                                                     Proceed
                                                                                 </button>
                                                                             </div>
@@ -472,8 +548,7 @@
                                                                 </div>
 
                                                                 <!-- Bid Modal -->
-                                                                <div class="modal fade"
-                                                                    id="bidrecModal-{{ $i }}" tabindex="-1"
+                                                                <div class="modal fade" id="bidrecModal-{{ $i }}" tabindex="-1"
                                                                     aria-hidden="true">
                                                                     <div class="modal-dialog modal-dialog-centered"
                                                                         style="max-width: 600px;">
@@ -497,8 +572,7 @@
                                                                                         below.</p>
                                                                                     <div class="row my-3">
                                                                                         <div class="col-md-6">
-                                                                                            <label
-                                                                                                class="form-label">Client
+                                                                                            <label class="form-label">Client
                                                                                                 Price</label>
                                                                                             <input class="form-control"
                                                                                                 value="${{ number_format($load_leg->price, 0) }}"
@@ -507,11 +581,8 @@
                                                                                         <div class="col-md-6">
                                                                                             <label class="form-label">Your
                                                                                                 Bid</label>
-                                                                                            <input type="number"
-                                                                                                min="1"
-                                                                                                step="1"
-                                                                                                name="amount"
-                                                                                                class="form-control"
+                                                                                            <input type="number" min="1" step="1"
+                                                                                                name="amount" class="form-control"
                                                                                                 placeholder="Enter your bid"
                                                                                                 required>
                                                                                         </div>
@@ -540,10 +611,6 @@
                                                                     </div>
                                                                 </div>
                                                             </td>
-                                                            <td>
-                                                                <span
-                                                                    class="badge rounded-pill badge-light-warning p-2">Pending</span>
-                                                            </td>
                                                         </tr>
                                                     @endforeach
                                                 @elseif (!$user->carrierPreference)
@@ -552,7 +619,8 @@
                                                     </tr>
                                                 @else
                                                     <tr>
-                                                        <td colspan="14" class="text-center py-4">No recommended loads found.</td>
+                                                        <td colspan="14" class="text-center py-4">No recommended loads found.
+                                                        </td>
                                                     </tr>
                                                 @endif
 
@@ -592,8 +660,7 @@
                                 <label class="form-label" for="equipment_owned">Equipment Owned</label>
                                 <select class="form-select select2" id="equipment_owned" name="equipment_id[]" multiple>
                                     @foreach ($equipments as $equipment)
-                                        <option value="{{ $equipment->id }}"
-                                            @if (in_array($equipment->id, old('equipment_id', $carrierPreference->equipment_id ?? []))) selected @endif>
+                                        <option value="{{ $equipment->id }}" @if (in_array($equipment->id, old('equipment_id', $carrierPreference->equipment_id ?? []))) selected @endif>
                                             {{ $equipment->name }}
                                         </option>
                                     @endforeach
@@ -609,8 +676,7 @@
                                 <label class="form-label" for="load_type">Load Type</label>
                                 <select class="form-select select2" id="load_type" name="load_type_id[]" multiple>
                                     @foreach ($load_types as $load_type)
-                                        <option value="{{ $load_type->id }}"
-                                            @if (in_array($load_type->id, old('load_type_id', $carrierPreference->load_type_id ?? []))) selected @endif>
+                                        <option value="{{ $load_type->id }}" @if (in_array($load_type->id, old('load_type_id', $carrierPreference->load_type_id ?? []))) selected @endif>
                                             {{ $load_type->name }}
                                         </option>
                                     @endforeach
@@ -621,8 +687,7 @@
                                 <div class="form-floating form-floating-outline">
                                     <select id="country_id" class="select2 form-select" name="country_id[]" multiple>
                                         @foreach ($countries as $country)
-                                            <option value="{{ $country->id }}"
-                                                @if (in_array($country->id, old('country_id', $carrierPreference->country_id ?? []))) selected @endif>
+                                            <option value="{{ $country->id }}" @if (in_array($country->id, old('country_id', $carrierPreference->country_id ?? []))) selected @endif>
                                                 {{ $country->name }}
                                             </option>
                                         @endforeach
@@ -637,8 +702,7 @@
                                     <select id="city_id" name="city_id[]" class="form-select select2" multiple>
                                         @if ($cities != null)
                                             @foreach ($cities as $city)
-                                                <option value="{{ $city->id }}"
-                                                    @if (in_array($city->id, old('city_id', $carrierPreference->city_id ?? []))) selected @endif>
+                                                <option value="{{ $city->id }}" @if (in_array($city->id, old('city_id', $carrierPreference->city_id ?? []))) selected @endif>
                                                     {{ $city->name }}
                                                 </option>
                                             @endforeach
@@ -718,8 +782,166 @@
     </div>
 
     <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
+    <script src="https://js.stripe.com/v3/"></script>
+    <script src="{{ url('assets/js/bootstrap/bootstrap.bundle.min.js') }}"></script>
+
     <script>
-        (function() {
+        (() => {
+            // ------------- Setup -------------
+            const stripe = Stripe("{{ config('services.stripe.public') }}");
+            let elements = null;
+            let card = null;
+
+            // Modal elements
+            const payModalEl = document.getElementById('payModal');
+            const payModal = new bootstrap.Modal(payModalEl, { backdrop: 'static' });
+            const legLabelEl = document.getElementById('payModalLegLabel');
+            const amountLabelEl = document.getElementById('payModalAmountLabel');
+            const errorEl = document.getElementById('payError');
+            const successEl = document.getElementById('paySuccess');
+            const confirmBtn = document.getElementById('payConfirmBtn');
+
+            // Context for current payment
+            let currentLegId = null;
+            let currentClientSecret = null;
+
+            // ------------- Helpers -------------
+            function fmtUSD(n) {
+                try {
+                    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(n));
+                } catch {
+                    return '$' + Number(n).toFixed(2);
+                }
+            }
+
+            function showError(msg) {
+                errorEl.textContent = msg || 'Payment error. Please try again.';
+                errorEl.classList.remove('d-none');
+                successEl.classList.add('d-none');
+            }
+            function showSuccess(msg) {
+                successEl.textContent = msg || 'Payment succeeded!';
+                successEl.classList.remove('d-none');
+                errorEl.classList.add('d-none');
+            }
+            function clearAlerts() {
+                errorEl.classList.add('d-none');
+                successEl.classList.add('d-none');
+                errorEl.textContent = '';
+                successEl.textContent = '';
+            }
+
+            function ensureCardMounted() {
+                if (!elements) elements = stripe.elements();
+                if (!card) {
+                    card = elements.create('card');
+                    card.mount('#card-element');
+                }
+            }
+
+            function setBusy(busy) {
+                confirmBtn.disabled = !!busy;
+                confirmBtn.innerHTML = busy
+                    ? '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Processing…'
+                    : 'Pay now';
+            }
+
+            // ------------- Open modal from row button -------------
+            document.querySelectorAll('.open-pay-modal').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    clearAlerts();
+                    setBusy(false);
+
+                    const legId = btn.dataset.legId;
+                    const legCode = btn.dataset.legCode || '';
+                    const amount = btn.dataset.amount || 0;
+                    const url = btn.dataset.fundUrl;
+
+                    currentLegId = legId;
+                    currentClientSecret = null;
+
+                    legLabelEl.textContent = legCode ? `· ${legCode}` : '';
+                    amountLabelEl.textContent = fmtUSD(amount);
+
+                    ensureCardMounted();
+                    payModal.show();
+
+                    // 1) Ask backend to create PaymentIntent and return clientSecret
+                    try {
+                        const res = await fetch(url, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                // If your /api is session-authenticated, CSRF helps (web.php). If you're using api.php with Sanctum token, replace with Authorization header.
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                            },
+                            body: JSON.stringify({})
+                        });
+
+                        const data = await res.json();
+                        if (!res.ok || !data?.clientSecret) {
+                            showError(data?.message || 'Could not initialize payment.');
+                            return;
+                        }
+                        currentClientSecret = data.clientSecret;
+                    } catch (e) {
+                        showError('Network error while creating payment. Try again.');
+                        console.error(e);
+                    }
+                });
+            });
+
+            // ------------- Confirm payment -------------
+            confirmBtn.addEventListener('click', async () => {
+                clearAlerts();
+
+                if (!currentClientSecret || !card) {
+                    showError('Payment not initialized. Close and reopen the modal.');
+                    return;
+                }
+
+                setBusy(true);
+                try {
+                    const { error, paymentIntent } = await stripe.confirmCardPayment(currentClientSecret, {
+                        payment_method: { card }
+                    });
+
+                    if (error) {
+                        showError(error.message);
+                        setBusy(false);
+                        return;
+                    }
+
+                    if (paymentIntent && paymentIntent.status === 'succeeded') {
+                        showSuccess('Payment succeeded! Funds are now held in escrow.');
+                        // Give the webhook a moment to update your DB, then refresh UI
+                        setTimeout(() => {
+                            payModal.hide();
+                            window.location.reload();
+                        }, 1000);
+                    } else {
+                        showError('Payment did not complete. Please try again.');
+                        setBusy(false);
+                    }
+                } catch (e) {
+                    console.error(e);
+                    showError('Unexpected error. Please try again.');
+                    setBusy(false);
+                }
+            });
+
+            // ------------- Cleanup on hide (optional keep card mounted for reuse) -------------
+            payModalEl.addEventListener('hidden.bs.modal', () => {
+                clearAlerts();
+                setBusy(false);
+                // Keep card element mounted for faster subsequent payments
+            });
+        })();
+    </script>
+
+
+    <script>
+        (function () {
             const modalEl = document.getElementById('confirmFixedModal');
             const form = document.getElementById('confirmFixedForm');
             const amountLabel = document.getElementById('fixedAmountLabel');
@@ -793,7 +1015,7 @@
         })();
     </script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             // -------------------------
             // Elements
             // -------------------------
@@ -850,7 +1072,7 @@
             // -------------------------
             // Handle Form Submit
             // -------------------------
-            document.getElementById('recommendationForm')?.addEventListener('submit', function(e) {
+            document.getElementById('recommendationForm')?.addEventListener('submit', function (e) {
                 e.preventDefault();
 
                 const data = {
@@ -867,13 +1089,13 @@
                 btn.disabled = true;
 
                 fetch('{{ route('savePreferences') }}', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                        },
-                        body: JSON.stringify(data)
-                    })
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                    },
+                    body: JSON.stringify(data)
+                })
                     .then(res => res.json())
                     .then(data => {
                         if (data.success) {
@@ -927,7 +1149,7 @@
             // -------------------------
             // Pagination Tabs
             // -------------------------
-            window.switchTab = function(btn, tabType) {
+            window.switchTab = function (btn, tabType) {
                 document.querySelectorAll('.btn-outline-light').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
 
@@ -940,7 +1162,7 @@
             // -------------------------
             // Export to Excel
             // -------------------------
-            window.exportToExcel = function() {
+            window.exportToExcel = function () {
                 const workbook = XLSX.utils.book_new();
                 const table = document.getElementById('user-approval-table');
                 const worksheet = XLSX.utils.table_to_sheet(table);
@@ -995,292 +1217,4 @@
         });
     </script>
 
-    <!-- <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const countryEl = document.getElementById('country_id');
-            const cityEl = document.getElementById('city_id');
-            const equipmentOwnedEl = document.getElementById('equipment_owned');
-            const loadTypeEl = document.getElementById('load_type');
-            const maxWeightCapacityEl = document.getElementById('max_weight_capacity');
-            const availabilityDaysEl = document.getElementById('availability_days');
-
-            // Fetch cities based on selected countries
-            async function fetchCities(countryIds) {
-                if (!countryIds || countryIds.length === 0) {
-                    cityEl.innerHTML = '<option value="">-- Select City --</option>';
-                    cityEl.disabled = true;
-                    $(cityEl).trigger('change');
-                    return;
-                }
-
-                cityEl.disabled = true;
-
-                const cities = [];
-                for (let countryId of countryIds) {
-                    const url = "{{ url('/api/countries') }}/" + countryId + "/cities";
-                    const res = await fetch(url, {
-                        headers: {
-                            'Accept': 'application/json'
-                        }
-                    });
-                    const data = await res.json();
-                    cities.push(...data); // Merge cities from multiple countries
-                }
-
-                // Populate city select options
-                cityEl.innerHTML = '';
-                cities.forEach(c => {
-                    const opt = document.createElement('option');
-                    opt.value = c.id;
-                    opt.textContent = c.name;
-                    cityEl.appendChild(opt);
-                });
-
-                cityEl.disabled = false;
-                $(cityEl).trigger('change');
-            }
-
-            // Initialize Select2
-            $('.select2').select2();
-
-            // Country change -> fetch cities
-            $(countryEl).on('change', () => {
-                const selectedCountries = $(countryEl).val(); // array of selected country IDs
-                fetchCities(selectedCountries);
-            });
-
-            // Handle form submission with AJAX
-            document.getElementById('recommendationForm')?.addEventListener('submit', function(e) {
-                e.preventDefault();
-
-                // Collect the form data manually by their IDs
-                const equipmentOwned = Array.from(equipmentOwnedEl.selectedOptions).map(option => option
-                    .value);
-                const loadType = Array.from(loadTypeEl.selectedOptions).map(option => option.value);
-                const countryIds = Array.from(countryEl.selectedOptions).map(option => option.value);
-                const cityIds = Array.from(cityEl.selectedOptions).map(option => option.value);
-                const availabilityDays = Array.from(availabilityDaysEl.selectedOptions).map(option => option
-                    .value);
-                const maxWeightCapacity = maxWeightCapacityEl.value;
-
-                // Prepare the data for submission
-                const data = {
-                    equipment_id: equipmentOwned,
-                    load_type_id: loadType,
-                    country_id: countryIds,
-                    city_id: cityIds,
-                    availability_days: availabilityDays,
-                    max_weight_capacity: maxWeightCapacity
-                };
-
-                // Show loading indicator (optional)
-                document.getElementById('save-button').innerHTML = 'Saving...';
-                document.getElementById('save-button').disabled = true;
-
-                // AJAX request to send form data to the backend
-                fetch('{{ route('savePreferences') }}', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': '{{ csrf_token() }}' // Ensure CSRF token is included in the request
-                        },
-                        body: JSON.stringify(data) // Convert form data to JSON
-                    })
-                    .then(response => response.json()) // Parse JSON response
-                    .then(data => {
-                        if (data.success) {
-                            // Handle success - Hide modal, show success message
-                            bootstrap.Modal.getInstance(document.getElementById('recommendationModal'))
-                                .hide();
-                            Swal.fire({
-                                toast: true,
-                                position: 'top-end',
-                                icon: 'success',
-                                title: 'Success',
-                                text: 'Preferences saved successfully',
-                                showConfirmButton: false,
-                                timer: 2500
-                            });
-                        } else {
-                            // Handle error (invalid data, server issues, etc.)
-                            Swal.fire({
-                                position: 'center',
-                                icon: 'error',
-                                title: 'Error',
-                                text: data.message ||
-                                    'There was an error submitting the form. Please try again.',
-                                showConfirmButton: false,
-                                showCloseButton: true,
-                                allowOutsideClick: false,
-                                allowEscapeKey: false,
-                                backdrop: true,
-                            });
-                        }
-                    })
-                    .catch(error => {
-                        Swal.fire({
-                            position: 'center',
-                            icon: 'error',
-                            title: 'Error',
-                            text: 'There was an error submitting the form. Please try again.',
-                            showConfirmButton: false,
-                            showCloseButton: true,
-                            allowOutsideClick: false,
-                            allowEscapeKey: false,
-                            backdrop: true,
-                        });
-                        console.error('AJAX error:', error);
-                    })
-                    .finally(() => {
-                        // Reset the button text and enable it again
-                        document.getElementById('save-button').innerHTML = 'Save Preferences';
-                        document.getElementById('save-button').disabled = false;
-                    });
-            });
-        });
-    </script>
-                                                                <script>
-                                                                    document.querySelectorAll('.toggle-debug').forEach(item => {
-                                                                        item.addEventListener('click', function() {
-                                                                            const target = document.querySelector(this.getAttribute('data-bs-target'));
-                                                                            target.classList.toggle('collapse');
-                                                                        });
-                                                                    });
-                                                                </script>
-                                                                <script>
-                                                                    // Pagination functionality
-                                                                    document.addEventListener('DOMContentLoaded', function() {
-
-                                                                        // Update switchTab function to handle pagination
-                                                                        window.switchTab = function(btn, tabType) {
-                                                                            document.querySelectorAll('.btn-outline-light').forEach(b => b.classList.remove('active'));
-                                                                            btn.classList.add('active');
-
-                                                                            const allTabs = document.querySelectorAll('.tab-pane');
-                                                                            allTabs.forEach(tab => {
-                                                                                tab.classList.remove('show', 'active');
-                                                                            });
-
-                                                                            // Show the selected tab
-                                                                            const selectedTab = document.getElementById(`tab-${tabType}`);
-                                                                            selectedTab.classList.add('show', 'active');
-
-
-                                                                            // Toggle reset preferences button
-                                                                            const resetBtn = document.getElementById('resetPrefsBtn');
-                                                                            resetBtn.classList.toggle('d-none', tabType !== 'recommended');
-                                                                        };
-                                                                    });
-
-                                                                    function exportToExcel() {
-                                                                        // Create a workbook
-                                                                        const workbook = XLSX.utils.book_new();
-
-                                                                        // Get the table
-                                                                        const table = document.getElementById('user-approval-table');
-
-                                                                        // Convert table to worksheet
-                                                                        const worksheet = XLSX.utils.table_to_sheet(table);
-
-                                                                        // Add worksheet to workbook
-                                                                        XLSX.utils.book_append_sheet(workbook, worksheet, "Loads");
-
-                                                                        // Generate Excel file and download
-                                                                        XLSX.writeFile(workbook, 'Loads_List.xlsx');
-                                                                    }
-
-
-
-                                                                    document.addEventListener('DOMContentLoaded', function() {
-                                                                        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-                                                                        tooltipTriggerList.forEach(function(tooltipTriggerEl) {
-                                                                            new bootstrap.Tooltip(tooltipTriggerEl);
-                                                                        });
-                                                                    });
-                                                                    let recommendationPrefsExist = false; // simulate backend check
-
-                                                                    // Handle form submission (only frontend)
-                                                                    //document.getElementById('recommendationForm')?.addEventListener('submit', function(e) {
-                                                                    //  e.preventDefault();
-                                                                    // Normally this data would be sent to the server
-                                                                    //const formData = Object.fromEntries(new FormData(this));
-                                                                    //console.log('Preferences Saved:', formData);
-                                                                    //bootstrap.Modal.getInstance(document.getElementById('recommendationModal')).hide();
-                                                                    //});
-                                                                </script>
-                                                                <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script> -->
-
-
-    <!-- <style>
-                                                                    .btn-outline-light.active {
-                                                                        background-color: #4d6b8a !important;
-                                                                        color: white !important;
-                                                                    }
-
-                                                                    #collapseProduct .form-label {
-                                                                        font-weight: 500;
-                                                                    }
-
-                                                                    #collapseProduct .form-control,
-                                                                    #collapseProduct .form-select {
-                                                                        font-size: 0.85rem;
-                                                                        padding: 0.4rem 0.6rem;
-                                                                    }
-
-                                                                    .fix-width {
-                                                                        width: 100px;
-                                                                        text-align: center;
-                                                                        padding: 6px 0;
-                                                                        display: flex;
-                                                                        justify-content: center;
-                                                                        align-items: center;
-                                                                    }
-
-                                                                    .btn-outline-primary.fix-width:hover,
-                                                                    .btn-outline-danger.fix-width:hover {
-                                                                        background-color: inherit !important;
-                                                                        color: inherit !important;
-                                                                        border-color: inherit !important;
-                                                                        box-shadow: none !important;
-                                                                        transition: none !important;
-                                                                    }
-
-                                                                    /* #resetPrefsBtn {
-                                                                                height: 30px;
-                                                                                width: 30px;
-                                                                                padding: 0;
-                                                                                display: flex;
-                                                                                justify-content: center;
-                                                                                align-items: center;
-                                                                            } */
-
-                                                                    /* Pagination styles */
-                                                                    .pagination {
-                                                                        margin: 0;
-                                                                    }
-
-                                                                    .pagination-circle .page-item {
-                                                                        margin: 0 3px;
-                                                                    }
-
-                                                                    .pagination-circle .page-link {
-                                                                        width: 32px;
-                                                                        height: 32px;
-                                                                        padding: 0;
-                                                                        display: flex;
-                                                                        align-items: center;
-                                                                        justify-content: center;
-                                                                        border-radius: 50% !important;
-                                                                        border: 1px solid #dee2e6;
-                                                                    }
-
-                                                                    .pagination-circle .page-item.active .page-link {
-                                                                        background-color: #4d6b8a;
-                                                                        border-color: #4d6b8a;
-                                                                    }
-
-                                                                    .pagination-circle .page-item.disabled .page-link {
-                                                                        color: #6c757d;
-                                                                    }
-                                                                </style> -->
 @endsection

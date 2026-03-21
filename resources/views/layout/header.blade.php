@@ -14,7 +14,7 @@
             </div>
         </form>
         <div class="header-logo-wrapper col-auto p-0">
-            <div class="logo-wrapper"><a href="index.html"><img class="img-fluid" src="../assets/images/logo/logo.png"
+            <div class="logo-wrapper"><a href="index.html"><img class="img-fluid" src="{{ url('assets/images/logo/transparent.png') }}"
                         alt=""></a></div>
             <div class="toggle-sidebar"><i class="status_toggle middle sidebar-toggle" data-feather="align-center"></i>
             </div>
@@ -204,7 +204,7 @@
                 </li> -->
                 <li class="profile-nav onhover-dropdown pe-0 py-0">
                     <div class="media profile-media">
-                        <img class="b-r-10" src="../assets/images/dashboard/profile.png" alt="">
+                        <img class="b-r-10" src="{{ url('assets/images/dashboard/profile.png') }}" alt="">
                         <div class="media-body">
                             <span>{{ Auth::user()->name }}</span>
                             <p class="mb-0">{{ Auth::user()->role ?? 'User' }} <i class="middle fa fa-angle-down"></i></p>

@@ -11,10 +11,18 @@
 
                         <ul class="nav flex-column">
                             <li class="nav-item mb-2">
+                                <a href="{{ route('admin_dashboard') }}">
+                                    <div
+                                        class="btn btn-{{ request()->routeIs('admin_dashboard') ? 'primary' : 'light' }}">
+                                        <i data-feather="home" class="me-2"></i> Dashboard
+                                    </div>
+                                </a>
+                            </li>
+                            <li class="nav-item mb-2">
                                 <a href="{{ route('user_approval') }}">
                                     <div
                                         class="btn btn-{{ request()->routeIs('user_approval') ? 'primary' : 'light' }}">
-                                        <i data-feather="home"></i> Home
+                                        <i data-feather="user-check" class="me-2"></i> User Approval
                                     </div>
                                 </a>
                             </li>

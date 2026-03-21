@@ -253,8 +253,8 @@
                                             <thead>
                                                 <tr>
                                                     <th>#</th>
-                                                    <th>Ducument Name</th>
-                                                    <th>Ducument Type</th>
+                                                    <th>Document Name</th>
+                                                    <th>Document Type</th>
                                                     <th>Document</th>
                                                     <th>Action</th>
                                                 </tr>

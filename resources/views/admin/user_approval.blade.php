@@ -1,6 +1,6 @@
 @extends('admin-layout.app')
 @section('content')
-        <div class="row gy-3 py-2">
+    <div class="row gy-3 py-2">
         <!-- Users Summary Card -->
         <div class="col-12 col-xl-4">
             <div class="card h-100">
@@ -155,22 +155,20 @@
                                                 @endforeach
                                             </td>
                                             <td>{{ $user->created_at->format('jS F Y') }}</td>
-                                            <!-- <td>
-                                                                            <a href="{{ route('user.profile', $user->id) }}"
-                                                                                class="btn btn-info btn-sm">Profile</a>
-                                                                            <button type="button" data-bs-toggle="modal"
-                                                                                data-bs-target="#updateStatus-{{ $user->id }}"
-                                                                                class="btn btn-primary d-flex align-items-center">
-                                                                                <i class="mdi mdi-cog-outline mdi-20px me-1"></i> Action
-                                                                            </button>
-                                                                        </td> -->
-
                                             <td class="d-flex gap-1">
                                                 <a href="{{ route('user.profile', $user->id) }}"
                                                     class="btn btn-info btn-sm w-80">Profile</a>
-                                                <button type="button" data-bs-toggle="modal"
-                                                    data-bs-target="#updateStatus-{{ $user->id }}"
-                                                    class="btn btn-primary btn-sm w-80">Action</button>
+                                                @if ($user->stripe_connect_account_id && $user->roles()->first()->id == 3)
+                                                    <button type="button" data-bs-toggle="modal"
+                                                        data-bs-target="#updateStatus-{{ $user->id }}"
+                                                        class="btn btn-primary btn-sm w-80">Action</button>
+                                                @elseif($user->roles()->first()->id == 3)
+                                                    <p>Payout configuration needed</p>
+                                                @else
+                                                    <button type="button" data-bs-toggle="modal"
+                                                        data-bs-target="#updateStatus-{{ $user->id }}"
+                                                        class="btn btn-primary btn-sm w-80">Action</button>
+                                                @endif
                                             </td>
                                         </tr>
                                     @empty
@@ -180,7 +178,7 @@
                                     @endforelse
                                 </tbody>
                             </table>
-                            @forelse ($users as $user)
+                            @foreach ($users as $user)
                                 <div class="modal fade" id="updateStatus-{{ $user->id }}" tabindex="-1" aria-hidden="true">
                                     <div class="modal-dialog modal-md modal-dialog-centered">
                                         <div class="modal-content border-0 shadow-sm rounded-3">
@@ -189,7 +187,6 @@
                                                 <button type="button" class="btn-close" data-bs-dismiss="modal"
                                                     aria-label="Close"></button>
                                             </div>
-
                                             <form method="POST" action="{{ route('user.update-status', $user->id) }}">
                                                 @csrf
                                                 <div class="modal-body">
@@ -199,32 +196,20 @@
                                                             placeholder="Enter remarks (optional for Approve, required for Reject/Send Back)"></textarea>
                                                     </div>
                                                 </div>
-
                                                 <div class="modal-footer border-0 d-flex justify-content-end gap-1">
-                                                    <!-- Send Back -->
                                                     <button type="submit" class="btn btn-secondary btn-sm" name="status"
-                                                        value="5">
-                                                        Send Back
-                                                    </button>
-                                                    <!-- Approve -->
+                                                        value="5">Send Back</button>
                                                     <button type="submit" class="btn btn-primary btn-sm" name="status"
-                                                        value="1">
-                                                        Approve
-                                                    </button>
-                                                    <!-- Reject -->
-                                                    <button type="submit" class="btn btn-danger btn-sm" name="status" value="2">
-                                                        Reject
-                                                    </button>
+                                                        value="1">Approve</button>
+                                                    <button type="submit" class="btn btn-danger btn-sm" name="status"
+                                                        value="2">Reject</button>
                                                 </div>
                                             </form>
                                         </div>
                                     </div>
                                 </div>
-
-                            @empty
-                            @endforelse
+                            @endforeach
                         </div>
-
                     </div>
                 </div>
             </div>

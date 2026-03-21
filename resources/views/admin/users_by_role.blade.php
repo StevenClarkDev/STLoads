@@ -54,9 +54,14 @@
                                                     <td class="d-flex gap-1">
                                                         <a href="{{ route('user.profile', $user->id) }}"
                                                             class="btn btn-info btn-sm w-80">Profile</a>
-                                                        <button type="button" class="btn btn-success btn-sm w-80"
+                                                        <button type="button"
+                                                            class="btn btn-success btn-sm w-80"
                                                             data-bs-toggle="modal"
-                                                            data-bs-target="#contactModal">Contact</button>
+                                                            data-bs-target="#contactModal"
+                                                            data-email="{{ $user->email }}"
+                                                            data-phone="{{ $user->phone_no ?? 'N/A' }}">
+                                                            Contact
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             @endforeach
@@ -85,13 +90,11 @@
                 <form>
                     <div class="mb-3">
                         <label for="userEmail" class="form-label">Email</label>
-                        <input type="email" class="form-control" id="userEmail" value="{{ $user->email ?? '' }}"
-                            readonly>
+                        <input type="email" class="form-control" id="userEmail" readonly>
                     </div>
                     <div class="mb-3">
                         <label for="userContact" class="form-label">Contact</label>
-                        <input type="text" class="form-control" id="userContact" value="{{ $user->contact ?? 'N/A' }}"
-                            readonly>
+                        <input type="text" class="form-control" id="userContact" readonly>
                     </div>
                 </form>
                 <!-- <div class="d-flex justify-content-center gap-3">
@@ -148,3 +151,22 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
     integrity="sha512-dyZt9u+0A2ZyWOKGqhg9Ulmgwv9z5s8EKz6eS8dDXCzZsAJ2w5PZg6SLYmcm+3b0q6Iq2nX9mthV9Ic2uZlUgQ=="
     crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+@push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const contactModal = document.getElementById('contactModal');
+
+            contactModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+
+                const email = button.getAttribute('data-email') || '';
+                const phone = button.getAttribute('data-phone') || 'N/A';
+
+                contactModal.querySelector('#userEmail').value = email;
+                contactModal.querySelector('#userContact').value = phone;
+            });
+        });
+    </script>
+@endpush
+

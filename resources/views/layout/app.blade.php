@@ -89,7 +89,7 @@
         </div>
         <!-- Footer -->
         <footer class="footer mt-auto bg-light py-2">
-            <div class="container-fluid">
+            <div>
                 <div class="row">
                     <div class="col text-center text-secondary">
                         <p class="mb-0">© 2025 Load Board All Rights Reserved</p>
@@ -145,6 +145,14 @@
     <!-- Theme js-->
     <script src="{{ url('assets/js/script.js') }}"></script>
     <script src="{{ url('assets/js/theme-customizer/customizer.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pusher-js@8/dist/web/pusher.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1/dist/echo.iife.js"></script>
+
+    <script src="{{ url('assets/js/datepicker/date-picker/datepicker.js') }}"></script>
+    <script src="{{ url('assets/js/datepicker/date-picker/datepicker.en.js') }}"></script>
+    <script src="{{ url('assets/js/datepicker/date-picker/datepicker.custom.js') }}"></script>
+    <script src="{{ url('assets/js/dashboard/dashboard_3.js') }}"></script>
 
 
     <script>
@@ -205,6 +213,36 @@
             });
         </script>
     @endif
+    <script>
+        (function() {
+            const token = document.querySelector('meta[name="csrf-token"]').content;
+            axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+            axios.defaults.headers.common['X-CSRF-TOKEN'] = token;
+            axios.defaults.headers.common['Accept'] = 'application/json';
+
+            window.Pusher = window.Pusher || Pusher;
+            window.Echo = new Echo({
+                broadcaster: 'pusher',
+                key: window.CHAT?.pusherKey ?? '{{ config('broadcasting.connections.pusher.key') }}',
+                cluster: window.CHAT?.cluster ?? '{{ config('broadcasting.connections.pusher.options.cluster') }}',
+                forceTLS: true,
+                authorizer: (channel) => ({
+                    authorize: (socketId, cb) => {
+                        axios.post('/broadcasting/auth', {
+                                socket_id: socketId,
+                                channel_name: channel.name
+                            }, {
+                                withCredentials: true
+                            })
+                            .then(r => cb(null, r.data))
+                            .catch(e => cb(e, null));
+                    }
+                })
+            });
+        })();
+    </script>
+    @yield('scripts')
+
 </body>
 
 </html>

@@ -75,8 +75,8 @@
     </div>
 
     <!-- Footer -->
-    <footer class="footer mt-auto bg-light py-2">
-        <div class="container-fluid">
+    <footer class="footer mt-auto bg-transparent py-2">
+        <div>
             <div class="row">
                 <div class="col text-center text-secondary">
                     <p class="mb-0">© 2025 Load Board All Rights Reserved</p>
@@ -120,7 +120,12 @@
     <script src="{{ url('assets/js/animation/wow/wow.min.js') }}"></script>
     <script src="{{ url('assets/js/datatable/datatables/jquery.dataTables.min.js') }}"></script>
     <script src="{{ url('assets/js/datatable/datatables/datatable.custom.js') }}"></script>
+    <script src="{{ url('assets/js/dashboard/dashboard_4.js') }}"></script>
+    <script src="{{ url('assets/js\general-widget.js') }}"></script>
+    <script src="{{ url('assets/js/animation/wow/wow.min.js') }}"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.4/dist/sweetalert2.all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+
 
     <!-- Plugins JS Ends-->
     <!-- Theme js-->
@@ -167,6 +172,8 @@
             });
         </script>
     @endif
+    @stack('scripts')
+
 </body>
 
 </html>

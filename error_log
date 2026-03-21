@@ -1,0 +1,7 @@
+[16-Oct-2025 08:14:28 UTC] PHP Fatal error:  Uncaught RuntimeException: Composer detected issues in your platform: Your Composer dependencies require a PHP version ">= 8.2.0". You are running 7.4.33. in /home/stload5/STLoads/vendor/composer/platform_check.php:26
+Stack trace:
+#0 /home/stload5/STLoads/vendor/composer/autoload_real.php(25): require()
+#1 /home/stload5/STLoads/vendor/autoload.php(22): ComposerAutoloaderInit90d18bb5c20fa22458df97a6045cd825::getLoader()
+#2 /home/stload5/STLoads/artisan(10): require('/home/stload5/S...')
+#3 {main}
+  thrown in /home/stload5/STLoads/vendor/composer/platform_check.php on line 26

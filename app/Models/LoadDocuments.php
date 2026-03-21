@@ -53,7 +53,7 @@ class LoadDocuments extends Models
 
     public function load_master()
     {
-        return $this->belongsTo(Load::class);
+        return $this->belongsTo(Load::class , 'load_id');
     }
 
     /* ----------------------------- Scopes ----------------------------- */

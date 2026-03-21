@@ -7,11 +7,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasRoles;
+    use HasFactory, Notifiable, HasRoles, HasApiTokens;
 
     /**
      * The attributes that are mass assignable.
@@ -25,6 +26,9 @@ class User extends Authenticatable
         'role_id',
         'dob',
         'gender',
+        'phone_no',
+        'ucr_hcc_no',
+        'mc_cbsa_usdot_no',
         'cnic_no',
         'address',
         'otp',
@@ -33,7 +37,13 @@ class User extends Authenticatable
         'last_otp_resend_at',
         'image',
         'email_verified_at',
-        'status'
+        'status',
+        'approved_at',
+        'rejected_at',
+        'kyc_pending_at',
+        'stripe_connect_account_id',
+        'payouts_enabled',
+        'kyc_status',
     ];
 
     /**

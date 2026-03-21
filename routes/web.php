@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\LoadLegController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
@@ -13,18 +14,23 @@ use App\Http\Controllers\EquipmentsController;
 use App\Http\Controllers\CommodityTypesController;
 use App\Http\Controllers\LocationsController;
 use App\Http\Controllers\CitiesController;
+use App\Http\Controllers\StripeWebhookController;
+use App\Http\Controllers\EscrowController;
+use App\Http\Controllers\CarrierPayoutController;
 use App\Http\Controllers\BidChatController;
 use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\OfferController;
 use App\Events\TestPing;
 use Illuminate\Support\Facades\Auth;
 use App\Models\{Conversation};
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 
 /* ───────────────  GUEST‑ONLY ROUTES  ─────────────── */
 
 Route::middleware('guest')->group(function () {
     // Login
     Route::get('/normal-login', [AuthController::class, 'login'])->name('normal-login');
+    Route::get('/carrier/connect/{id}', [CarrierPayoutController::class, 'redirectToOnboarding'])->name('carrier.connect')->middleware('signed');
     Route::get('/login', [AuthController::class, 'role'])->name('login');
     Route::get('/admin/login', [AuthController::class, 'adminLogin'])->name('admin.login');
     Route::post('/login', [AuthController::class, 'verify'])->name('login.post');
@@ -52,6 +58,10 @@ Route::get('/', [AuthController::class, 'role'])->name('role');
 Route::get('/onboarding/{user}', [AuthController::class, 'onboardingForm'])->name('onboarding-form');
 Route::post('/onboarding/{user}', [AuthController::class, 'onboardingFormSave'])->name('onboarding-form-save');
 Route::post('/onboarding/shipper/{user}', [AuthController::class, 'onboardingFormSaveForShipper'])->name('onboarding-form-save-shipper');
+Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])
+    ->withoutMiddleware([VerifyCsrfToken::class])   // <-- disables CSRF just for this route
+    ->name('stripe.webhook');
+
 
 // 🔒 Auth-only routes
 Route::middleware('auth')->group(function () {
@@ -63,6 +73,7 @@ Route::middleware('auth')->group(function () {
     Route::resource('commodity_types', CommodityTypesController::class);
     Route::resource('locations', LocationsController::class);
     Route::get('/dashboard', [DashboardController::class, 'dashboard'])->name('dashboard');
+    Route::get('/admin_dashboard', [AdminController::class, 'dashboard'])->name('admin_dashboard');
     Route::get('/user_approval', [AdminController::class, 'userApproval'])->name('user_approval');
     Route::get('/users_by_role/{id}', [UserController::class, 'usersByRole'])->name('users_by_role');
     Route::get('/user_profile/{user}', [AdminController::class, 'userProfile'])->name('user.profile');
@@ -113,9 +124,9 @@ Route::middleware('auth')->group(function () {
 
         // No conversations yet → render empty state
         return view('chat.index', [
-            'roomId'        => null,
-            'messages'      => collect(),   // empty collection
-            'conversation'  => null,
+            'roomId' => null,
+            'messages' => collect(),   // empty collection
+            'conversation' => null,
             'conversations' => $conversations,
         ]);
     })->name('chat.index');
@@ -129,5 +140,22 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/countries/{country}/cities', [CitiesController::class, 'byCountry'])
         ->name('api.cities.by-country');
 
-    Route::post('/logout',   [AuthController::class, 'logout'])->name('logout');
+    Route::post('/legs/{leg}/escrow/fund', [EscrowController::class, 'fund'])->name('legs.escrow.fund');
+    Route::post('/admin/escrows/{escrow}/release', [EscrowController::class, 'release'])->name('admin.escrows.release');
+
+    Route::post('/legs/{leg}/pickup/start', [LoadLegController::class, 'startPickup'])->name('leg.pickup.start');
+    Route::post('/legs/{leg}/location', [LoadLegController::class, 'storeLocation'])
+        ->name('leg.location.store');
+    Route::get('/legs/{leg}/track', [LoadLegController::class, 'track'])
+        ->name('leg.track');
+
+    Route::post('/legs/{leg}/pickup/arrived', [LoadLegController::class, 'arrivedPickup'])->name('leg.pickup.arrived');
+    Route::post('/legs/{leg}/pickup/depart',  [LoadLegController::class, 'departPickup'])->name('leg.pickup.depart');
+    Route::post('/legs/{leg}/delivery/arrived', [LoadLegController::class, 'arrivedDelivery'])->name('leg.delivery.arrived');
+    Route::post('/legs/{leg}/delivery/complete', [LoadLegController::class, 'completeDelivery'])->name('leg.delivery.complete');
+
+    Route::post('/legs/{leg}/documents', [LoadLegController::class, 'storeDocs'])->name('leg.documents.store');
+
+
+    Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });

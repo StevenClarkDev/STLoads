@@ -28,15 +28,32 @@
                         <a href="{{ route('normal-login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Cancel</a>
                     </div>
                 </div>
-
             @elseif ($user->status == 3)
-                <div class="text-center">
-                    <h4 class="mb-3">KYC Pending</h4>
-                    <p class="text-muted">Your KYC verification is pending. Please wait for approval.</p>
+                <!-- <div class="text-center">
+                            <h4 class="mb-3">KYC Pending</h4>
+                            <p class="text-muted">Your KYC verification is pending. Please wait for approval.</p>
+                            <div class="text-center">
+                                <a href="{{ route('normal-login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Back</a>
+                            </div>
+                        </div> -->
+                @if ($role->id == 3 && !$user->stripe_connect_account_id)
                     <div class="text-center">
-                        <a href="{{ route('normal-login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Back</a>
+                        <h4 class="mb-3">Enable Payouts</h4>
+                        <p class="text-muted">To start receiving payments, please complete your Stripe payout setup.</p>
+                        <div class="d-flex justify-content-center gap-2">
+                            <a href="{{ URL::signedRoute('carrier.connect', ['id' => $user->id]) }}" class="btn btn-primary">Enable Payouts</a>
+                            <a href="{{ route('normal-login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Back</a>
+                        </div>
                     </div>
-                </div>
+                @else
+                    <div class="text-center">
+                        <h4 class="mb-3">KYC Pending</h4>
+                        <p class="text-muted">Your account is pending admin approval. Please wait.</p>
+                        <div class="text-center">
+                            <a href="{{ route('normal-login', ['id' => $role->id]) }}" class="btn btn-outline-secondary">Back</a>
+                        </div>
+                    </div>
+                @endif
 
             @elseif ($user->status == 4)
                 <div class="text-center">

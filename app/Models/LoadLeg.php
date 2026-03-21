@@ -13,6 +13,10 @@ class LoadLeg extends Models
     protected $guarded = [];
     public $timestamps = true;
 
+    protected $casts = [
+        'pickup_date' => 'datetime',
+        'delivery_date' => 'datetime',
+    ];
     public function load_master()
     {
         return $this->belongsTo(Load::class, 'load_id');
@@ -21,6 +25,10 @@ class LoadLeg extends Models
     public function status_master()
     {
         return $this->belongsTo(LoadLegStatusMaster::class, 'status_id');
+    }
+    public function carrier()
+    {
+        return $this->belongsTo(User::class, 'booked_carrier_id');
     }
 
     public function offer()
@@ -42,4 +50,24 @@ class LoadLeg extends Models
     {
         return $this->belongsTo(Locations::class, 'delivery_location_id');
     }
+
+    public function escrow()
+    {
+        return $this->hasOne(Escrow::class, 'leg_id', 'id');
+    }
+
+    public function locations()
+    {
+        return $this->hasMany(LoadLegLocation::class, 'leg_id', 'id');
+    }
+    public function events()
+    {
+        return $this->hasMany(LegEvent::class, 'leg_id', 'id');
+    }
+    public function documents()
+    {
+        return $this->hasMany(LegDocuments::class, 'leg_id', 'id');
+    }
+
+
 }

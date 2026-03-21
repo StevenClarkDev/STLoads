@@ -33,7 +33,7 @@ class AuthController extends Controller
         // if (auth()->check()) {
         //     return redirect()->route('dashboard');
         // }
-        $id  = request()->query('id');
+        $id = request()->query('id');
 
         return view('auth.login', compact('id'));
     }
@@ -54,17 +54,22 @@ class AuthController extends Controller
             if (Auth::check()) {
                 $user = Auth::user();
                 if ($user && $user->roles->first()?->id === 1) {
-                    return redirect()->route('user_approval');
+                    return redirect()->route('admin_dashboard');
+
                 } else {
-                    return redirect()->route('manage-loads');
+                    return redirect()->route('dashboard');
                 }
                 // return redirect()->route('dashboard');
             }
-            return view('role');
+            $count_broker = User::role('Broker', 'web')->count();
+            $count_shipper = User::role('Shipper', 'web')->count();
+            $count_carrier = User::role('Carrier', 'web')->count();
+            $count_freight_forwarder = User::role('Freight Forwarder', 'web')->count();
+            return view('role', compact('count_broker', 'count_shipper', 'count_carrier', 'count_freight_forwarder'));
         } catch (\Exception $e) {
             // Handle the exception, log it, or return an error response
             $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
-            return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request.']);
+            return redirect()->back()->withErrors(['error' => 'An error occurred while processing your request. ' . $e->getMessage()]);
         }
     }
 
@@ -100,9 +105,9 @@ class AuthController extends Controller
 
                 $logsController->createLog(__METHOD__, 'success', 'Login Successful', null, json_encode(['email' => $request->email, 'role_id' => $request->id]));
                 if ($user->roles->first()?->id === 1) {
-                    return redirect()->route('user_approval')->with('success', 'Login successful');
+                    return redirect()->route('admin_dashboard')->with('success', 'Login successful');
                 } else {
-                    return redirect()->route('manage-loads')->with('success', 'Login successful');
+                    return redirect()->route('dashboard')->with('success', 'Login successful');
                 }
             } else {
                 $logsController->createLog(__METHOD__, 'error', 'Login denied: Role mismatch', null, json_encode(['email' => $request->email, 'role_id' => $request->id]));
@@ -148,23 +153,23 @@ class AuthController extends Controller
     {
         // Basic validation
         $request->validate([
-            'doc_id'      => 'array',
-            'doc_id.*'    => [
+            'doc_id' => 'array',
+            'doc_id.*' => [
                 'nullable',
                 'integer',
                 Rule::exists('kyc_documents', 'id')->where(fn($q) => $q->where('user_id', $user->id)),
             ],
-            'doc_name'    => 'required|array|min:1',
-            'doc_name.*'  => 'required|string|max:255',
-            'doc_type'    => 'required|array',
-            'doc_type.*'  => ['required', Rule::in(['standard', 'blockchain'])],
-            'documents'   => 'array',
+            'doc_name' => 'required|array|min:1',
+            'doc_name.*' => 'required|string|max:255',
+            'doc_type' => 'required|array',
+            'doc_type.*' => ['required', Rule::in(['standard', 'blockchain'])],
+            'documents' => 'array',
             'documents.*' => 'nullable|file|mimes:jpeg,jpg,png,pdf,docx'
                 . '|mimetypes:image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 . '|max:20480',
         ]);
 
-        $ids   = $request->input('doc_id', []);
+        $ids = $request->input('doc_id', []);
         $names = $request->input('doc_name', []);
         $types = $request->input('doc_type', []);
         $files = $request->file('documents', []);
@@ -183,8 +188,8 @@ class AuthController extends Controller
 
             foreach ($names as $i => $name) {
                 $docId = $ids[$i] ?? null;
-                $type  = strtolower($types[$i] ?? 'standard');
-                $file  = $files[$i] ?? null;
+                $type = strtolower($types[$i] ?? 'standard');
+                $file = $files[$i] ?? null;
 
                 if ($docId) {
                     // Update existing
@@ -201,10 +206,10 @@ class AuthController extends Controller
                     }
                     $path = $file->store("kyc_documents/{$user->id}", 'public');
 
-                    $doc->file_path     = $path;
+                    $doc->file_path = $path;
                     $doc->original_name = $file->getClientOriginalName();
-                    $doc->mime_type     = $file->getClientMimeType();
-                    $doc->file_size     = $file->getSize();
+                    $doc->mime_type = $file->getClientMimeType();
+                    $doc->file_size = $file->getSize();
                 }
 
                 // Always update name/type
@@ -222,12 +227,12 @@ class AuthController extends Controller
                     $abs = Storage::disk('public')->path($doc->file_path);
                     $hash = hash_file('sha256', $abs);
 
-                    $doc->hash           = $hash;
+                    $doc->hash = $hash;
                     $doc->hash_algorithm = 'sha256';
 
                     // Create a new mock tx when there is a new upload or no tx yet
                     if ($file || empty($doc->mock_blockchain_tx)) {
-                        $doc->mock_blockchain_tx        = (string) Str::uuid();
+                        $doc->mock_blockchain_tx = (string) Str::uuid();
                         $doc->mock_blockchain_timestamp = now();
                     }
                 } else {
@@ -276,7 +281,7 @@ class AuthController extends Controller
                 $request->session()->regenerate();
 
                 $logsController->createLog(__METHOD__, 'success', 'Login Successful', null, json_encode(['email' => $request->email, 'role_id' => 1]));
-                return redirect()->route('user_approval')->with('success', 'Login successful');
+                return redirect()->route('admin_dashboard')->with('success', 'Login successful');
             } else {
                 $logsController->createLog(__METHOD__, 'error', 'Login denied: Role mismatch', null, json_encode(['email' => $request->email, 'role_id' => $request->id]));
                 return redirect()->back()->withErrors(['error' => 'Login denied: Role mismatch']);
@@ -298,7 +303,7 @@ class AuthController extends Controller
     }
     public function registerForm()
     {
-        $id  = request()->query('id');
+        $id = request()->query('id');
         $role_name = Role::find($id)->name ?? 'User';
 
         // if($id == 2){
@@ -690,15 +695,15 @@ class AuthController extends Controller
 
         // Validate common fields + dynamic docs
         $request->validate([
-            'company_name'    => 'required|string|max:255',
+            'company_name' => 'required|string|max:255',
             'company_address' => 'required|string|max:255',
 
-            'doc_name'        => 'required|array|min:1',
-            'doc_name.*'      => 'required|string|max:255',
-            'doc_type'        => 'required|array',
-            'doc_type.*'      => 'required|in:standard,blockchain',
-            'documents'       => 'required|array|min:1',
-            'documents.*'     => 'required|file|mimes:jpeg,jpg,png,pdf,docx|mimetypes:image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document|max:20480',
+            'doc_name' => 'required|array|min:1',
+            'doc_name.*' => 'required|string|max:255',
+            'doc_type' => 'required|array',
+            'doc_type.*' => 'required|in:standard,blockchain',
+            'documents' => 'required|array|min:1',
+            'documents.*' => 'required|file|mimes:jpeg,jpg,png,pdf,docx|mimetypes:image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document|max:20480',
         ]);
 
         if (
@@ -712,7 +717,7 @@ class AuthController extends Controller
 
         $roleId = $role->id;
         $detailsData = [
-            'company_name'    => $request->company_name,
+            'company_name' => $request->company_name,
             'company_address' => $request->company_address,
         ];
 
@@ -756,13 +761,13 @@ class AuthController extends Controller
                 $documentType = strtolower($types[$i] ?? 'standard');
 
                 $payload = [
-                    'user_id'       => $user->id,
+                    'user_id' => $user->id,
                     'document_name' => trim($name),
                     'document_type' => $documentType,
-                    'file_path'     => $storedPath,
+                    'file_path' => $storedPath,
                     'original_name' => $file->getClientOriginalName(),
-                    'mime_type'     => $file->getClientMimeType(),
-                    'file_size'     => $file->getSize(),
+                    'mime_type' => $file->getClientMimeType(),
+                    'file_size' => $file->getSize(),
                 ];
 
                 // Mock blockchain anchoring for blockchain docs
@@ -770,9 +775,9 @@ class AuthController extends Controller
                     $absPath = Storage::disk('public')->path($storedPath);
                     $hash = hash_file('sha256', $absPath);
 
-                    $payload['hash']                     = $hash;
-                    $payload['hash_algorithm']           = 'sha256';
-                    $payload['mock_blockchain_tx']       = (string) Str::uuid(); // fake tx id
+                    $payload['hash'] = $hash;
+                    $payload['hash_algorithm'] = 'sha256';
+                    $payload['mock_blockchain_tx'] = (string) Str::uuid(); // fake tx id
                     $payload['mock_blockchain_timestamp'] = now();
                 }
 
@@ -792,41 +797,41 @@ class AuthController extends Controller
         // --- Validate Shipper fields + dynamic docs (no CNIC) ---
         $request->validate([
             // common
-            'company_name'    => 'required|string|max:255',
+            'company_name' => 'required|string|max:255',
             'company_address' => 'required|string|max:255',
 
             // shipper-specific
-            'business_type'                         => 'required|string|max:255',
-            'website'                               => 'nullable|url',
-            'shipments_per_week'                    => 'required|numeric',
-            'volume_or_weight_per_shipment'         => 'required|string|max:255',
-            'types_of_goods_being_shipped'          => 'required|array',
-            'packaging_type'                        => 'required|array',
-            'types_of_delivery_services_needed'     => 'required|array',
-            'preferred_pickup_days'                 => 'required|array',
-            'preferred_pickup_from_time'            => 'required',
-            'preferred_pickup_to_time'              => 'required',
-            'logistics_provider'                    => 'nullable|string',
-            'preferred_payment_method'              => 'required|array',
-            'billing_contact_name'                  => 'required|string|max:255',
-            'billing_email_address'                 => 'required|email|max:255',
-            'tax_id'                                => 'required|string|max:255',
-            'invoice_frequency'                     => 'required|string',
-            'shipment_tracking'                     => 'required|string',
-            'pickup_materials_supplied'             => 'required|string',
-            'demo_or_onboarding_call'               => 'required|string',
-            'preferred_communication_method'        => 'required|array',
-            'special_notes'                         => 'nullable|string|max:1000',
-            'other_goods'                           => 'nullable|string|max:255',
-            'other_payment'                         => 'nullable|string|max:255',
+            'business_type' => 'required|string|max:255',
+            'website' => 'nullable|url',
+            'shipments_per_week' => 'required|numeric',
+            'volume_or_weight_per_shipment' => 'required|string|max:255',
+            'types_of_goods_being_shipped' => 'required|array',
+            'packaging_type' => 'required|array',
+            'types_of_delivery_services_needed' => 'required|array',
+            'preferred_pickup_days' => 'required|array',
+            'preferred_pickup_from_time' => 'required',
+            'preferred_pickup_to_time' => 'required',
+            'logistics_provider' => 'nullable|string',
+            'preferred_payment_method' => 'required|array',
+            'billing_contact_name' => 'required|string|max:255',
+            'billing_email_address' => 'required|email|max:255',
+            'tax_id' => 'required|string|max:255',
+            'invoice_frequency' => 'required|string',
+            'shipment_tracking' => 'required|string',
+            'pickup_materials_supplied' => 'required|string',
+            'demo_or_onboarding_call' => 'required|string',
+            'preferred_communication_method' => 'required|array',
+            'special_notes' => 'nullable|string|max:1000',
+            'other_goods' => 'nullable|string|max:255',
+            'other_payment' => 'nullable|string|max:255',
 
             // dynamic docs (same as onboardingFormSave)
-            'doc_name'        => 'required|array|min:1',
-            'doc_name.*'      => 'required|string|max:255',
-            'doc_type'        => 'required|array',
-            'doc_type.*'      => ['required', Rule::in(['standard', 'blockchain'])],
-            'documents'       => 'required|array|min:1',
-            'documents.*'     => 'required|file|mimes:jpeg,jpg,png,pdf,docx'
+            'doc_name' => 'required|array|min:1',
+            'doc_name.*' => 'required|string|max:255',
+            'doc_type' => 'required|array',
+            'doc_type.*' => ['required', Rule::in(['standard', 'blockchain'])],
+            'documents' => 'required|array|min:1',
+            'documents.*' => 'required|file|mimes:jpeg,jpg,png,pdf,docx'
                 . '|mimetypes:image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 . '|max:20480',
         ]);
@@ -841,7 +846,7 @@ class AuthController extends Controller
         }
 
         $detailsData = [
-            'company_name'    => $request->company_name,
+            'company_name' => $request->company_name,
             'company_address' => $request->company_address,
         ];
 
@@ -855,32 +860,32 @@ class AuthController extends Controller
             // --- Save ShipperDetail (create or update) ---
             // If you have relation: $user->shipperDetail()
             $shipper = ShipperDetail::firstOrNew(['user_id' => $user->id]);
-            $shipper->company_name                         = $request->company_name;
-            $shipper->company_address                      = $request->company_address;
-            $shipper->business_type                        = $request->business_type;
-            $shipper->website                              = $request->website;
-            $shipper->shipments_per_week                   = $request->shipments_per_week;
-            $shipper->volume_or_weight_per_shipment        = $request->volume_or_weight_per_shipment;
-            $shipper->types_of_goods_being_shipped         = json_encode($request->types_of_goods_being_shipped);
-            $shipper->packaging_type                       = json_encode($request->packaging_type);
-            $shipper->types_of_delivery_services_needed    = json_encode($request->types_of_delivery_services_needed);
-            $shipper->preferred_pickup_days                = json_encode($request->preferred_pickup_days);
-            $shipper->preferred_pickup_from_time           = $request->preferred_pickup_from_time;
-            $shipper->preferred_pickup_to_time             = $request->preferred_pickup_to_time;
-            $shipper->logistics_provider                   = $request->logistics_provider;
-            $shipper->preferred_payment_method             = json_encode($request->preferred_payment_method);
-            $shipper->billing_contact_name                 = $request->billing_contact_name;
-            $shipper->billing_email_address                = $request->billing_email_address;
-            $shipper->tax_id                               = $request->tax_id;
-            $shipper->invoice_frequency                    = $request->invoice_frequency;
-            $shipper->shipment_tracking                    = $request->shipment_tracking;
-            $shipper->pickup_materials_supplied            = $request->pickup_materials_supplied;
-            $shipper->demo_or_onboarding_call              = $request->demo_or_onboarding_call;
-            $shipper->preferred_communication_method       = json_encode($request->preferred_communication_method);
-            $shipper->special_notes                        = $request->special_notes;
-            $shipper->other_goods                          = $request->other_goods;
-            $shipper->other_payment                        = $request->other_payment;
-            $shipper->user_id                              = $user->id;
+            $shipper->company_name = $request->company_name;
+            $shipper->company_address = $request->company_address;
+            $shipper->business_type = $request->business_type;
+            $shipper->website = $request->website;
+            $shipper->shipments_per_week = $request->shipments_per_week;
+            $shipper->volume_or_weight_per_shipment = $request->volume_or_weight_per_shipment;
+            $shipper->types_of_goods_being_shipped = json_encode($request->types_of_goods_being_shipped);
+            $shipper->packaging_type = json_encode($request->packaging_type);
+            $shipper->types_of_delivery_services_needed = json_encode($request->types_of_delivery_services_needed);
+            $shipper->preferred_pickup_days = json_encode($request->preferred_pickup_days);
+            $shipper->preferred_pickup_from_time = $request->preferred_pickup_from_time;
+            $shipper->preferred_pickup_to_time = $request->preferred_pickup_to_time;
+            $shipper->logistics_provider = $request->logistics_provider;
+            $shipper->preferred_payment_method = json_encode($request->preferred_payment_method);
+            $shipper->billing_contact_name = $request->billing_contact_name;
+            $shipper->billing_email_address = $request->billing_email_address;
+            $shipper->tax_id = $request->tax_id;
+            $shipper->invoice_frequency = $request->invoice_frequency;
+            $shipper->shipment_tracking = $request->shipment_tracking;
+            $shipper->pickup_materials_supplied = $request->pickup_materials_supplied;
+            $shipper->demo_or_onboarding_call = $request->demo_or_onboarding_call;
+            $shipper->preferred_communication_method = json_encode($request->preferred_communication_method);
+            $shipper->special_notes = $request->special_notes;
+            $shipper->other_goods = $request->other_goods;
+            $shipper->other_payment = $request->other_payment;
+            $shipper->user_id = $user->id;
             $shipper->save();
 
             // --- Save dynamic KYC documents (with metadata + mock blockchain) ---
@@ -895,22 +900,22 @@ class AuthController extends Controller
                 $documentType = strtolower($types[$i] ?? 'standard');
 
                 $payload = [
-                    'user_id'       => $user->id,
+                    'user_id' => $user->id,
                     'document_name' => trim($name),
                     'document_type' => $documentType,
-                    'file_path'     => $storedPath,
+                    'file_path' => $storedPath,
                     'original_name' => $file->getClientOriginalName(),
-                    'mime_type'     => $file->getClientMimeType(),
-                    'file_size'     => $file->getSize(),
+                    'mime_type' => $file->getClientMimeType(),
+                    'file_size' => $file->getSize(),
                 ];
 
                 if ($documentType === 'blockchain') {
                     $absPath = Storage::disk('public')->path($storedPath);
                     $hash = hash_file('sha256', $absPath);
 
-                    $payload['hash']                      = $hash;
-                    $payload['hash_algorithm']            = 'sha256';
-                    $payload['mock_blockchain_tx']        = (string) Str::uuid();
+                    $payload['hash'] = $hash;
+                    $payload['hash_algorithm'] = 'sha256';
+                    $payload['mock_blockchain_tx'] = (string) Str::uuid();
                     $payload['mock_blockchain_timestamp'] = now();
                 }
 

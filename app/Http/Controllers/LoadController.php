@@ -33,12 +33,17 @@ class LoadController extends Controller
         try {
             $user_id = Auth::user()->id;
             $user = User::find($user_id);
-            $role     = $user->roles()->first();        // requires HasRoles
-            $roleId   = $role?->id;
+            $role = $user->roles()->first();        // requires HasRoles
+            $roleId = $role?->id;
             if ($roleId == 1) {
                 $load_legs = LoadLeg::all();
             } else if ($roleId == 3) {
-                $load_legs = LoadLeg::whereNotIn('status_id', [0, 1, 7])->get();
+                $load_legs = LoadLeg::whereNotIn('status_id', [0, 1])
+                    ->where(function ($q) use ($user_id) {
+                        $q->whereNull('booked_carrier_id')
+                            ->orWhere('booked_carrier_id', $user_id);
+                    })
+                    ->get();
             } else {
                 // $load_legs = LoadLeg::with('load_master')->where('load_master.user_id', $user_id)->get();
                 $load_legs = LoadLeg::with('load_master')
@@ -144,9 +149,11 @@ class LoadController extends Controller
             $load_legs = LoadLeg::all();
             $loadCount = $load_legs->count();
             $pending_load_legs = LoadLeg::where('status_id', 1)->get();
+            $release_load_legs = LoadLeg::where('status_id', 10)->get();
             $pendingLoadCount = $pending_load_legs->count();
+            $releasedLoadCount = $release_load_legs->count();
             $logsController->createLog(__METHOD__, 'success', 'Admin is attempting to index load in', null, null);
-            return view('admin.load', compact('load_legs', 'loadCount', 'pendingLoadCount', 'pending_load_legs'));
+            return view('admin.load', compact('load_legs', 'loadCount', 'pendingLoadCount', 'pending_load_legs', 'release_load_legs', 'releasedLoadCount'));
         } catch (\Exception $e) {
             $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
             return redirect()->back()->with('error', 'An error occurred while processing your request.' . $e->getMessage());
@@ -157,12 +164,12 @@ class LoadController extends Controller
     {
         // Minimal validation
         $request->validate([
-            'status'  => 'required|in:0,2,7',          // 1=approved, 2=rejected, 5=send back
+            'status' => 'required|in:0,2,7',          // 1=approved, 2=rejected, 5=send back
             'remarks' => 'nullable|string|max:1000',
         ]);
 
         // Require remarks for reject or send back
-        if (in_array((int)$request->status, [0, 7]) && !$request->filled('remarks')) {
+        if (in_array((int) $request->status, [0, 7]) && !$request->filled('remarks')) {
             return back()->with('error', 'Remarks are required for Reject or Send Back.');
         }
 
@@ -174,27 +181,27 @@ class LoadController extends Controller
 
         // Update status
         foreach ($load->legs as $leg) {
-            $leg->status_id = (int)$request->status;
+            $leg->status_id = (int) $request->status;
             $leg->save();
         }
 
         // Save history
         LoadHistory::create([
-            'load_id'  => $load->id,
+            'load_id' => $load->id,
             'admin_id' => Auth::id(),
-            'status'   => (int)$request->status,
-            'remarks'  => $request->remarks,
+            'status' => (int) $request->status,
+            'remarks' => $request->remarks,
         ]);
 
         // Email (kept simple)
         $fromAddress = config('mail.from.address');
-        $fromName    = config('mail.from.name');
-        $to          = $user->email;
+        $fromName = config('mail.from.name');
+        $to = $user->email;
 
-        if ((int)$request->status === 2) {
+        if ((int) $request->status === 2) {
             $subject = 'Your Load has been approved';
             $body = "Hello {$user->name},\n\nYour Load has been approved. You can now log in and start using our system.\n\nThank you,\n{$fromName}";
-        } elseif ((int)$request->status === 0) {
+        } elseif ((int) $request->status === 0) {
             $subject = 'Your Load has been rejected';
             $body = "Hello {$user->name},\n\nYour Load has been rejected.\nAdmin remarks: {$request->remarks}\n\nThank you,\n{$fromName}";
         } else { // 7 = send back
@@ -283,8 +290,8 @@ class LoadController extends Controller
 
             $user_id = Auth::user()->id;
             $user = User::find($user_id);
-            $role     = $user->roles()->first();        // requires HasRoles
-            $roleId   = $role?->id;
+            $role = $user->roles()->first();        // requires HasRoles
+            $roleId = $role?->id;
 
             $logsController->createLog(__METHOD__, 'success', 'User is attempting to add load in', null, null);
             return view('load.add', compact('load_types', 'equipments', 'commodity_types', 'locations', 'roleId', 'user_id'));
@@ -309,23 +316,23 @@ class LoadController extends Controller
     {
         // Basic validation
         $request->validate([
-            'doc_id'      => 'array',
-            'doc_id.*'    => [
+            'doc_id' => 'array',
+            'doc_id.*' => [
                 'nullable',
                 'integer',
                 Rule::exists('load_documents', 'id')->where(fn($q) => $q->where('load_id', $load->id)),
             ],
-            'doc_name'    => 'required|array|min:1',
-            'doc_name.*'  => 'required|string|max:255',
-            'doc_type'    => 'required|array',
-            'doc_type.*'  => ['required', Rule::in(['standard', 'blockchain'])],
-            'documents'   => 'array',
+            'doc_name' => 'required|array|min:1',
+            'doc_name.*' => 'required|string|max:255',
+            'doc_type' => 'required|array',
+            'doc_type.*' => ['required', Rule::in(['standard', 'blockchain'])],
+            'documents' => 'array',
             'documents.*' => 'nullable|file|mimes:jpeg,jpg,png,pdf,docx'
                 . '|mimetypes:image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 . '|max:20480',
         ]);
 
-        $ids   = $request->input('doc_id', []);
+        $ids = $request->input('doc_id', []);
         $names = $request->input('doc_name', []);
         $types = $request->input('doc_type', []);
         $files = $request->file('documents', []);
@@ -344,8 +351,8 @@ class LoadController extends Controller
 
             foreach ($names as $i => $name) {
                 $docId = $ids[$i] ?? null;
-                $type  = strtolower($types[$i] ?? 'standard');
-                $file  = $files[$i] ?? null;
+                $type = strtolower($types[$i] ?? 'standard');
+                $file = $files[$i] ?? null;
 
                 if ($docId) {
                     // Update existing
@@ -362,10 +369,10 @@ class LoadController extends Controller
                     }
                     $path = $file->store('loads/documents', 'public');
 
-                    $doc->file_path     = $path;
+                    $doc->file_path = $path;
                     $doc->original_name = $file->getClientOriginalName();
-                    $doc->mime_type     = $file->getClientMimeType();
-                    $doc->file_size     = $file->getSize();
+                    $doc->mime_type = $file->getClientMimeType();
+                    $doc->file_size = $file->getSize();
                 }
 
                 // Always update name/type
@@ -383,12 +390,12 @@ class LoadController extends Controller
                     $abs = Storage::disk('public')->path($doc->file_path);
                     $hash = hash_file('sha256', $abs);
 
-                    $doc->hash           = $hash;
+                    $doc->hash = $hash;
                     $doc->hash_algorithm = 'sha256';
 
                     // Create a new mock tx when there is a new upload or no tx yet
                     if ($file || empty($doc->mock_blockchain_tx)) {
-                        $doc->mock_blockchain_tx        = (string) Str::uuid();
+                        $doc->mock_blockchain_tx = (string) Str::uuid();
                         $doc->mock_blockchain_timestamp = now();
                     }
                 } else {
@@ -421,44 +428,44 @@ class LoadController extends Controller
     public function store(Request $request, LogsController $logsController)
     {
         $validator = Validator::make($request->all(), [
-            'title'               => ['required', 'string', 'max:255'],
-            'load_type_id'        => ['required', 'integer', 'exists:load_types,id'],
-            'equipment_id'        => ['required', 'integer', 'exists:equipments,id'],
-            'commodity_type_id'   => ['required', 'integer', 'exists:commodity_types,id'],
-            'weight_unit'         => ['required', 'in:LBS,KG,MTON'],
-            'weight'              => ['required', 'numeric', 'min:0'],
+            'title' => ['required', 'string', 'max:255'],
+            'load_type_id' => ['required', 'integer', 'exists:load_types,id'],
+            'equipment_id' => ['required', 'integer', 'exists:equipments,id'],
+            'commodity_type_id' => ['required', 'integer', 'exists:commodity_types,id'],
+            'weight_unit' => ['required', 'in:LBS,KG,MTON'],
+            'weight' => ['required', 'numeric', 'min:0'],
 
             // file: 10 MB + allowed types (adjust as you like)
-            'documents'           => ['nullable', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx'],
+            'documents' => ['nullable', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx'],
             'special_instructions' => ['nullable', 'string', 'max:2000'],
 
-            'is_hazardous'             => ['nullable'],
+            'is_hazardous' => ['nullable'],
             'is_temperature_controlled' => ['nullable'],
 
-            'pickup_location'     => ['required', 'array', 'min:1'],
-            'pickup_location.*'   => ['required', 'integer', 'exists:locations,id'],
+            'pickup_location' => ['required', 'array', 'min:1'],
+            'pickup_location.*' => ['required', 'integer', 'exists:locations,id'],
 
-            'delivery_location'   => ['required', 'array', 'min:1'],
+            'delivery_location' => ['required', 'array', 'min:1'],
             'delivery_location.*' => ['required', 'integer', 'exists:locations,id'],
 
-            'pickup_date'         => ['required', 'array', 'min:1'],
-            'pickup_date.*'       => ['required', 'date'],
+            'pickup_date' => ['required', 'array', 'min:1'],
+            'pickup_date.*' => ['required', 'date'],
 
-            'delivery_date'       => ['required', 'array', 'min:1'],
-            'delivery_date.*'     => ['required', 'date'], // <-- remove after_or_equal here
+            'delivery_date' => ['required', 'array', 'min:1'],
+            'delivery_date.*' => ['required', 'date'], // <-- remove after_or_equal here
 
-            'bid_status'          => ['required', 'array', 'min:1'],
-            'bid_status.*'        => ['required', 'in:Fixed,Open'],
+            'bid_status' => ['required', 'array', 'min:1'],
+            'bid_status.*' => ['required', 'in:Fixed,Open'],
 
-            'price'               => ['required', 'array', 'min:1'],
-            'price.*'             => ['required', 'numeric', 'min:0'],
+            'price' => ['required', 'array', 'min:1'],
+            'price.*' => ['required', 'numeric', 'min:0'],
 
-            'doc_name'        => 'required|array|min:1',
-            'doc_name.*'      => 'required|string|max:255',
-            'doc_type'        => 'required|array',
-            'doc_type.*'      => ['required', Rule::in(['standard', 'blockchain'])],
-            'documents'       => 'required|array|min:1',
-            'documents.*'     => 'required|file|mimes:jpeg,jpg,png,pdf,docx'
+            'doc_name' => 'required|array|min:1',
+            'doc_name.*' => 'required|string|max:255',
+            'doc_type' => 'required|array',
+            'doc_type.*' => ['required', Rule::in(['standard', 'blockchain'])],
+            'documents' => 'required|array|min:1',
+            'documents.*' => 'required|file|mimes:jpeg,jpg,png,pdf,docx'
                 . '|mimetypes:image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 . '|max:20480',
         ]);
@@ -537,13 +544,13 @@ class LoadController extends Controller
                 $documentType = strtolower($types[$i] ?? 'standard');
 
                 $payload = [
-                    'load_id'       => $load->id,
+                    'load_id' => $load->id,
                     'document_name' => trim($name),
                     'document_type' => $documentType,
-                    'file_path'     => $storedPath,
+                    'file_path' => $storedPath,
                     'original_name' => $file->getClientOriginalName(),
-                    'mime_type'     => $file->getClientMimeType(),
-                    'file_size'     => $file->getSize(),
+                    'mime_type' => $file->getClientMimeType(),
+                    'file_size' => $file->getSize(),
                 ];
 
                 // Mock blockchain anchoring for blockchain docs
@@ -551,9 +558,9 @@ class LoadController extends Controller
                     $absPath = Storage::disk('public')->path($storedPath);
                     $hash = hash_file('sha256', $absPath);
 
-                    $payload['hash']                     = $hash;
-                    $payload['hash_algorithm']           = 'sha256';
-                    $payload['mock_blockchain_tx']       = (string) Str::uuid(); // fake tx id
+                    $payload['hash'] = $hash;
+                    $payload['hash_algorithm'] = 'sha256';
+                    $payload['mock_blockchain_tx'] = (string) Str::uuid(); // fake tx id
                     $payload['mock_blockchain_timestamp'] = now();
                 }
 
@@ -562,8 +569,8 @@ class LoadController extends Controller
 
             $user_id = Auth::user()->id;
             $user = User::find($user_id);
-            $role     = $user->roles()->first();        // requires HasRoles
-            $roleId   = $role?->id;
+            $role = $user->roles()->first();        // requires HasRoles
+            $roleId = $role?->id;
             $loadNumber = LoadNumbers::generateLoadNumber($roleId);
 
             // Update load with number
@@ -575,17 +582,17 @@ class LoadController extends Controller
 
             for ($i = 0; $i < $rowCount; $i++) {
                 $loadLeg = new LoadLeg();
-                $loadLeg->load_id               = $load->id;
-                $loadLeg->leg_no                = $legNo; // 1..n
-                $loadLeg->leg_code              = LoadNumbers::legCode($loadNumber, $legNo);
+                $loadLeg->load_id = $load->id;
+                $loadLeg->leg_no = $legNo; // 1..n
+                $loadLeg->leg_code = LoadNumbers::legCode($loadNumber, $legNo);
 
-                $loadLeg->pickup_location_id    = $request->pickup_location[$i];
-                $loadLeg->delivery_location_id  = $request->delivery_location[$i];
-                $loadLeg->pickup_date           = $request->pickup_date[$i];
-                $loadLeg->delivery_date         = $request->delivery_date[$i];
-                $loadLeg->bid_status            = $request->bid_status[$i];
-                $loadLeg->price                 = $request->price[$i];
-                $loadLeg->status_id             = 1;
+                $loadLeg->pickup_location_id = $request->pickup_location[$i];
+                $loadLeg->delivery_location_id = $request->delivery_location[$i];
+                $loadLeg->pickup_date = $request->pickup_date[$i];
+                $loadLeg->delivery_date = $request->delivery_date[$i];
+                $loadLeg->bid_status = $request->bid_status[$i];
+                $loadLeg->price = $request->price[$i];
+                $loadLeg->status_id = 1;
                 $loadLeg->save();
                 $legNo++;
             }
@@ -633,10 +640,10 @@ class LoadController extends Controller
                 $amount = $leg->price ?? ($validated['amount'] ?? 0);
 
                 $leg->update([
-                    'status_id'         => 4,                 // e.g., 4 = booked
+                    'status_id' => 4,                 // e.g., 4 = booked
                     'booked_carrier_id' => Auth::id(),
-                    'booked_at'         => now(),
-                    'booked_amount'     => $amount,
+                    'booked_at' => now(),
+                    'booked_amount' => $amount,
                 ]);
 
                 $logsController->createLog(__METHOD__, 'success', 'User has successfully booked a load', $leg, null);

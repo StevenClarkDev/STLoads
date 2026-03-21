@@ -1,6 +1,6 @@
 @extends('layout.app')
 @section('content')
-    <div class="container-fluid">
+    <div>
         <div class="page-title">
             <div class="row">
                 <div class="col-6">
@@ -21,7 +21,7 @@
     </div>
 
     <!-- Container-fluid starts-->
-    <div class="container-fluid">
+    <div>
         <div class="row">
             <div class="col-xl-12">
                 <div class="card height-equal">
@@ -119,8 +119,8 @@
                                                 <thead>
                                                     <tr>
                                                         <th>#</th>
-                                                        <th>Ducument Name</th>
-                                                        <th>Ducument Type</th>
+                                                        <th>Document Name</th>
+                                                        <th>Document Type</th>
                                                         <th>Document</th>
                                                         <th>Action</th>
                                                     </tr>
