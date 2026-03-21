@@ -79,7 +79,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/user_profile/{user}', [AdminController::class, 'userProfile'])->name('user.profile');
 
     Route::post('/verify-admin-password', [AdminController::class, 'verifyPassword']);
-    Route::get('/get-cnic-file/{id}', [AdminController::class, 'getCnicFiles']);
+    Route::get('/get-ssn-file/{id}', [AdminController::class, 'getSsnFiles']);
     Route::get('/get-user-file/{id}', [AdminController::class, 'getFiles']);
     Route::post('/update-status/{id}', [UserController::class, 'updateStatus'])->name('user.update-status');
 

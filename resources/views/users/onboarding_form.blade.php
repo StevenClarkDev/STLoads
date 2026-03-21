@@ -86,16 +86,16 @@
                                         </div>
                                         {{-- <div class="col-md-6">
                                             <div class="form-floating form-floating-outline">
-                                                <input type="file" accept=".jpeg, .jpg, .png, .pdf" name="cnic_front"
+                                                <input type="file" accept=".jpeg, .jpg, .png, .pdf" name="driving_license_front"
                                                     class="form-control" />
-                                                <label>CNIC Front</label>
+                                                <label>Driving License Front</label>
                                             </div>
                                         </div>
                                         <div class="col-md-6">
                                             <div class="form-floating form-floating-outline">
-                                                <input type="file" accept=".jpeg, .jpg, .png, .pdf" name="cnic_back"
+                                                <input type="file" accept=".jpeg, .jpg, .png, .pdf" name="driving_license_back"
                                                     class="form-control" />
-                                                <label>CNIC Back</label>
+                                                <label>Driving License Back</label>
                                             </div>
                                         </div> --}}
 

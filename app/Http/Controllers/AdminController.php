@@ -335,10 +335,10 @@ class AdminController extends Controller
         return response()->json(['success' => false]);
     }
 
-    public function getCnicFiles($id)
+    public function getSsnFiles($id)
     {
         $kycDocs = KycDocuments::where('user_id', $id)
-            ->whereIn('document_type', ['cnic_front', 'cnic_back'])
+            ->whereIn('document_type', ['ssn_front', 'ssn_back'])
             ->get();
 
         $files = [];

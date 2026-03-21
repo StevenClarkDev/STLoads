@@ -102,7 +102,7 @@
             // Validations
             validateInput("email", /^[^\s@]+@[^\s@]+\.[^\s@]+$/);
             validateInput("password", /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/, "password-error");
-            validateInput("cnic", /^[0-9]{13}$/);
+            validateInput("ssn_no", /^[0-9]{3}-[0-9]{2}-[0-9]{4}$/);
             validateInput("name", /^[A-Za-z ]{3,}$/);
             const password = document.getElementById("password");
             const confirm = document.getElementById("confirm-password");

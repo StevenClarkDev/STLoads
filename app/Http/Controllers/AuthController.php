@@ -324,7 +324,7 @@ class AuthController extends Controller
                 'role' => 'required|string|max:255',
                 'dob' => 'required|date',
                 'gender' => 'required|string|in:Male,Female,Other',
-                'cnic' => 'required|digits:13',
+                'ssn' => 'required|digits:9',
                 'address' => 'required|string|max:255',
             ]);
 
@@ -425,7 +425,7 @@ class AuthController extends Controller
                 'role_id' => 'required',
                 'dob' => 'required|date',
                 'gender' => 'required|string',
-                'cnic_no' => 'required',
+                'ssn_no' => 'required',
                 'address' => 'required|string|max:255',
             ]);
 
@@ -441,7 +441,7 @@ class AuthController extends Controller
                 'password' => Hash::make($request->password),
                 'dob' => $request->dob,
                 'gender' => $request->gender,
-                'cnic_no' => $request->cnic_no,
+                'ssn_no' => $request->ssn_no,
                 'phone_no' => $request->phone_no,
                 'ucr_hcc_no' => $request->ucr_hcc_no,
                 'mc_cbsa_usdot_no' => $request->mc_cbsa_usdot_no,
@@ -460,7 +460,7 @@ class AuthController extends Controller
             if ($request->hasFile('user_image')) {
                 $file = $request->file('user_image');
                 $filename = time() . '_' . $file->getClientOriginalName();
-                $path = $file->storeAs('uploads/profile_images', $filename, 'public'); // stores in storage/app/public/uploads/cnic_files
+                $path = $file->storeAs('uploads/profile_images', $filename, 'public'); // stores in storage/app/public/uploads/ssn_files
 
                 // Optional: save this path to the database
                 $user->image = $path;
@@ -794,7 +794,7 @@ class AuthController extends Controller
 
     public function onboardingFormSaveForShipper(User $user, Request $request)
     {
-        // --- Validate Shipper fields + dynamic docs (no CNIC) ---
+        // --- Validate Shipper fields + dynamic docs (no SSN) ---
         $request->validate([
             // common
             'company_name' => 'required|string|max:255',

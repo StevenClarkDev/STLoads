@@ -103,10 +103,10 @@
             @endif
 
             <div class="col-md-6 d-flex gap-3">
-                <!-- CNIC # -->
+                <!-- SSN # -->
                 <div class="flex-fill position-relative">
-                    <label>CNIC #</label>
-                    <input class="form-control" type="text" name="cnic_no" placeholder="00000-0000000-0" required>
+                    <label>SSN #</label>
+                    <input class="form-control" type="text" name="ssn_no" placeholder="000-00-0000" required>
                 </div>
 
                 <!-- User Image Upload -->

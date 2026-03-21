@@ -29,7 +29,7 @@ class User extends Authenticatable
         'phone_no',
         'ucr_hcc_no',
         'mc_cbsa_usdot_no',
-        'cnic_no',
+        'ssn_no',
         'address',
         'otp',
         'otp_expires_at',
