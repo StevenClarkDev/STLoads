@@ -310,6 +310,14 @@ class AuthController extends Controller
             return view('auth.shipper_register', compact('id', 'role_name'));
         }
 
+        if ($id == 3) {
+            return view('auth.carrier_register', compact('id', 'role_name'));
+        }
+
+        if ($id == 5) {
+            return view('auth.freight_forwarder_register', compact('id', 'role_name'));
+        }
+
         return view('auth.register', compact('id', 'role_name'));
     }
 
@@ -614,6 +622,346 @@ class AuthController extends Controller
             $logsController->createLog(
                 __METHOD__, 'error',
                 'Shipper OTP failed: ' . $e->getMessage(),
+                null,
+                json_encode(['email' => $request->email ?? 'N/A'])
+            );
+            return redirect()->back()->withErrors(['error' => 'Something went wrong: ' . $e->getMessage()]);
+        }
+    }
+
+    public function sendOtpCarrier(Request $request, LogsController $logsController)
+    {
+        try {
+            $request->validate([
+                'email'                       => 'required|string|email|unique:users,email',
+                'phone_no'                    => 'required|string|max:30',
+                'password'                    => 'required|string|min:8|confirmed',
+                'role_id'                     => 'required|integer',
+                'name'                        => 'required|string|max:255',
+                'dob'                         => 'required|date',
+                'nationality'                 => 'required|string|max:255',
+                'gov_id_number'               => 'required|string|max:255',
+                'address'                     => 'required|string',
+                'gov_id_front'                => 'required|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'gov_id_back'                 => 'required|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'selfie'                      => 'required|file|mimes:jpeg,jpg,png|max:5120',
+                'proof_address'               => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'cdl_number'                  => 'required|string|max:255',
+                'cdl_expiry'                  => 'required|date',
+                'cdl_class'                   => 'required|string|max:255',
+                'cdl_upload'                  => 'required|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'driving_record'              => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'regulatory_country'          => 'required|string|in:USA,Pakistan,EU',
+                'usdot_number'                => 'nullable|string|max:255',
+                'mc_number'                   => 'nullable|string|max:255',
+                'ntn'                         => 'nullable|string|max:255',
+                'vat_number'                  => 'nullable|string|max:255',
+                'auto_insurance'              => 'required|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'cargo_insurance'             => 'required|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'insurance_expiry'            => 'required|date',
+                'coverage_limits'             => 'required|string|max:255',
+                'insurer_name'                => 'required|string|max:255',
+                'vehicle_reg'                 => 'required|string|max:255',
+                'vehicle_make_model'          => 'required|string|max:255',
+                'vehicle_year'                => 'required|integer|min:1990|max:2030',
+                'vehicle_type'                => 'required|string|max:255',
+                'load_capacity'               => 'required|string|max:255',
+                'vehicle_doc'                 => 'required|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'consent_sanctions_screening' => 'required|accepted',
+                'terms_agreed'                => 'required|accepted',
+                'company_name'                => 'nullable|string|max:255',
+                'registration_number'         => 'nullable|string|max:255',
+                'tax_id'                      => 'nullable|string|max:255',
+                'country_of_incorporation'    => 'nullable|string|max:255',
+                'company_address'             => 'nullable|string',
+                'incorporation'               => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'bank_account'                => 'nullable|string|max:255',
+            ]);
+
+            $otp       = rand(100000, 999999);
+            $otpExpiry = Carbon::now()->addMinutes(5);
+
+            DB::beginTransaction();
+
+            $user = User::create([
+                'name'                        => $request->name,
+                'email'                       => $request->email,
+                'phone_no'                    => $request->phone_no,
+                'password'                    => Hash::make($request->password),
+                'dob'                         => $request->dob,
+                'nationality'                 => $request->nationality,
+                'gov_id_number'               => $request->gov_id_number,
+                'address'                     => $request->address,
+                'cdl_number'                  => $request->cdl_number,
+                'cdl_expiry'                  => $request->cdl_expiry,
+                'cdl_class'                   => $request->cdl_class,
+                'regulatory_country'          => $request->regulatory_country,
+                'usdot_number'                => $request->usdot_number,
+                'mc_number'                   => $request->mc_number,
+                'ntn'                         => $request->ntn,
+                'vat_number'                  => $request->vat_number,
+                'insurance_expiry'            => $request->insurance_expiry,
+                'coverage_limits'             => $request->coverage_limits,
+                'insurer_name'                => $request->insurer_name,
+                'vehicle_reg'                 => $request->vehicle_reg,
+                'vehicle_make_model'          => $request->vehicle_make_model,
+                'vehicle_year'                => $request->vehicle_year,
+                'vehicle_type'                => $request->vehicle_type,
+                'load_capacity'               => $request->load_capacity,
+                'company_name'                => $request->company_name,
+                'registration_number'         => $request->registration_number,
+                'tax_id'                      => $request->tax_id,
+                'country_of_incorporation'    => $request->country_of_incorporation,
+                'company_address'             => $request->company_address,
+                'bank_account'                => $request->bank_account,
+                'criminal_declaration'        => $request->boolean('criminal_declaration'),
+                'politically_exposed_person'  => $request->boolean('politically_exposed_person'),
+                'consent_sanctions_screening' => true,
+                'terms_agreed'                => true,
+                'otp'                         => $otp,
+                'otp_expires_at'              => $otpExpiry,
+                'otp_resend_count'            => 1,
+                'last_otp_resend_at'          => Carbon::now(),
+                'email_verified_at'           => null,
+                'status'                      => 4,
+            ]);
+
+            $role = Role::findOrFail($request->role_id);
+            $user->assignRole($role->name);
+
+            $docMap = [
+                'gov_id_front'    => 'Government ID (Front)',
+                'gov_id_back'     => 'Government ID (Back)',
+                'selfie'          => 'Selfie / Facial Verification',
+                'proof_address'   => 'Proof of Address',
+                'cdl_upload'      => 'Commercial Driver License (CDL)',
+                'driving_record'  => 'Driving Record',
+                'auto_insurance'  => 'Auto Insurance Certificate',
+                'cargo_insurance' => 'Cargo Insurance Certificate',
+                'vehicle_doc'     => 'Vehicle Registration Document',
+                'incorporation'   => 'Certificate of Incorporation',
+            ];
+
+            foreach ($docMap as $field => $docName) {
+                if ($request->hasFile($field)) {
+                    $file       = $request->file($field);
+                    $storedPath = $file->store("kyc_documents/{$user->id}", 'public');
+                    KycDocuments::create([
+                        'user_id'       => $user->id,
+                        'document_name' => $docName,
+                        'document_type' => $field,
+                        'file_path'     => $storedPath,
+                        'original_name' => $file->getClientOriginalName(),
+                        'mime_type'     => $file->getClientMimeType(),
+                        'file_size'     => $file->getSize(),
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            $fromAddress = config('mail.from.address');
+            $fromName    = config('mail.from.name');
+            $to          = $request->email;
+            $subject     = 'Your OTP Code';
+            $body        = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
+
+            Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
+                $message->from($fromAddress, $fromName)->to($to)->subject($subject);
+            });
+
+            $logsController->createLog(
+                __METHOD__, 'success',
+                "Carrier OTP {$otp} sent to {$to}",
+                null,
+                json_encode(['email' => $to, 'otp' => $otp])
+            );
+
+            return view('auth.enter_otp', compact('to'));
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $logsController->createLog(
+                __METHOD__, 'error',
+                'Carrier OTP failed: ' . $e->getMessage(),
+                null,
+                json_encode(['email' => $request->email ?? 'N/A'])
+            );
+            return redirect()->back()->withErrors(['error' => 'Something went wrong: ' . $e->getMessage()]);
+        }
+    }
+
+    public function sendOtpFreightForwarder(Request $request, LogsController $logsController)
+    {
+        try {
+            $request->validate([
+                'email'                      => 'required|string|email|unique:users,email',
+                'phone_no'                   => 'required|string|max:30',
+                'password'                   => 'required|string|min:8|confirmed',
+                'role_id'                    => 'required|integer',
+                'name'                       => 'required|string|max:255',
+                'incorporation_doc'          => 'required|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'business_license'           => 'required|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'tax_certificate'            => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'proof_address'              => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'director_id'                => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'ubo_id'                     => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'insurance_cert'             => 'required|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'regulatory_country'         => 'required|string|in:USA,EU,Pakistan,Other',
+                'policy_number'              => 'required|string|max:255',
+                'coverage_limits'            => 'required|string|max:255',
+                'insurance_expiry'           => 'required|date',
+                'transport_modes'            => 'required|string|in:Air,Sea,Road,Rail',
+                'terms_agreed'               => 'required|accepted',
+                'trade_name'                 => 'nullable|string|max:255',
+                'registration_number'        => 'nullable|string|max:255',
+                'tax_id'                     => 'nullable|string|max:255',
+                'country_of_incorporation'   => 'nullable|string|max:255',
+                'incorporation_date'         => 'nullable|date',
+                'company_address'            => 'nullable|string',
+                'address'                    => 'nullable|string',
+                'director_name'              => 'nullable|string|max:255',
+                'director_dob'               => 'nullable|date',
+                'ubo_name'                   => 'nullable|string|max:255',
+                'ubo_dob'                    => 'nullable|date',
+                'ubo_nationality'            => 'nullable|string|max:255',
+                'ubo_address'                => 'nullable|string',
+                'fmc_license'                => 'nullable|string|max:255',
+                'nvocc_reg'                  => 'nullable|string|max:255',
+                'surety_bond'                => 'nullable|string|max:255',
+                'customs_broker_license'     => 'nullable|string|max:255',
+                'iata_accreditation'         => 'nullable|string|max:255',
+                'eori_number'                => 'nullable|string|max:255',
+                'vat_number'                 => 'nullable|string|max:255',
+                'secp_reg'                   => 'nullable|string|max:255',
+                'chamber_reg'                => 'nullable|string|max:255',
+                'insurer_contact'            => 'nullable|string|max:255',
+                'countries_served'           => 'nullable|string|max:255',
+                'customs_brokerage'          => 'nullable|string|in:Yes,No',
+                'consolidation_services'     => 'nullable|string|in:Yes,No',
+                'warehousing'                => 'nullable|string|in:Yes,No',
+                'years_in_operation'         => 'nullable|integer|min:0',
+                'annual_volume'              => 'nullable|string|max:255',
+                'bank_account'               => 'nullable|string|max:255',
+                'source_of_funds'            => 'nullable|string',
+                'monthly_transaction_volume' => 'nullable|string|max:255',
+            ]);
+
+            $otp       = rand(100000, 999999);
+            $otpExpiry = Carbon::now()->addMinutes(5);
+
+            DB::beginTransaction();
+
+            $user = User::create([
+                'name'                        => $request->name,
+                'email'                       => $request->email,
+                'phone_no'                    => $request->phone_no,
+                'password'                    => Hash::make($request->password),
+                'company_name'                => $request->name,
+                'trade_name'                  => $request->trade_name,
+                'registration_number'         => $request->registration_number,
+                'tax_id'                      => $request->tax_id,
+                'country_of_incorporation'    => $request->country_of_incorporation,
+                'incorporation_date'          => $request->incorporation_date,
+                'company_address'             => $request->company_address,
+                'address'                     => $request->address,
+                'director_name'               => $request->director_name,
+                'director_dob'                => $request->director_dob,
+                'ubo_name'                    => $request->ubo_name,
+                'ubo_dob'                     => $request->ubo_dob,
+                'ubo_nationality'             => $request->ubo_nationality,
+                'ubo_address'                 => $request->ubo_address,
+                'politically_exposed_person'  => $request->boolean('politically_exposed_person'),
+                'consent_sanctions_screening' => $request->boolean('consent_sanctions_screening'),
+                'regulatory_country'          => $request->regulatory_country,
+                'fmc_license'                 => $request->fmc_license,
+                'nvocc_reg'                   => $request->nvocc_reg,
+                'surety_bond'                 => $request->surety_bond,
+                'customs_broker_license'      => $request->customs_broker_license,
+                'iata_accreditation'          => $request->iata_accreditation,
+                'eori_number'                 => $request->eori_number,
+                'vat_number'                  => $request->vat_number,
+                'secp_reg'                    => $request->secp_reg,
+                'chamber_reg'                 => $request->chamber_reg,
+                'policy_number'               => $request->policy_number,
+                'coverage_limits'             => $request->coverage_limits,
+                'insurance_expiry'            => $request->insurance_expiry,
+                'insurer_contact'             => $request->insurer_contact,
+                'transport_modes'             => $request->transport_modes,
+                'countries_served'            => $request->countries_served,
+                'customs_brokerage'           => $request->customs_brokerage,
+                'consolidation_services'      => $request->consolidation_services,
+                'warehousing'                 => $request->warehousing,
+                'years_in_operation'          => $request->years_in_operation,
+                'annual_volume'               => $request->annual_volume,
+                'bank_account'                => $request->bank_account,
+                'source_of_funds'             => $request->source_of_funds,
+                'monthly_transaction_volume'  => $request->monthly_transaction_volume,
+                'ofac_consent'                => $request->boolean('ofac_consent'),
+                'terms_agreed'                => true,
+                'otp'                         => $otp,
+                'otp_expires_at'              => $otpExpiry,
+                'otp_resend_count'            => 1,
+                'last_otp_resend_at'          => Carbon::now(),
+                'email_verified_at'           => null,
+                'status'                      => 4,
+            ]);
+
+            $role = Role::findOrFail($request->role_id);
+            $user->assignRole($role->name);
+
+            $docMap = [
+                'incorporation_doc' => 'Certificate of Incorporation',
+                'business_license'  => 'Business License',
+                'tax_certificate'   => 'Tax Registration Certificate',
+                'proof_address'     => 'Proof of Address',
+                'director_id'       => 'Director Government ID',
+                'ubo_id'            => 'UBO Government ID',
+                'insurance_cert'    => 'Insurance Certificate',
+            ];
+
+            foreach ($docMap as $field => $docName) {
+                if ($request->hasFile($field)) {
+                    $file       = $request->file($field);
+                    $storedPath = $file->store("kyc_documents/{$user->id}", 'public');
+                    KycDocuments::create([
+                        'user_id'       => $user->id,
+                        'document_name' => $docName,
+                        'document_type' => $field,
+                        'file_path'     => $storedPath,
+                        'original_name' => $file->getClientOriginalName(),
+                        'mime_type'     => $file->getClientMimeType(),
+                        'file_size'     => $file->getSize(),
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            $fromAddress = config('mail.from.address');
+            $fromName    = config('mail.from.name');
+            $to          = $request->email;
+            $subject     = 'Your OTP Code';
+            $body        = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
+
+            Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
+                $message->from($fromAddress, $fromName)->to($to)->subject($subject);
+            });
+
+            $logsController->createLog(
+                __METHOD__, 'success',
+                "Freight Forwarder OTP {$otp} sent to {$to}",
+                null,
+                json_encode(['email' => $to, 'otp' => $otp])
+            );
+
+            return view('auth.enter_otp', compact('to'));
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $logsController->createLog(
+                __METHOD__, 'error',
+                'Freight Forwarder OTP failed: ' . $e->getMessage(),
                 null,
                 json_encode(['email' => $request->email ?? 'N/A'])
             );
