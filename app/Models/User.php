@@ -31,6 +31,17 @@ class User extends Authenticatable
         'mc_cbsa_usdot_no',
         'ssn_no',
         'address',
+        // shipper registration fields
+        'nationality',
+        'company_name',
+        'registration_number',
+        'tax_id',
+        'country_of_incorporation',
+        'consent_sanctions_screening',
+        'politically_exposed_person',
+        'source_of_funds',
+        'agree_aml_policies',
+        // common
         'otp',
         'otp_expires_at',
         'otp_resend_count',

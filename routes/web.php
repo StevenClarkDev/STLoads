@@ -40,6 +40,7 @@ Route::middleware('guest')->group(function () {
 
     Route::get('/register', [AuthController::class, 'registerForm'])->name('register.form');
     Route::post('/register', [AuthController::class, 'sendOtp'])->name('register');
+    Route::post('/register/shipper', [AuthController::class, 'sendOtpShipper'])->name('register.shipper');
     Route::post('/verify-otp', [AuthController::class, 'verifyOTP'])->name('verify-otp');
     Route::post('/verify-otp-forget', [AuthController::class, 'verifyOTPPassword'])->name('verify-otp-forget');
     Route::post('/otp/resend', [AuthController::class, 'resendOtp'])->name('otp.resend');

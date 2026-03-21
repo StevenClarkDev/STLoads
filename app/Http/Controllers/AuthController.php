@@ -306,12 +306,11 @@ class AuthController extends Controller
         $id = request()->query('id');
         $role_name = Role::find($id)->name ?? 'User';
 
-        // if($id == 2){
-        //     return view('auth.shipper_register', compact('id', 'role_name')); // create this blade file if not done
-        // }else{
-        return view('auth.register', compact('id', 'role_name')); // create this blade file if not done
-        // }
+        if ($id == 2) {
+            return view('auth.shipper_register', compact('id', 'role_name'));
+        }
 
+        return view('auth.register', compact('id', 'role_name'));
     }
 
     public function register(Request $request, LogsController $logsController)
@@ -503,6 +502,121 @@ class AuthController extends Controller
                 json_encode(['email' => $request->email ?? 'N/A'])
             );
 
+            return redirect()->back()->withErrors(['error' => 'Something went wrong: ' . $e->getMessage()]);
+        }
+    }
+
+    public function sendOtpShipper(Request $request, LogsController $logsController)
+    {
+        try {
+            $request->validate([
+                'email'                       => 'required|string|email|unique:users,email',
+                'phone_no'                    => 'required|string|max:30',
+                'password'                    => 'required|string|min:8|confirmed',
+                'role_id'                     => 'required|integer',
+                'name'                        => 'required|string|max:255',
+                'dob'                         => 'required|date',
+                'gender'                      => 'required|string|in:Male,Female,Other',
+                'nationality'                 => 'required|string|max:255',
+                'company_name'                => 'required|string|max:255',
+                'registration_number'         => 'required|string|max:255',
+                'tax_id'                      => 'required|string|max:255',
+                'country_of_incorporation'    => 'required|string|max:255',
+                'government_id'               => 'required|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'selfie'                      => 'required|file|mimes:jpeg,jpg,png|max:5120',
+                'certificate_of_incorporation'   => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'tax_registration_certificate'   => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'consent_sanctions_screening' => 'required|accepted',
+                'source_of_funds'             => 'required|string',
+                'agree_aml_policies'          => 'required|accepted',
+            ]);
+
+            $otp       = rand(100000, 999999);
+            $otpExpiry = Carbon::now()->addMinutes(5);
+
+            DB::beginTransaction();
+
+            $user = User::create([
+                'name'                        => $request->name,
+                'email'                       => $request->email,
+                'phone_no'                    => $request->phone_no,
+                'password'                    => Hash::make($request->password),
+                'dob'                         => $request->dob,
+                'gender'                      => $request->gender,
+                'nationality'                 => $request->nationality,
+                'company_name'                => $request->company_name,
+                'registration_number'         => $request->registration_number,
+                'tax_id'                      => $request->tax_id,
+                'country_of_incorporation'    => $request->country_of_incorporation,
+                'consent_sanctions_screening' => true,
+                'politically_exposed_person'  => $request->boolean('politically_exposed_person'),
+                'source_of_funds'             => $request->source_of_funds,
+                'agree_aml_policies'          => true,
+                'otp'                         => $otp,
+                'otp_expires_at'              => $otpExpiry,
+                'otp_resend_count'            => 1,
+                'last_otp_resend_at'          => Carbon::now(),
+                'email_verified_at'           => null,
+                'status'                      => 4,
+            ]);
+
+            $role = Role::findOrFail($request->role_id);
+            $user->assignRole($role->name);
+
+            // Store uploaded documents in kyc_documents
+            $docMap = [
+                'government_id'                => 'Government ID',
+                'selfie'                       => 'Selfie / Facial Verification',
+                'certificate_of_incorporation' => 'Certificate of Incorporation',
+                'tax_registration_certificate' => 'Tax Registration Certificate',
+            ];
+
+            foreach ($docMap as $field => $docName) {
+                if ($request->hasFile($field)) {
+                    $file       = $request->file($field);
+                    $storedPath = $file->store("kyc_documents/{$user->id}", 'public');
+
+                    KycDocuments::create([
+                        'user_id'       => $user->id,
+                        'document_name' => $docName,
+                        'document_type' => $field,
+                        'file_path'     => $storedPath,
+                        'original_name' => $file->getClientOriginalName(),
+                        'mime_type'     => $file->getClientMimeType(),
+                        'file_size'     => $file->getSize(),
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            $fromAddress = config('mail.from.address');
+            $fromName    = config('mail.from.name');
+            $to          = $request->email;
+            $subject     = 'Your OTP Code';
+            $body        = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
+
+            Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
+                $message->from($fromAddress, $fromName)->to($to)->subject($subject);
+            });
+
+            $logsController->createLog(
+                __METHOD__, 'success',
+                "Shipper OTP {$otp} sent to {$to}",
+                null,
+                json_encode(['email' => $to, 'otp' => $otp])
+            );
+
+            return view('auth.enter_otp', compact('to'));
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $logsController->createLog(
+                __METHOD__, 'error',
+                'Shipper OTP failed: ' . $e->getMessage(),
+                null,
+                json_encode(['email' => $request->email ?? 'N/A'])
+            );
             return redirect()->back()->withErrors(['error' => 'Something went wrong: ' . $e->getMessage()]);
         }
     }
