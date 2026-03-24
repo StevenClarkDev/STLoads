@@ -477,17 +477,9 @@ class AuthController extends Controller
             DB::commit();
 
             // Prepare email content
-            $fromAddress = config('mail.from.address');
-            $fromName = config('mail.from.name');
             $to = $request->email;
-            $subject = 'Your OTP Code';
-            $body = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
 
-            Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
-                $message->from($fromAddress, $fromName)
-                    ->to($to)
-                    ->subject($subject);
-            });
+            Mail::to($to)->send(new OtpMail($otp));
 
             // Custom application log
             $logsController->createLog(
@@ -598,15 +590,9 @@ class AuthController extends Controller
 
             DB::commit();
 
-            $fromAddress = config('mail.from.address');
-            $fromName    = config('mail.from.name');
-            $to          = $request->email;
-            $subject     = 'Your OTP Code';
-            $body        = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
+            $to = $request->email;
 
-            Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
-                $message->from($fromAddress, $fromName)->to($to)->subject($subject);
-            });
+            Mail::to($to)->send(new OtpMail($otp));
 
             $logsController->createLog(
                 __METHOD__, 'success',
@@ -760,15 +746,9 @@ class AuthController extends Controller
 
             DB::commit();
 
-            $fromAddress = config('mail.from.address');
-            $fromName    = config('mail.from.name');
-            $to          = $request->email;
-            $subject     = 'Your OTP Code';
-            $body        = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
+            $to = $request->email;
 
-            Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
-                $message->from($fromAddress, $fromName)->to($to)->subject($subject);
-            });
+            Mail::to($to)->send(new OtpMail($otp));
 
             $logsController->createLog(
                 __METHOD__, 'success',
@@ -938,15 +918,9 @@ class AuthController extends Controller
 
             DB::commit();
 
-            $fromAddress = config('mail.from.address');
-            $fromName    = config('mail.from.name');
-            $to          = $request->email;
-            $subject     = 'Your OTP Code';
-            $body        = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
+            $to = $request->email;
 
-            Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
-                $message->from($fromAddress, $fromName)->to($to)->subject($subject);
-            });
+            Mail::to($to)->send(new OtpMail($otp));
 
             $logsController->createLog(
                 __METHOD__, 'success',
@@ -1008,20 +982,8 @@ class AuthController extends Controller
             $user->last_otp_resend_at = $now;
             $user->save();
 
-            $fromAddress = config('mail.from.address');
-            $fromName = config('mail.from.name');
             $to = $request->email;
-            $subject = 'Your OTP Code';
-            if ($referer && str_contains($referer, 'forget-password')) {
-                $body = "Your OTP for forget password is: {$otp}\nIt will expire in 5 minutes.";
-            } else {
-                $body = "Your OTP for registration is: {$otp}\nIt will expire in 5 minutes.";
-            }
-            Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
-                $message->from($fromAddress, $fromName)
-                    ->to($to)
-                    ->subject($subject);
-            });
+            Mail::to($to)->send(new OtpMail($otp));
             if ($referer && str_contains($referer, 'forget-password')) {
                 $logsController->createLog(__METHOD__, 'success', "OTP {$otp} sent to {$to} for password reset", null, json_encode(['email' => $to, 'otp' => $otp, 'from' => $fromAddress]));
                 return view('auth.enter_otp_forget', compact('to'));
@@ -1067,16 +1029,8 @@ class AuthController extends Controller
         $user->last_otp_resend_at = $now;
         $user->save();
 
-        $fromAddress = config('mail.from.address');
-        $fromName = config('mail.from.name');
         $to = $request->email;
-        $subject = 'Your OTP Code';
-        $body = "Your OTP is: {$otp}\nIt will expire in 5 minutes.";
-        Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
-            $message->from($fromAddress, $fromName)
-                ->to($to)
-                ->subject($subject);
-        });
+        Mail::to($to)->send(new OtpMail($otp));
 
         return response()->json(['success' => true]);
     }
