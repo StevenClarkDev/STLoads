@@ -186,27 +186,35 @@ class UserController extends Controller
             'remarks' => $request->remarks,
         ]);
 
-        // Email (kept simple)
-        $fromAddress = config('mail.from.address');
-        $fromName = config('mail.from.name');
-        $to = $user->email;
+        // Send status email
+        $to       = $user->email;
+        $roleName = $user->roles()->first()?->name ?? 'User';
 
         if ((int) $request->status === 1) {
-            $subject = 'Your account has been approved';
-            $body = "Hello {$user->name},\n\nYour account has been approved. You can now log in and start using our system.\n\nThank you,\n{$fromName}";
+            Mail::send('emails.account_approved', [
+                'name'        => $user->name,
+                'role'        => $roleName,
+                'approved_at' => now()->format('F j, Y'),
+            ], function ($message) use ($to) {
+                $message->to($to)->subject('🎉 Your STLoads Account is Approved!');
+            });
         } elseif ((int) $request->status === 2) {
-            $subject = 'Your account has been rejected';
-            $body = "Hello {$user->name},\n\nYour account has been rejected.\nAdmin remarks: {$request->remarks}\n\nThank you,\n{$fromName}";
+            Mail::send('emails.account_rejected', [
+                'name'    => $user->name,
+                'role'    => $roleName,
+                'remarks' => $request->remarks,
+            ], function ($message) use ($to) {
+                $message->to($to)->subject('Your STLoads Account Application Update');
+            });
         } else { // 5 = send back
-            $subject = 'Action needed: account requires revision';
-            $body = "Hello {$user->name},\n\nYour account requires revision.\nAdmin remarks: {$request->remarks}\n\nThank you,\n{$fromName}";
+            Mail::send('emails.account_revision', [
+                'name'    => $user->name,
+                'role'    => $roleName,
+                'remarks' => $request->remarks,
+            ], function ($message) use ($to) {
+                $message->to($to)->subject('Action Required — Your STLoads Application');
+            });
         }
-
-        Mail::raw($body, function ($message) use ($to, $subject, $fromAddress, $fromName) {
-            $message->from($fromAddress, $fromName)
-                ->to($to)
-                ->subject($subject);
-        });
 
         return redirect()->route('user_approval')->with('success', 'Status updated.');
     }
