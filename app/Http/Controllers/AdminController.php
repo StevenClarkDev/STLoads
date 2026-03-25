@@ -376,4 +376,28 @@ class AdminController extends Controller
 
         return response()->json(['files' => $files]);
     }
+
+    public function changePassword()
+    {
+        return view('admin.change_password');
+    }
+
+    public function updatePassword(Request $request)
+    {
+        $request->validate([
+            'current_password'  => 'required|string',
+            'password'          => 'required|string|min:8|confirmed',
+        ]);
+
+        $user = Auth::user();
+
+        if (!Hash::check($request->current_password, $user->password)) {
+            return back()->withErrors(['current_password' => 'Current password is incorrect.']);
+        }
+
+        $user->password = Hash::make($request->password);
+        $user->save();
+
+        return back()->with('success', 'Password updated successfully.');
+    }
 }
