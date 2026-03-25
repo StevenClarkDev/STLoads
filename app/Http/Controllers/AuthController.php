@@ -603,6 +603,8 @@ class AuthController extends Controller
 
             return view('auth.enter_otp', compact('to'));
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             $logsController->createLog(
@@ -759,6 +761,8 @@ class AuthController extends Controller
 
             return view('auth.enter_otp', compact('to'));
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             $logsController->createLog(
@@ -931,6 +935,8 @@ class AuthController extends Controller
 
             return view('auth.enter_otp', compact('to'));
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             $logsController->createLog(

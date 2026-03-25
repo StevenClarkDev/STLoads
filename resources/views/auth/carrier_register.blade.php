@@ -34,9 +34,34 @@
             </div>
         </div>
 
+        @php
+            $errorStep = 1;
+            if ($errors->hasAny(['gov_id_front','gov_id_back','selfie','proof_address'])) {
+                $errorStep = 2;
+            } elseif ($errors->hasAny(['cdl_number','cdl_expiry','cdl_class','cdl_upload','driving_record'])) {
+                $errorStep = 3;
+            } elseif ($errors->hasAny(['regulatory_country','usdot_number','mc_number','ntn','vat_number'])) {
+                $errorStep = 4;
+            } elseif ($errors->hasAny(['auto_insurance','cargo_insurance','insurance_expiry','coverage_limits','insurer_name'])) {
+                $errorStep = 5;
+            } elseif ($errors->hasAny(['vehicle_reg','vehicle_make_model','vehicle_year','vehicle_type','load_capacity','vehicle_doc'])) {
+                $errorStep = 6;
+            } elseif ($errors->hasAny(['company_name','registration_number','tax_id','country_of_incorporation','company_address','incorporation','bank_account','consent_sanctions_screening','terms_agreed'])) {
+                $errorStep = 7;
+            }
+        @endphp
+
         <form action="{{ route('register.carrier') }}" method="POST" enctype="multipart/form-data" id="carrierRegForm">
             @csrf
             <input type="hidden" name="role_id" value="{{ $id }}">
+
+            @if ($errors->any())
+                <div class="alert alert-danger alert-dismissible fade show mb-4" role="alert">
+                    <strong><i class="fas fa-exclamation-triangle me-1"></i> Please fix the following error:</strong>
+                    {{ $errors->first() }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            @endif
 
             {{-- ─── STEP 1: Account & Identity ─────────────────────────────── --}}
             <div class="step-content active" data-step="1">
@@ -383,9 +408,6 @@
                 </div>
             </div>
 
-            @if ($errors->any())
-                <div class="col-12 text-danger text-center mt-3">{{ $errors->first() }}</div>
-            @endif
             @if (session('success'))
                 <div class="col-12 text-success text-center mt-3">{{ session('success') }}</div>
             @endif
@@ -536,6 +558,12 @@
                 }
                 return true;
             }
+
+            // On page reload after server-side validation failure, jump to the error step
+            @if ($errors->any())
+            goTo({{ $errorStep }});
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            @endif
         });
     </script>
 @endsection
