@@ -24,6 +24,14 @@
     RewriteRule ^ index.php [L]
 </IfModule>
 
+# Increase PHP upload limits for multi-file registration forms
+<IfModule mod_php.c>
+    php_value upload_max_filesize 64M
+    php_value post_max_size 128M
+    php_value max_execution_time 120
+    php_value max_input_time 120
+</IfModule>
+
 # php -- BEGIN cPanel-generated handler, do not edit
 # Set the “ea-php82” package as the default “PHP” programming language.
 <IfModule mime_module>
