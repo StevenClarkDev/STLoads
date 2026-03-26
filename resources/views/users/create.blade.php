@@ -41,13 +41,19 @@
         <div class="col-xs-12 col-sm-12 col-md-12">
             <div class="form-group">
                 <strong>Password:</strong>
-                <input type="password" name="password" placeholder="Password" class="form-control">
+                <div class="position-relative">
+                    <input type="password" name="password" placeholder="Password" class="form-control pe-5">
+                    <i class="fas fa-eye pwd-toggle text-muted position-absolute top-50 end-0 translate-middle-y me-3" style="cursor:pointer" title="Show/hide password"></i>
+                </div>
             </div>
         </div>
         <div class="col-xs-12 col-sm-12 col-md-12">
             <div class="form-group">
                 <strong>Confirm Password:</strong>
-                <input type="password" name="confirm-password" placeholder="Confirm Password" class="form-control">
+                <div class="position-relative">
+                    <input type="password" name="confirm-password" placeholder="Confirm Password" class="form-control pe-5">
+                    <i class="fas fa-eye pwd-toggle text-muted position-absolute top-50 end-0 translate-middle-y me-3" style="cursor:pointer" title="Show/hide password"></i>
+                </div>
             </div>
         </div>
         <div class="col-xs-12 col-sm-12 col-md-12">
@@ -69,4 +75,16 @@
 </form>
 
 <!-- <p class="text-center text-primary"><small>Tutorial by ItSolutionStuff.com</small></p> -->
+<script>
+    document.querySelectorAll('.pwd-toggle').forEach(function(icon) {
+        icon.addEventListener('click', function() {
+            var input = this.parentElement.querySelector('input');
+            if (input) {
+                input.type = input.type === 'password' ? 'text' : 'password';
+                this.classList.toggle('fa-eye');
+                this.classList.toggle('fa-eye-slash');
+            }
+        });
+    });
+</script>
 @endsection

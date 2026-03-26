@@ -80,6 +80,7 @@
                                     <div class="form-input position-relative">
                                         <input id="password" class="form-control pe-5" type="password"
                                             name="password" required placeholder="*********">
+                                        <i id="password-icon" class="fas fa-eye pwd-toggle text-muted position-absolute top-50 end-0 translate-middle-y me-3" style="cursor:pointer" title="Show/hide password"></i>
                                     </div>
                                 </div>
                                 <div class="form-group" style="margin-bottom: 60px">
@@ -204,6 +205,18 @@
         }
         validateInput("email", /^[^\s@]+@[^\s@]+\.[^\s@]+$/);
         validateInput("password", /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/, "password-error");
+
+        // Password show/hide toggle
+        document.querySelectorAll('.pwd-toggle').forEach(function(icon) {
+            icon.addEventListener('click', function() {
+                var input = this.parentElement.querySelector('input');
+                if (input) {
+                    input.type = input.type === 'password' ? 'text' : 'password';
+                    this.classList.toggle('fa-eye');
+                    this.classList.toggle('fa-eye-slash');
+                }
+            });
+        });
     });
 </script>
 

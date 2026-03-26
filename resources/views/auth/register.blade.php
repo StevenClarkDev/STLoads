@@ -38,7 +38,7 @@
                     <input id="password" class="form-control pe-5 rounded-2" type="password" name="password"
                         placeholder="********" required>
                     <i id="password-icon"
-                        class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
+                        class="fas fa-eye pwd-toggle text-muted position-absolute top-50 end-0 translate-middle-y me-3" style="cursor:pointer" title="Show/hide password"></i>
                 </div>
                 <small id="password-error" class="text-danger d-none">Password must be at least 8 characters and
                     contain a letter and number.</small>
@@ -60,7 +60,7 @@
             <div class="col-md-6 position-relative"> <label>Confirm Password</label>
                 <div class="input-group"> <input id="confirm-password" class="form-control pe-5 rounded-2" type="password"
                         name="password_confirmation" placeholder="********" required> <i id="confirm-password-icon"
-                        class="fas fa-check-circle text-muted position-absolute top-50 end-0 translate-middle-y me-3"></i>
+                    class="fas fa-eye pwd-toggle text-muted position-absolute top-50 end-0 translate-middle-y me-3" style="cursor:pointer" title="Show/hide password"></i>
                 </div>
             </div>
 
@@ -156,6 +156,18 @@
         document.getElementById('user_image').addEventListener('change', function() {
             const fileName = this.files.length > 0 ? this.files[0].name : 'No file chosen';
             document.getElementById('user_image_name').textContent = fileName;
+        });
+
+        // Password show/hide toggle
+        document.querySelectorAll('.pwd-toggle').forEach(function(icon) {
+            icon.addEventListener('click', function() {
+                var input = this.parentElement.querySelector('input');
+                if (input) {
+                    input.type = input.type === 'password' ? 'text' : 'password';
+                    this.classList.toggle('fa-eye');
+                    this.classList.toggle('fa-eye-slash');
+                }
+            });
         });
     </script>
 @endsection
