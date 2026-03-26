@@ -487,13 +487,14 @@ class AuthController extends Controller
                 'success',
                 "OTP {$otp} sent to {$to}",
                 null,
-                json_encode(['email' => $to, 'otp' => $otp, 'from' => $fromAddress])
+                json_encode(['email' => $to, 'otp' => $otp])
             );
 
             return view('auth.enter_otp', compact('to'));
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
-            // \Log::error("Error sending OTP to {$request->email}: " . $e->getMessage());
-
+            DB::rollBack();
             $logsController->createLog(
                 __METHOD__,
                 'error',
