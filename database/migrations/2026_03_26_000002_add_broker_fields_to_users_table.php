@@ -9,8 +9,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->string('ucr_hcc_no')->nullable()->after('ssn_no');
-            $table->string('mc_cbsa_usdot_no')->nullable()->after('ucr_hcc_no');
+            if (!Schema::hasColumn('users', 'ucr_hcc_no')) {
+                $table->string('ucr_hcc_no')->nullable()->after('ssn_no');
+            }
+            if (!Schema::hasColumn('users', 'mc_cbsa_usdot_no')) {
+                $table->string('mc_cbsa_usdot_no')->nullable()->after('ucr_hcc_no');
+            }
         });
     }
 
