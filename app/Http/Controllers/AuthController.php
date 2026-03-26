@@ -466,12 +466,20 @@ class AuthController extends Controller
 
             if ($request->hasFile('user_image')) {
                 $file = $request->file('user_image');
-                $filename = time() . '_' . $file->getClientOriginalName();
-                $path = $file->storeAs('uploads/profile_images', $filename, 'public'); // stores in storage/app/public/uploads/ssn_files
+                $storedPath = $file->store("kyc_documents/{$user->id}", 'public');
 
-                // Optional: save this path to the database
-                $user->image = $path;
+                $user->image = $storedPath;
                 $user->save();
+
+                KycDocuments::create([
+                    'user_id'       => $user->id,
+                    'document_name' => 'Profile / Identity Photo',
+                    'document_type' => 'user_image',
+                    'file_path'     => $storedPath,
+                    'original_name' => $file->getClientOriginalName(),
+                    'mime_type'     => $file->getClientMimeType(),
+                    'file_size'     => $file->getSize(),
+                ]);
             }
 
             DB::commit();
