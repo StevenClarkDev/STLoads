@@ -1,3 +1,6 @@
+# Allow Apache to follow the storage symlink created by 'php artisan storage:link'
+Options +SymLinksIfOwnerMatch
+
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
