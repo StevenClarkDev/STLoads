@@ -35,8 +35,8 @@
                                                 <tr>
                                                     <td>{{ $index + 1 }}</td>
                                                     <td>
-                                                        @if ($user->avatar)
-                                                            <img src="{{ asset('storage/' . $user->avatar) }}" alt=""
+                                                        @if ($user->image)
+                                                            <img src="{{ route('admin.serve-kyc-file', ['path' => $user->image]) }}" alt=""
                                                                 style="width: 28px; height: 28px; border-radius: 50%; margin-right: 8px;">
                                                         @endif
                                                         <span class="text-truncate">{{ $user->name }}</span>
