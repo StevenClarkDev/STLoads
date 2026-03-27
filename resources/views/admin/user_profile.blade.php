@@ -53,7 +53,7 @@
                                     <div class="social-img-wrap my-2">
                                         <div class="social-img">
                                             <img class="img-fluid rounded-circle"
-                                                src="{{ asset('storage/' . $user->image) }}" alt="profile">
+                                                src="{{ $user->image ? asset('storage/' . $user->image) : asset('assets/images/default-avatar.png') }}" alt="profile">
                                         </div>
                                         <div class="edit-icon">
                                             <svg>
@@ -407,7 +407,7 @@
                                     @forelse ($user->kycDocuments as $i => $doc)
                                         @php
                                             $exists = $doc->file_path && Storage::disk('public')->exists($doc->file_path);
-                                            $url = $exists ? $doc->file_url : null;
+                                            $url = $exists ? asset('storage/' . $doc->file_path) : null;
                                             $ext = $doc->original_name ? strtolower(pathinfo($doc->original_name, PATHINFO_EXTENSION)) : null;
                                             $mime = $doc->mime_type;
                                         @endphp

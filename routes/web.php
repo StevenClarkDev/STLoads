@@ -22,8 +22,29 @@ use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\OfferController;
 use App\Events\TestPing;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use App\Models\{Conversation};
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+
+/*
+|--------------------------------------------------------------------------
+| Serve /storage/{path} via PHP (cPanel blocks Apache symlinks)
+|--------------------------------------------------------------------------
+*/
+Route::get('/storage/{path}', function (string $path) {
+    $disk     = Storage::disk('public');
+    $fullPath = $disk->path($path);
+    $basePath = realpath($disk->path(''));
+    $realFull = realpath($fullPath);
+
+    if (!$realFull || !str_starts_with($realFull, $basePath) || !$disk->exists($path)) {
+        abort(404);
+    }
+
+    return response()->file($fullPath, [
+        'Content-Type' => $disk->mimeType($path),
+    ]);
+})->where('path', '.*')->name('storage.serve');
 
 /* ───────────────  GUEST‑ONLY ROUTES  ─────────────── */
 
