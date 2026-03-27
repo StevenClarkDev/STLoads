@@ -70,32 +70,8 @@ Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])
 // 🔒 Auth-only routes
 Route::middleware('auth')->group(function () {
 
-    /*
-    |--------------------------------------------------------------------------
-    | Secure Storage File Serving (Admin-only for KYC documents)
-    |--------------------------------------------------------------------------
-    */
-    Route::get('/storage/{path}', function (string $path) {
-        // Only authenticated users can access storage files
-        $user = Auth::user();
-        
-        // Admin can access all files
-        // Regular users can only access their own files
-        if (!$user->hasRole('Admin')) {
-            // Check if the path contains the user's ID (e.g., kyc_documents/{user_id}/...)
-            if (!str_contains($path, "/{$user->id}/") && !str_contains($path, "{$user->id}_")) {
-                abort(403, 'Unauthorized access to this file');
-            }
-        }
-        
-        $fullPath = storage_path('app/public/' . $path);
-        
-        if (!file_exists($fullPath) || !is_file($fullPath)) {
-            abort(404, 'File not found');
-        }
-        
-        return response()->file($fullPath);
-    })->where('path', '.*')->name('storage.serve');
+    // Secure storage file serving (Admin-only for KYC documents)
+    Route::get('/storage/{path}', [AdminController::class, 'serveStorageFile'])->where('path', '.*');
 
     Route::resource('roles', RoleController::class);
     Route::resource('users', UserController::class);
