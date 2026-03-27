@@ -1,12 +1,14 @@
-# Allow Apache to follow the storage symlink created by 'php artisan storage:link'
-Options +SymLinksIfOwnerMatch
-
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
     </IfModule>
 
     RewriteEngine On
+
+    # CRITICAL: Force ALL /storage/* through Laravel BEFORE any other checks
+    # This prevents Apache from checking if storage/ directory exists
+    RewriteCond %{REQUEST_URI} ^/storage/
+    RewriteRule ^(.*)$ index.php [L,QSA,NC]
 
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
@@ -15,9 +17,6 @@ Options +SymLinksIfOwnerMatch
     # Handle X-XSRF-Token Header
     RewriteCond %{HTTP:x-xsrf-token} .
     RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
-
-    # Force /storage/* requests through Laravel route (bypass cPanel symlink 403)
-    RewriteRule ^storage/(.*)$ index.php [L,QSA]
 
     # Redirect Trailing Slashes If Not A Folder...
     RewriteCond %{REQUEST_FILENAME} !-d
@@ -44,3 +43,9 @@ Options +SymLinksIfOwnerMatch
   AddHandler application/x-httpd-ea-php82 .php .php8 .phtml
 </IfModule>
 # php -- END cPanel-generated handler, do not edit
+# Deny direct access to storage directory (if it exists)
+<IfModule mod_authz_core.c>
+    <Directory "storage">
+        Require all denied
+    </Directory>
+</IfModule>
