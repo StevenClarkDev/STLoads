@@ -422,33 +422,4 @@ class AdminController extends Controller
 
         return back()->with('success', 'Password updated successfully.');
     }
-
-    public function serveStorageFile(string $path)
-    {
-        $user = Auth::user();
-        
-        if (!$user) {
-            abort(403, 'Unauthorized');
-        }
-        
-        // Admin can access all files
-        $isAdmin = $user->roles()->where('name', 'Admin')->exists();
-        
-        // Regular users can only access their own files
-        if (!$isAdmin) {
-            $userId = (string) $user->id;
-            // Check if path contains user ID
-            if (strpos($path, "/{$userId}/") === false && strpos($path, "{$userId}_") === false) {
-                abort(403, 'Access denied to this file');
-            }
-        }
-        
-        $fullPath = storage_path('app/public/' . $path);
-        
-        if (!file_exists($fullPath) || !is_file($fullPath)) {
-            abort(404, 'File not found');
-        }
-        
-        return response()->file($fullPath);
-    }
 }

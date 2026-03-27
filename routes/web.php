@@ -70,9 +70,6 @@ Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])
 // 🔒 Auth-only routes
 Route::middleware('auth')->group(function () {
 
-    // Secure storage file serving (Admin-only for KYC documents)
-    Route::get('/storage/{path}', [AdminController::class, 'serveStorageFile'])->where('path', '.*');
-
     Route::resource('roles', RoleController::class);
     Route::resource('users', UserController::class);
     Route::resource('load_types', LoadTypesController::class);
