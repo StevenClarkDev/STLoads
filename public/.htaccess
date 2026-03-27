@@ -16,6 +16,9 @@ Options +SymLinksIfOwnerMatch
     RewriteCond %{HTTP:x-xsrf-token} .
     RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
 
+    # Force /storage/* requests through Laravel route (bypass cPanel symlink 403)
+    RewriteRule ^storage/(.*)$ index.php [L,QSA]
+
     # Redirect Trailing Slashes If Not A Folder...
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} (.+)/$
