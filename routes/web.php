@@ -26,42 +26,6 @@ use Illuminate\Support\Facades\Storage;
 use App\Models\{Conversation};
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 
-/*
-|--------------------------------------------------------------------------
-| Serve /storage/{path} via PHP (cPanel blocks Apache symlinks)
-|--------------------------------------------------------------------------
-*/
-Route::get('/storage-test', function () {
-    return response()->json([
-        'message' => 'Laravel route is working!',
-        'storage_path' => storage_path('app/public'),
-        'exists' => is_dir(storage_path('app/public')),
-    ]);
-});
-
-Route::get('/storage/{path}', function (string $path) {
-    try {
-        $fullPath = storage_path('app/public/' . $path);
-        
-        if (!file_exists($fullPath)) {
-            return response()->json(['error' => 'File not found', 'path' => $fullPath], 404);
-        }
-        
-        if (!is_readable($fullPath)) {
-            return response()->json(['error' => 'File not readable', 'path' => $fullPath], 403);
-        }
-        
-        return response()->file($fullPath);
-        
-    } catch (\Throwable $e) {
-        return response()->json([
-            'error' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-        ], 500);
-    }
-})->where('path', '.*')->name('storage.serve');
-
 /* ───────────────  GUEST‑ONLY ROUTES  ─────────────── */
 
 Route::middleware('guest')->group(function () {
@@ -105,6 +69,33 @@ Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])
 
 // 🔒 Auth-only routes
 Route::middleware('auth')->group(function () {
+
+    /*
+    |--------------------------------------------------------------------------
+    | Secure Storage File Serving (Admin-only for KYC documents)
+    |--------------------------------------------------------------------------
+    */
+    Route::get('/storage/{path}', function (string $path) {
+        // Only authenticated users can access storage files
+        $user = Auth::user();
+        
+        // Admin can access all files
+        // Regular users can only access their own files
+        if (!$user->hasRole('Admin')) {
+            // Check if the path contains the user's ID (e.g., kyc_documents/{user_id}/...)
+            if (!str_contains($path, "/{$user->id}/") && !str_contains($path, "{$user->id}_")) {
+                abort(403, 'Unauthorized access to this file');
+            }
+        }
+        
+        $fullPath = storage_path('app/public/' . $path);
+        
+        if (!file_exists($fullPath) || !is_file($fullPath)) {
+            abort(404, 'File not found');
+        }
+        
+        return response()->file($fullPath);
+    })->where('path', '.*')->name('storage.serve');
 
     Route::resource('roles', RoleController::class);
     Route::resource('users', UserController::class);
