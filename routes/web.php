@@ -86,6 +86,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/change-password', [AdminController::class, 'updatePassword'])->name('admin.change-password.update');
     Route::get('/get-ssn-file/{id}', [AdminController::class, 'getSsnFiles']);
     Route::get('/get-user-file/{id}', [AdminController::class, 'getFiles']);
+    Route::get('/serve-kyc-file', [AdminController::class, 'serveKycFile'])->name('admin.serve-kyc-file');
     Route::post('/update-status/{id}', [UserController::class, 'updateStatus'])->name('user.update-status');
 
     // Load Management

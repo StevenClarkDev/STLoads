@@ -13,6 +13,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 
 class AdminController extends Controller
@@ -335,6 +336,30 @@ class AdminController extends Controller
         return response()->json(['success' => false]);
     }
 
+    public function serveKycFile(Request $request)
+    {
+        $path = ltrim($request->query('path', ''), '/');
+
+        // Prevent path traversal attacks
+        $disk     = Storage::disk('public');
+        $fullPath = $disk->path($path);
+        $basePath = realpath($disk->path(''));
+        $realFull = realpath($fullPath);
+
+        if (!$realFull || !str_starts_with($realFull, $basePath)) {
+            abort(403);
+        }
+
+        if (!$disk->exists($path)) {
+            abort(404);
+        }
+
+        return response()->file($fullPath, [
+            'Content-Type'        => $disk->mimeType($path),
+            'Content-Disposition' => 'inline',
+        ]);
+    }
+
     public function getSsnFiles($id)
     {
         $kycDocs = KycDocuments::where('user_id', $id)
@@ -344,11 +369,9 @@ class AdminController extends Controller
         $files = [];
 
         foreach ($kycDocs as $doc) {
-            $filePath = storage_path("app/public/{$doc->file_path}");
-
-            if (file_exists($filePath)) {
+            if (Storage::disk('public')->exists($doc->file_path)) {
                 $files[] = [
-                    'url' => asset("storage/{$doc->file_path}"),
+                    'url'  => route('admin.serve-kyc-file', ['path' => $doc->file_path]),
                     'type' => $doc->document_type,
                 ];
             }
@@ -356,20 +379,19 @@ class AdminController extends Controller
 
         return response()->json(['files' => $files]);
     }
+
     public function getFiles($id)
     {
-        $kycDocs = KycDocuments::where('user_id', $id)
-            ->get();
+        $kycDocs = KycDocuments::where('user_id', $id)->get();
 
         $files = [];
 
         foreach ($kycDocs as $doc) {
-            $filePath = storage_path("app/public/{$doc->file_path}");
-
-            if (file_exists($filePath)) {
+            if (Storage::disk('public')->exists($doc->file_path)) {
                 $files[] = [
-                    'url' => asset("storage/{$doc->file_path}"),
+                    'url'  => route('admin.serve-kyc-file', ['path' => $doc->file_path]),
                     'type' => $doc->document_type,
+                    'name' => $doc->document_name,
                 ];
             }
         }
