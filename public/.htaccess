@@ -38,9 +38,3 @@
   AddHandler application/x-httpd-ea-php82 .php .php8 .phtml
 </IfModule>
 # php -- END cPanel-generated handler, do not edit
-# Deny direct access to storage directory (if it exists)
-<IfModule mod_authz_core.c>
-    <Directory "storage">
-        Require all denied
-    </Directory>
-</IfModule>
