@@ -40,27 +40,33 @@ Route::get('/storage-test', function () {
 });
 
 Route::get('/storage/{path}', function (string $path) {
-    $disk     = Storage::disk('public');
-    $fullPath = $disk->path($path);
-    $basePath = realpath($disk->path(''));
-    $realFull = realpath($fullPath);
+    try {
+        $disk = Storage::disk('public');
+        
+        if (!$disk->exists($path)) {
+            return response()->json([
+                'error' => 'File not found',
+                'path' => $path,
+                'full_path' => storage_path('app/public/' . $path),
+                'disk_root' => $disk->path(''),
+            ], 404);
+        }
 
-    // Debug info if something fails
-    if (!$realFull || !str_starts_with($realFull, $basePath) || !$disk->exists($path)) {
+        $fullPath = $disk->path($path);
+        
+        return response()->file($fullPath, [
+            'Content-Type' => $disk->mimeType($path) ?? 'application/octet-stream',
+            'Content-Disposition' => 'inline',
+        ]);
+        
+    } catch (\Exception $e) {
         return response()->json([
-            'error' => 'File not found or access denied',
+            'error' => 'Server error',
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
             'path' => $path,
-            'full_path' => $fullPath,
-            'base_path' => $basePath,
-            'real_full' => $realFull,
-            'exists' => $disk->exists($path),
-            'disk_exists' => Storage::disk('public')->exists($path),
-        ], 404);
+        ], 500);
     }
-
-    return response()->file($fullPath, [
-        'Content-Type' => $disk->mimeType($path),
-    ]);
 })->where('path', '.*')->name('storage.serve');
 
 /* ───────────────  GUEST‑ONLY ROUTES  ─────────────── */
