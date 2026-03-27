@@ -53,7 +53,7 @@ class AuthController extends Controller
         try {
             if (Auth::check()) {
                 $user = Auth::user();
-                if ($user && $user->roles->first()?->id === 1) {
+                if ($user && $user->hasRole('Admin')) {
                     return redirect()->route('admin_dashboard');
 
                 } else {
@@ -275,15 +275,15 @@ class AuthController extends Controller
                 return redirect()->back()->withErrors(['error' => 'Invalid credentials']);
             }
 
-            // Check if user has the required role id
-            if ($user->roles()->where('id', 1)->exists()) {
+            // Check if user has the Admin role (by name, not by ID)
+            if ($user->hasRole('Admin')) {
                 Auth::login($user);
                 $request->session()->regenerate();
 
-                $logsController->createLog(__METHOD__, 'success', 'Login Successful', null, json_encode(['email' => $request->email, 'role_id' => 1]));
+                $logsController->createLog(__METHOD__, 'success', 'Login Successful', null, json_encode(['email' => $request->email]));
                 return redirect()->route('admin_dashboard')->with('success', 'Login successful');
             } else {
-                $logsController->createLog(__METHOD__, 'error', 'Login denied: Role mismatch', null, json_encode(['email' => $request->email, 'role_id' => $request->id]));
+                $logsController->createLog(__METHOD__, 'error', 'Login denied: Role mismatch', null, json_encode(['email' => $request->email]));
                 return redirect()->back()->withErrors(['error' => 'Login denied: Role mismatch']);
             }
         } catch (\Exception $e) {
