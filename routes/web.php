@@ -31,14 +31,31 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 | Serve /storage/{path} via PHP (cPanel blocks Apache symlinks)
 |--------------------------------------------------------------------------
 */
+Route::get('/storage-test', function () {
+    return response()->json([
+        'message' => 'Laravel route is working!',
+        'storage_path' => storage_path('app/public'),
+        'exists' => is_dir(storage_path('app/public')),
+    ]);
+});
+
 Route::get('/storage/{path}', function (string $path) {
     $disk     = Storage::disk('public');
     $fullPath = $disk->path($path);
     $basePath = realpath($disk->path(''));
     $realFull = realpath($fullPath);
 
+    // Debug info if something fails
     if (!$realFull || !str_starts_with($realFull, $basePath) || !$disk->exists($path)) {
-        abort(404);
+        return response()->json([
+            'error' => 'File not found or access denied',
+            'path' => $path,
+            'full_path' => $fullPath,
+            'base_path' => $basePath,
+            'real_full' => $realFull,
+            'exists' => $disk->exists($path),
+            'disk_exists' => Storage::disk('public')->exists($path),
+        ], 404);
     }
 
     return response()->file($fullPath, [
