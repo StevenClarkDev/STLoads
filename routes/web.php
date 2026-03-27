@@ -41,30 +41,23 @@ Route::get('/storage-test', function () {
 
 Route::get('/storage/{path}', function (string $path) {
     try {
-        $disk = Storage::disk('public');
+        $fullPath = storage_path('app/public/' . $path);
         
-        if (!$disk->exists($path)) {
-            return response()->json([
-                'error' => 'File not found',
-                'path' => $path,
-                'full_path' => storage_path('app/public/' . $path),
-                'disk_root' => $disk->path(''),
-            ], 404);
+        if (!file_exists($fullPath)) {
+            return response()->json(['error' => 'File not found', 'path' => $fullPath], 404);
         }
-
-        $fullPath = $disk->path($path);
         
-        return response()->file($fullPath, [
-            'Content-Type' => $disk->mimeType($path) ?? 'application/octet-stream',
-            'Content-Disposition' => 'inline',
-        ]);
+        if (!is_readable($fullPath)) {
+            return response()->json(['error' => 'File not readable', 'path' => $fullPath], 403);
+        }
         
-    } catch (\Exception $e) {
+        return response()->file($fullPath);
+        
+    } catch (\Throwable $e) {
         return response()->json([
-            'error' => 'Server error',
-            'message' => $e->getMessage(),
-            'trace' => $e->getTraceAsString(),
-            'path' => $path,
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
         ], 500);
     }
 })->where('path', '.*')->name('storage.serve');
