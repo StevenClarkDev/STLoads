@@ -8,6 +8,11 @@
                         <div class="row gy-4 px-3">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h5 class="mb-0">User Information</h5>
+                                @if(Auth::id() === $user->id)
+                                <a href="{{ route('profile.edit', $user) }}" class="btn btn-primary btn-sm px-4">
+                                    <i class="fa fa-edit"></i> Edit Profile
+                                </a>
+                                @endif
                             </div>
                             <!-- Left Column -->
                             <div class="col-xl-8">

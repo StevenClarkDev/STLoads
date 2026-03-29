@@ -72,6 +72,11 @@
                                         <span class="badge bg-{{ $statusColor[$s] ?? 'secondary' }} px-3 py-2">
                                             {{ $statusMap[$s] ?? 'Unknown' }}
                                         </span>
+                                        <div class="mt-3">
+                                            <a href="{{ route('users.edit', $user->id) }}" class="btn btn-light btn-sm px-4">
+                                                <i class="fa fa-edit"></i> Edit User
+                                            </a>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

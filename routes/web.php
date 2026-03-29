@@ -96,6 +96,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/admin/loads/view/{load}', [LoadController::class, 'adminView'])->name('admin.loads.view');
     Route::get('/manage-loads', [LoadController::class, 'index'])->name('manage-loads');
     Route::get('/profile/{user}', [AuthController::class, 'profile'])->name('profile');
+    Route::get('/profile/{user}/edit', [AuthController::class, 'editProfile'])->name('profile.edit');
+    Route::post('/profile/{user}/update', [AuthController::class, 'updateProfile'])->name('profile.update');
     Route::post('/save_preferences', [LoadController::class, 'savePreferences'])->name('savePreferences');
     Route::get('/loads/view/{load}', [LoadController::class, 'view'])->name('loads.view');
     Route::post('/load/revise/{load}', [LoadController::class, 'save'])->name('load.revise.save');

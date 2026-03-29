@@ -1360,4 +1360,107 @@ class AuthController extends Controller
 
         return redirect()->route('role')->with('success', 'Onboarding submitted. Awaiting admin approval.');
     }
+
+    /**
+     * Show the form for editing the authenticated user's profile
+     */
+    public function editProfile(User $user)
+    {
+        // Authorization: user can only edit their own profile
+        if (Auth::id() !== $user->id) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $role = $user->roles()->first();
+        return view('users.edit_profile', compact('user', 'role'));
+    }
+
+    /**
+     * Update the authenticated user's profile
+     */
+    public function updateProfile(User $user, Request $request)
+    {
+        // Authorization: user can only edit their own profile
+        if (Auth::id() !== $user->id) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        // Validate common fields
+        $rules = [
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email,' . $user->id,
+            'phone_no' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:500',
+            'password' => 'nullable|min:6|confirmed',
+        ];
+
+        // Add role-specific validation based on user's role
+        $role = $user->roles()->first();
+        if ($role) {
+            switch ($role->name) {
+                case 'Carrier':
+                    $rules['company_name'] = 'nullable|string|max:255';
+                    $rules['dot_no'] = 'nullable|string|max:50';
+                    $rules['mc_no'] = 'nullable|string|max:50';
+                    break;
+                case 'Shipper':
+                    $rules['company_name'] = 'nullable|string|max:255';
+                    break;
+                case 'Broker':
+                    $rules['company_name'] = 'nullable|string|max:255';
+                    $rules['mc_cbsa_usdot_no'] = 'nullable|string|max:50';
+                    $rules['ucr_hcc_no'] = 'nullable|string|max:50';
+                    break;
+                case 'Freight Forwarder':
+                    $rules['company_name'] = 'nullable|string|max:255';
+                    break;
+            }
+        }
+
+        $validated = $request->validate($rules);
+
+        // Update basic fields
+        $user->name = $validated['name'];
+        $user->email = $validated['email'];
+        
+        if ($request->filled('phone_no')) {
+            $user->phone_no = $validated['phone_no'];
+        }
+        
+        if ($request->filled('address')) {
+            $user->address = $validated['address'];
+        }
+
+        // Update password if provided
+        if ($request->filled('password')) {
+            $user->password = Hash::make($validated['password']);
+        }
+
+        // Update role-specific fields
+        if ($request->filled('company_name')) {
+            $user->company_name = $validated['company_name'];
+        }
+
+        if ($role && $role->name === 'Carrier') {
+            if ($request->filled('dot_no')) {
+                $user->dot_no = $validated['dot_no'];
+            }
+            if ($request->filled('mc_no')) {
+                $user->mc_no = $validated['mc_no'];
+            }
+        }
+
+        if ($role && $role->name === 'Broker') {
+            if ($request->filled('mc_cbsa_usdot_no')) {
+                $user->mc_cbsa_usdot_no = $validated['mc_cbsa_usdot_no'];
+            }
+            if ($request->filled('ucr_hcc_no')) {
+                $user->ucr_hcc_no = $validated['ucr_hcc_no'];
+            }
+        }
+
+        $user->save();
+
+        return redirect()->route('profile', $user)->with('success', 'Profile updated successfully!');
+    }
 }
