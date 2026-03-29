@@ -53,7 +53,7 @@
                                     <div class="social-img-wrap my-2">
                                         <div class="social-img">
                                             <img class="img-fluid rounded-circle"
-                                                src="{{ $user->image ? route('admin.serve-kyc-file', ['path' => $user->image]) : asset('assets/images/default-avatar.png') }}" alt="profile">
+                                                src="{{ $user->image ? route('admin.serve-kyc-file', ['path' => $user->image]) : asset('assets/images/user/user.png') }}" alt="profile">
                                         </div>
                                         <div class="edit-icon">
                                             <svg>
@@ -73,7 +73,7 @@
                                             {{ $statusMap[$s] ?? 'Unknown' }}
                                         </span>
                                         <div class="mt-3">
-                                            <a href="{{ route('users.edit', $user->id) }}" class="btn btn-light btn-sm px-4">
+                                            <a href="{{ route('users.edit', $user->id) }}" class="btn btn-primary btn-md px-4 shadow">
                                                 <i class="fa fa-edit"></i> Edit User
                                             </a>
                                         </div>

@@ -124,7 +124,7 @@
                                                           <div class="social-img-wrap my-2">
                                                               <div class="social-img">
                                                                   <img class="img-fluid rounded-circle"
-                                                                      src="{{ $user->image ? route('admin.serve-kyc-file', ['path' => $user->image]) : asset('assets/images/default-avatar.png') }}"
+                                                                      src="{{ $user->image ? route('admin.serve-kyc-file', ['path' => $user->image]) : asset('assets/images/user/user.png') }}"
                                                                       alt="profile">
                                                               </div>
                                                               <div class="edit-icon">

@@ -64,6 +64,15 @@
                             </li>
 
                             <li class="nav-item mb-2">
+                                <a href="{{ route('users.index') }}">
+                                    <div
+                                        class="btn btn-{{ Str::startsWith($currentRoute, 'users.') ? 'primary' : 'light' }}">
+                                        <i data-feather="users"></i> All Users
+                                    </div>
+                                </a>
+                            </li>
+
+                            <li class="nav-item mb-2">
                                 <a href="{{ url('roles') }}">
                                     <div
                                         class="btn btn-{{ Str::startsWith($currentRoute, 'roles.') ? 'primary' : 'light' }}">
