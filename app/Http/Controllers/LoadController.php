@@ -442,11 +442,17 @@ class LoadController extends Controller
             'is_hazardous' => ['nullable'],
             'is_temperature_controlled' => ['nullable'],
 
-            'pickup_location' => ['required', 'array', 'min:1'],
-            'pickup_location.*' => ['required', 'integer', 'exists:locations,id'],
+            'pickup_location_address' => ['nullable', 'array'],
+            'pickup_location_address.*' => ['nullable', 'string', 'max:500'],
 
-            'delivery_location' => ['required', 'array', 'min:1'],
-            'delivery_location.*' => ['required', 'integer', 'exists:locations,id'],
+            'pickup_location' => ['nullable', 'array'],
+            'pickup_location.*' => ['nullable', 'integer', 'exists:locations,id'],
+
+            'delivery_location_address' => ['nullable', 'array'],
+            'delivery_location_address.*' => ['nullable', 'string', 'max:500'],
+
+            'delivery_location' => ['nullable', 'array'],
+            'delivery_location.*' => ['nullable', 'integer', 'exists:locations,id'],
 
             'pickup_date' => ['required', 'array', 'min:1'],
             'pickup_date.*' => ['required', 'date'],
@@ -470,10 +476,25 @@ class LoadController extends Controller
                 . '|max:20480',
         ]);
 
-        // per-index date check
+        // Custom validation: ensure each leg has either address or location ID
         $validator->after(function ($v) use ($request) {
             $rowCount = count($request->pickup_date ?? []);
             for ($i = 0; $i < $rowCount; $i++) {
+                // Pickup validation
+                $pickupAddr = $request->input("pickup_location_address.$i");
+                $pickupId = $request->input("pickup_location.$i");
+                if (empty($pickupAddr) && empty($pickupId)) {
+                    $v->errors()->add("pickup_location_address.$i", 'Either select a location or enter an address.');
+                }
+
+                // Delivery validation
+                $deliveryAddr = $request->input("delivery_location_address.$i");
+                $deliveryId = $request->input("delivery_location.$i");
+                if (empty($deliveryAddr) && empty($deliveryId)) {
+                    $v->errors()->add("delivery_location_address.$i", 'Either select a location or enter an address.');
+                }
+
+                // Date validation
                 $p = $request->pickup_date[$i] ?? null;
                 $d = $request->delivery_date[$i] ?? null;
                 if ($p && $d && strtotime($d) < strtotime($p)) {
@@ -577,17 +598,41 @@ class LoadController extends Controller
             $load->load_number = $loadNumber;
             $load->save();
 
-            $rowCount = count($request->pickup_location);
+            $rowCount = count($request->pickup_date);
             $legNo = 1;
 
             for ($i = 0; $i < $rowCount; $i++) {
+                // Handle pickup location
+                $pickupLocationId = $request->pickup_location[$i] ?? null;
+                if (empty($pickupLocationId) && !empty($request->pickup_location_address[$i])) {
+                    // Create a new location from Google Maps address
+                    $pickupLocation = Locations::create([
+                        'name' => $request->pickup_location_address[$i],
+                        'address' => $request->pickup_location_address[$i],
+                        'user_id' => Auth::id(),
+                    ]);
+                    $pickupLocationId = $pickupLocation->id;
+                }
+
+                // Handle delivery location
+                $deliveryLocationId = $request->delivery_location[$i] ?? null;
+                if (empty($deliveryLocationId) && !empty($request->delivery_location_address[$i])) {
+                    // Create a new location from Google Maps address
+                    $deliveryLocation = Locations::create([
+                        'name' => $request->delivery_location_address[$i],
+                        'address' => $request->delivery_location_address[$i],
+                        'user_id' => Auth::id(),
+                    ]);
+                    $deliveryLocationId = $deliveryLocation->id;
+                }
+
                 $loadLeg = new LoadLeg();
                 $loadLeg->load_id = $load->id;
                 $loadLeg->leg_no = $legNo; // 1..n
                 $loadLeg->leg_code = LoadNumbers::legCode($loadNumber, $legNo);
 
-                $loadLeg->pickup_location_id = $request->pickup_location[$i];
-                $loadLeg->delivery_location_id = $request->delivery_location[$i];
+                $loadLeg->pickup_location_id = $pickupLocationId;
+                $loadLeg->delivery_location_id = $deliveryLocationId;
                 $loadLeg->pickup_date = $request->pickup_date[$i];
                 $loadLeg->delivery_date = $request->delivery_date[$i];
                 $loadLeg->bid_status = $request->bid_status[$i];

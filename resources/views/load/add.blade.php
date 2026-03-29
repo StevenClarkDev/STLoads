@@ -207,15 +207,21 @@
           <td><input type="text" name="leg_id[]" class="form-control leg-id" value="" readonly /></td>
 
           <td>
-            <select name="pickup_location[]" class="form-select" required>
-              <option value="">Select...</option>
+            <input type="text" name="pickup_location_address[]" class="form-control location-autocomplete pickup-location" 
+                   placeholder="Enter pickup address..." required>
+            <small class="text-muted">Or select from list:</small>
+            <select name="pickup_location[]" class="form-select mt-1">
+              <option value="">Select saved location...</option>
               ${locationOptions}
             </select>
           </td>
 
           <td>
-            <select name="delivery_location[]" class="form-select" required>
-              <option value="">Select...</option>
+            <input type="text" name="delivery_location_address[]" class="form-control location-autocomplete delivery-location" 
+                   placeholder="Enter delivery address..." required>
+            <small class="text-muted">Or select from list:</small>
+            <select name="delivery_location[]" class="form-select mt-1">
+              <option value="">Select saved location...</option>
               ${locationOptions}
             </select>
           </td>
@@ -256,6 +262,8 @@
             const $row = $(rowTemplate());
             $('#load_legs-table tbody').append($row);
             renumberRows();
+            // Initialize Google Maps Autocomplete for newly added row
+            initializeAutocomplete($row.find('.location-autocomplete'));
         }
 
         // ----- Events -----
@@ -319,5 +327,83 @@
 
         // start with one row
         addMemberRow();
+    });
+</script>
+
+<!-- Google Maps Places API -->
+<script src="https://maps.googleapis.com/maps/api/js?key={{ env('GOOGLE_MAPS_API_KEY') }}&libraries=places&callback=initMap" async defer></script>
+
+<script>
+    // Global function for Google Maps callback
+    function initMap() {
+        // Initialize autocomplete for all existing location fields
+        initializeAutocomplete($('.location-autocomplete'));
+    }
+
+    // Function to initialize Google Places Autocomplete
+    function initializeAutocomplete(elements) {
+        if (typeof google === 'undefined' || !google.maps || !google.maps.places) {
+            console.warn('Google Maps API not loaded yet. Retrying...');
+            setTimeout(function() {
+                initializeAutocomplete(elements);
+            }, 500);
+            return;
+        }
+
+        elements.each(function() {
+            const input = this;
+            
+            // Skip if already initialized
+            if ($(input).data('autocomplete-initialized')) {
+                return;
+            }
+
+            // Create the autocomplete object
+            const autocomplete = new google.maps.places.Autocomplete(input, {
+                types: ['address'],
+                fields: ['formatted_address', 'geometry', 'name', 'address_components']
+            });
+
+            // When user selects a place from dropdown
+            autocomplete.addListener('place_changed', function() {
+                const place = autocomplete.getPlace();
+                
+                if (!place.geometry) {
+                    console.log("No details available for: '" + place.name + "'");
+                    return;
+                }
+
+                // Update the input value with formatted address
+                $(input).val(place.formatted_address);
+                
+                // Optional: If you want to clear the select dropdown when autocomplete is used
+                $(input).siblings('select').val('');
+                
+                console.log('Selected location:', {
+                    address: place.formatted_address,
+                    lat: place.geometry.location.lat(),
+                    lng: place.geometry.location.lng()
+                });
+            });
+
+            // Mark as initialized
+            $(input).data('autocomplete-initialized', true);
+        });
+    }
+
+    // Handle the case when selecting from dropdown, clear the text input
+    $(document).on('change', 'select[name="pickup_location[]"], select[name="delivery_location[]"]', function() {
+        if ($(this).val()) {
+            // If user selects from dropdown, clear the autocomplete input
+            $(this).siblings('.location-autocomplete').val('');
+        }
+    });
+
+    // Handle the case when typing in autocomplete, clear the select
+    $(document).on('input', '.location-autocomplete', function() {
+        if ($(this).val()) {
+            // If user types in autocomplete, clear the select dropdown
+            $(this).siblings('select').val('');
+        }
     });
 </script>
