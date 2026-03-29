@@ -6459,7 +6459,7 @@ table.dataTable select {
 
 .user-datatable tr td:first-child,
 .user-datatable tr th:first-child {
-  min-width: 150px;
+  min-width: 40px;
 }
 
 .jsgrid .jsgrid-button {
