@@ -149,15 +149,15 @@
                                             <table class="table table-bordered" id="load_legs-table">
                                                 <thead class="table-light">
                                                     <tr>
-                                                        <th>S.No</th>
-                                                        <th>Pickup Location</th>
-                                                        <th>Delivery Location</th>
-                                                        <th>Pickup Date</th>
-                                                        <th>Delivery Date</th>
-                                                        <th>Bid Status</th>
-                                                        <th>Price</th>
+                                                        <th style="width: 40px;">S.No</th>
+                                                        <th style="width: 300px;">Pickup Location</th>
+                                                        <th style="width: 300px;">Delivery Location</th>
+                                                        <th style="width: 150px;">Pickup Date</th>
+                                                        <th style="width: 150px;">Delivery Date</th>
+                                                        <th style="width: 120px;">Bid Status</th>
+                                                        <th style="width: 100px;">Price</th>
                                                         @if ($roleId == 5)
-                                                            <th>Action</th>
+                                                            <th style="width: 80px;">Action</th>
                                                         @endif
                                                     </tr>
                                                 </thead>
@@ -186,12 +186,6 @@
 
 <script>
     $(function() {
-        // ----- Server-rendered snippets (NO Blade inside JS strings below) -----
-        const locationOptions = `{!! collect($locations)->map(function ($l) {
-                $label = trim(($l->name ?? '') . ' ' . ($l->city->name ?? '') . ' ' . ($l->country->name ?? ''));
-                return '<option value="' . $l->id . '">' . e($label) . '</option>';
-            })->implode('') !!}`;
-
         const canEditLegs = {{ $roleId == 5 ? 'true' : 'false' }};
 
         function renumberRows() {
@@ -204,26 +198,16 @@
         function rowTemplate() {
             return `
         <tr>
-          <td><input type="text" name="leg_id[]" class="form-control leg-id" value="" readonly /></td>
+          <td style="width: 40px;"><input type="text" name="leg_id[]" class="form-control leg-id" value="" readonly /></td>
 
-          <td>
+          <td style="width: 300px;">
             <input type="text" name="pickup_location_address[]" class="form-control location-autocomplete pickup-location" 
-                   placeholder="Enter pickup address..." required>
-            <small class="text-muted">Or select from list:</small>
-            <select name="pickup_location[]" class="form-select mt-1">
-              <option value="">Select saved location...</option>
-              ${locationOptions}
-            </select>
+                   placeholder="Search pickup address..." required>
           </td>
 
-          <td>
+          <td style="width: 300px;">
             <input type="text" name="delivery_location_address[]" class="form-control location-autocomplete delivery-location" 
-                   placeholder="Enter delivery address..." required>
-            <small class="text-muted">Or select from list:</small>
-            <select name="delivery_location[]" class="form-select mt-1">
-              <option value="">Select saved location...</option>
-              ${locationOptions}
-            </select>
+                   placeholder="Search delivery address..." required>
           </td>
 
           <td>
@@ -376,9 +360,6 @@
                 // Update the input value with formatted address
                 $(input).val(place.formatted_address);
                 
-                // Optional: If you want to clear the select dropdown when autocomplete is used
-                $(input).siblings('select').val('');
-                
                 console.log('Selected location:', {
                     address: place.formatted_address,
                     lat: place.geometry.location.lat(),
@@ -390,20 +371,4 @@
             $(input).data('autocomplete-initialized', true);
         });
     }
-
-    // Handle the case when selecting from dropdown, clear the text input
-    $(document).on('change', 'select[name="pickup_location[]"], select[name="delivery_location[]"]', function() {
-        if ($(this).val()) {
-            // If user selects from dropdown, clear the autocomplete input
-            $(this).siblings('.location-autocomplete').val('');
-        }
-    });
-
-    // Handle the case when typing in autocomplete, clear the select
-    $(document).on('input', '.location-autocomplete', function() {
-        if ($(this).val()) {
-            // If user types in autocomplete, clear the select dropdown
-            $(this).siblings('select').val('');
-        }
-    });
 </script>
