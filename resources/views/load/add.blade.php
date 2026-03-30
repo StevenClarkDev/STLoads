@@ -314,6 +314,109 @@
     });
 </script>
 
+<!-- Google Maps Custom Styles -->
+<style>
+    /* Enhanced spacing for location inputs */
+    .location-autocomplete {
+        padding: 12px 16px !important;
+        font-size: 15px !important;
+        line-height: 1.5 !important;
+        border-radius: 6px !important;
+        border: 1px solid #d1d5db !important;
+        transition: all 0.2s ease !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+    }
+    
+    .location-autocomplete:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+        outline: none !important;
+    }
+    
+    .location-autocomplete::placeholder {
+        color: #9ca3af !important;
+        font-weight: 400 !important;
+    }
+    
+    /* Hide Google branding */
+    .pac-container:after {
+        display: none !important;
+    }
+    
+    .pac-logo:after {
+        display: none !important;
+    }
+    
+    /* Enhanced autocomplete dropdown styling */
+    .pac-container {
+        background-color: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        margin-top: 4px;
+        padding: 4px 0;
+        font-family: inherit;
+        z-index: 9999 !important;
+    }
+    
+    .pac-item {
+        padding: 10px 16px;
+        font-size: 14px;
+        line-height: 1.5;
+        cursor: pointer;
+        border-top: none;
+        transition: background-color 0.15s ease;
+    }
+    
+    .pac-item:hover {
+        background-color: #f3f4f6;
+    }
+    
+    .pac-item-selected,
+    .pac-item-selected:hover {
+        background-color: #eff6ff;
+    }
+    
+    .pac-item-query {
+        font-size: 14px;
+        font-weight: 600;
+        color: #1f2937;
+        padding-right: 4px;
+    }
+    
+    .pac-matched {
+        font-weight: 700;
+        color: #2563eb;
+    }
+    
+    .pac-icon {
+        margin-top: 2px;
+        margin-right: 12px;
+        width: 18px;
+        height: 18px;
+        background-size: 18px;
+    }
+    
+    /* Better spacing for table cells */
+    #load_legs-table td {
+        padding: 12px 8px !important;
+        vertical-align: middle;
+    }
+    
+    #load_legs-table .form-control,
+    #load_legs-table .form-select {
+        margin: 0;
+    }
+    
+    /* Loading indicator for autocomplete */
+    .location-autocomplete.loading {
+        background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHZpZXdCb3g9IjAgMCAyMCAyMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxMCIgY3k9IjEwIiByPSI4IiBzdHJva2U9IiMzYjgyZjYiIHN0cm9rZS13aWR0aD0iMiIgZmlsbD0ibm9uZSIgc3Ryb2tlLWRhc2hhcnJheT0iMTAgNTAiPjxhbmltYXRlVHJhbnNmb3JtIGF0dHJpYnV0ZU5hbWU9InRyYW5zZm9ybSIgdHlwZT0icm90YXRlIiBmcm9tPSIwIDEwIDEwIiB0bz0iMzYwIDEwIDEwIiBkdXI9IjFzIiByZXBlYXRDb3VudD0iaW5kZWZpbml0ZSIvPjwvY2lyY2xlPjwvc3ZnPg==');
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        background-size: 20px 20px;
+    }
+</style>
+
 <!-- Google Maps Places API -->
 <script src="https://maps.googleapis.com/maps/api/js?key={{ env('GOOGLE_MAPS_API_KEY') }}&libraries=places&callback=initMap" async defer></script>
 
@@ -342,10 +445,10 @@
                 return;
             }
 
-            // Autocomplete configuration with US/Canada restriction
+            // Enhanced autocomplete configuration with US/Canada restriction
             const autocompleteOptions = {
-                types: ['address'],
-                fields: ['formatted_address', 'geometry', 'name', 'address_components'],
+                types: ['geocode', 'establishment'],  // More flexible search (addresses, cities, landmarks)
+                fields: ['formatted_address', 'geometry', 'name', 'address_components', 'place_id'],
                 componentRestrictions: { country: ['us', 'ca'] }  // Restrict to US and Canada only
             };
 
@@ -375,9 +478,20 @@
 
             // Create the autocomplete object
             const autocomplete = new google.maps.places.Autocomplete(input, autocompleteOptions);
+            
+            // Add loading indicator when typing
+            let typingTimer;
+            $(input).on('input', function() {
+                clearTimeout(typingTimer);
+                $(this).addClass('loading');
+                typingTimer = setTimeout(function() {
+                    $(input).removeClass('loading');
+                }, 300);
+            });
 
             // When user selects a place from dropdown
             autocomplete.addListener('place_changed', function() {
+                $(input).removeClass('loading');
                 const place = autocomplete.getPlace();
                 
                 if (!place.geometry) {
