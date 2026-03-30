@@ -29,6 +29,35 @@
                         <h4>Load Details</h4>
                     </div>
                     <div class="card-body">
+                        <!-- Display validation errors -->
+                        @if ($errors->any())
+                            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                                <h5 class="alert-heading">Validation Errors:</h5>
+                                <ul class="mb-0">
+                                    @foreach ($errors->all() as $error)
+                                        <li>{{ $error }}</li>
+                                    @endforeach
+                                </ul>
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        @endif
+                        
+                        <!-- Display success message -->
+                        @if (session('success'))
+                            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                                {{ session('success') }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        @endif
+                        
+                        <!-- Display error message -->
+                        @if (session('error'))
+                            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                                {{ session('error') }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        @endif
+                        
                         <form class="row g-3 custom-input" action="{{ route('loads.store') }}" method="POST"
                             enctype="multipart/form-data">
                             @csrf
@@ -187,6 +216,20 @@
 <script>
     $(function() {
         const canEditLegs = {{ $roleId == 5 ? 'true' : 'false' }};
+        
+        // Debug: Log form submission
+        $('form').on('submit', function(e) {
+            console.log('Form is submitting...');
+            console.log('Load legs count:', $('#load_legs-table tbody tr').length);
+            console.log('Document rows count:', $('#document-table tbody tr').length);
+            
+            // Check if at least one load leg exists
+            if ($('#load_legs-table tbody tr').length === 0) {
+                e.preventDefault();
+                alert('Please add at least one load leg!');
+                return false;
+            }
+        });
 
         function renumberRows() {
             $('#load_legs-table tbody tr').each(function(i) {
