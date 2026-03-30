@@ -140,16 +140,28 @@
                                                         <tr>
                                                             <td>{{ $load_leg->leg_code }}</td>
                                                             <td>
+                                                                @php
+                                                                    $pickupTitle = $load_leg->pickupLocation?->address ?? $load_leg->pickupLocation?->name;
+                                                                    if ($load_leg->pickupLocation?->city && $load_leg->pickupLocation?->country) {
+                                                                        $pickupTitle = $load_leg->pickupLocation->name . ' - ' . $load_leg->pickupLocation->city->name . ' - ' . $load_leg->pickupLocation->country->name;
+                                                                    }
+                                                                @endphp
                                                                 <span class="badge rounded-circle p-2 badge-primary"
                                                                     data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                    title="{{ $load_leg->pickupLocation?->name }} - {{ $load_leg->pickupLocation?->city->name }} - {{ $load_leg->pickupLocation?->country?->name }}">
+                                                                    title="{{ $pickupTitle }}">
                                                                     <i data-feather="map-pin"></i>
                                                                 </span>
                                                             </td>
                                                             <td>
+                                                                @php
+                                                                    $deliveryTitle = $load_leg->deliveryLocation?->address ?? $load_leg->deliveryLocation?->name;
+                                                                    if ($load_leg->deliveryLocation?->city && $load_leg->deliveryLocation?->country) {
+                                                                        $deliveryTitle = $load_leg->deliveryLocation->name . ' - ' . $load_leg->deliveryLocation->city->name . ' - ' . $load_leg->deliveryLocation->country->name;
+                                                                    }
+                                                                @endphp
                                                                 <span class="badge rounded-circle p-2 badge-primary"
                                                                     data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                    title="{{ $load_leg->deliveryLocation?->name }} - {{ $load_leg->deliveryLocation?->city->name }} - {{ $load_leg->deliveryLocation?->country?->name }}">
+                                                                    title="{{ $deliveryTitle }}">
                                                                     <i data-feather="map-pin"></i>
                                                                 </span>
                                                             </td>
@@ -443,16 +455,28 @@
                                                         <tr>
                                                             <td>{{ $load_leg->leg_code }}</td>
                                                             <td>
+                                                                @php
+                                                                    $pickupTitle = $load_leg->pickupLocation?->address ?? $load_leg->pickupLocation?->name;
+                                                                    if ($load_leg->pickupLocation?->city && $load_leg->pickupLocation?->country) {
+                                                                        $pickupTitle = $load_leg->pickupLocation->name . ' - ' . $load_leg->pickupLocation->city->name . ' - ' . $load_leg->pickupLocation->country->name;
+                                                                    }
+                                                                @endphp
                                                                 <span class="badge rounded-circle p-2 badge-primary"
                                                                     data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                    title="{{ $load_leg->pickupLocation?->name }} - {{ $load_leg->pickupLocation?->city->name }} - {{ $load_leg->pickupLocation?->country?->name }}">
+                                                                    title="{{ $pickupTitle }}">
                                                                     <i data-feather="map-pin"></i>
                                                                 </span>
                                                             </td>
                                                             <td>
+                                                                @php
+                                                                    $deliveryTitle = $load_leg->deliveryLocation?->address ?? $load_leg->deliveryLocation?->name;
+                                                                    if ($load_leg->deliveryLocation?->city && $load_leg->deliveryLocation?->country) {
+                                                                        $deliveryTitle = $load_leg->deliveryLocation->name . ' - ' . $load_leg->deliveryLocation->city->name . ' - ' . $load_leg->deliveryLocation->country->name;
+                                                                    }
+                                                                @endphp
                                                                 <span class="badge rounded-circle p-2 badge-primary"
                                                                     data-bs-toggle="tooltip" data-bs-placement="top"
-                                                                    title="{{ $load_leg->deliveryLocation?->name }} - {{ $load_leg->deliveryLocation?->city->name }} - {{ $load_leg->deliveryLocation?->country?->name }}">
+                                                                    title="{{ $deliveryTitle }}">
                                                                     <i data-feather="map-pin"></i>
                                                                 </span>
                                                             </td>
