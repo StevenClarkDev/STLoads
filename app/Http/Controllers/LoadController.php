@@ -35,8 +35,13 @@ class LoadController extends Controller
             $user = User::find($user_id);
             $role = $user->roles()->first();        // requires HasRoles
             $roleId = $role?->id;
+            
+            // Debug logging
+            \Log::info('LoadController@index - User ID: ' . $user_id . ', Role ID: ' . $roleId);
+            
             if ($roleId == 1) {
                 $load_legs = LoadLeg::all();
+                \Log::info('LoadController@index - Admin: Found ' . $load_legs->count() . ' load legs');
             } else if ($roleId == 3) {
                 $load_legs = LoadLeg::whereNotIn('status_id', [0, 1])
                     ->where(function ($q) use ($user_id) {
@@ -44,13 +49,27 @@ class LoadController extends Controller
                             ->orWhere('booked_carrier_id', $user_id);
                     })
                     ->get();
+                \Log::info('LoadController@index - Carrier: Found ' . $load_legs->count() . ' load legs');
             } else {
-                // $load_legs = LoadLeg::with('load_master')->where('load_master.user_id', $user_id)->get();
+                // Check total LoadLegs vs filtered LoadLegs
+                $total_legs = LoadLeg::count();
+                $legs_with_master = LoadLeg::whereHas('load_master')->count();
+                $legs_with_user = LoadLeg::whereHas('load_master', function ($query) use ($user_id) {
+                    $query->where('user_id', $user_id);
+                })->count();
+                
+                \Log::info('LoadController@index - Shipper Debug:');
+                \Log::info('  Total LoadLegs in DB: ' . $total_legs);
+                \Log::info('  LoadLegs with load_master: ' . $legs_with_master);
+                \Log::info('  LoadLegs matching user_id ' . $user_id . ': ' . $legs_with_user);
+                
                 $load_legs = LoadLeg::with('load_master')
                     ->whereHas('load_master', function ($query) use ($user_id) {
                         $query->where('user_id', $user_id);  // Make sure user_id exists in load_master
                     })
                     ->get();
+                    
+                \Log::info('LoadController@index - Shipper: Found ' . $load_legs->count() . ' load legs for user ' . $user_id);
             }
             $loadCount = $load_legs->count();
             $load_types = LoadType::all();
@@ -172,6 +191,10 @@ class LoadController extends Controller
             $release_load_legs = LoadLeg::where('status_id', 10)->get();
             $pendingLoadCount = $pending_load_legs->count();
             $releasedLoadCount = $release_load_legs->count();
+            
+            // Debug logging
+            \Log::info('LoadController@adminIndex - Total loads: ' . $loadCount . ', Pending: ' . $pendingLoadCount . ', Released: ' . $releasedLoadCount);
+            
             $logsController->createLog(__METHOD__, 'success', 'Admin is attempting to index load in', null, null);
             return view('admin.load', compact('load_legs', 'loadCount', 'pendingLoadCount', 'pending_load_legs', 'release_load_legs', 'releasedLoadCount'));
         } catch (\Exception $e) {
@@ -708,12 +731,16 @@ class LoadController extends Controller
             $load->save();
 
             DB::commit();
+            
+            // Debug logging
+            \Log::info('LoadController@store - Successfully created load ID: ' . $load->id . ', user_id: ' . $load->user_id . ', leg_count: ' . $load->leg_count);
 
             $logsController->createLog(__METHOD__, 'success', 'User has successfully added a load', $load, null);
 
             return redirect()->route('manage-loads')->with('success', 'Load Created Successfully');
         } catch (\Throwable $e) {
             DB::rollBack();
+            \Log::error('LoadController@store - Failed to create load: ' . $e->getMessage());
             $logsController->createLog(__METHOD__, 'error', 'Failed to create load: ' . $e->getMessage(), null, null);
             return back()->withInput()->with('error', 'An error occurred while processing your request. ' . $e->getMessage());
         }
