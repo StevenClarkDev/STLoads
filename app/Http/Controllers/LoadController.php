@@ -708,7 +708,6 @@ class LoadController extends Controller
                 // Create pickup location from Google Maps address
                 $pickupLocation = Locations::create([
                     'name' => $request->pickup_location_address[$i],
-                    'address' => $request->pickup_location_address[$i],
                     'city_id' => $pickupCityId,
                     'country_id' => $pickupCountryId,
                     'user_id' => Auth::id(),
@@ -744,7 +743,6 @@ class LoadController extends Controller
                 // Create delivery location from Google Maps address
                 $deliveryLocation = Locations::create([
                     'name' => $request->delivery_location_address[$i],
-                    'address' => $request->delivery_location_address[$i],
                     'city_id' => $deliveryCityId,
                     'country_id' => $deliveryCountryId,
                     'user_id' => Auth::id(),
