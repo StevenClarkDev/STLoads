@@ -63,6 +63,16 @@ class LoadController extends Controller
                 \Log::info('  LoadLegs with load_master: ' . $legs_with_master);
                 \Log::info('  LoadLegs matching user_id ' . $user_id . ': ' . $legs_with_user);
                 
+                // Check what user_ids actually exist on loads
+                $load_user_ids = Load::pluck('user_id')->unique()->toArray();
+                \Log::info('  All user_ids in loads table: ' . implode(', ', $load_user_ids));
+                
+                // Check the most recent load
+                $latest_load = Load::orderBy('created_at', 'desc')->first();
+                if ($latest_load) {
+                    \Log::info('  Latest load: ID=' . $latest_load->id . ', user_id=' . $latest_load->user_id . ', created_at=' . $latest_load->created_at);
+                }
+                
                 $load_legs = LoadLeg::with('load_master')
                     ->whereHas('load_master', function ($query) use ($user_id) {
                         $query->where('user_id', $user_id);  // Make sure user_id exists in load_master
@@ -580,12 +590,22 @@ class LoadController extends Controller
             $load->user_id = Auth::id();
             $load->status = 1;
 
+            // Debug logging BEFORE save
+            \Log::info('LoadController@store BEFORE save - Auth::id(): ' . Auth::id() . ', $load->user_id: ' . $load->user_id);
+
             // if ($request->hasFile('documents')) {
             //     $path = $request->file('documents')->store('loads/documents', 'public');
             //     $load->document_path = $path;
             // }
 
             $load->save();
+            
+            // Debug logging AFTER save
+            \Log::info('LoadController@store AFTER save - Load ID: ' . $load->id . ', user_id in DB: ' . $load->user_id);
+            
+            // Verify by re-fetching from database
+            $verifyLoad = Load::find($load->id);
+            \Log::info('LoadController@store VERIFY - Re-fetched load user_id: ' . $verifyLoad->user_id);
 
             $names = $request->input('doc_name', []);
             $types = $request->input('doc_type', []);
