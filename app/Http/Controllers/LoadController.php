@@ -710,7 +710,6 @@ class LoadController extends Controller
                     'name' => $request->pickup_location_address[$i],
                     'city_id' => $pickupCityId,
                     'country_id' => $pickupCountryId,
-                    'user_id' => Auth::id(),
                 ]);
                 
                 // Lookup city and country IDs for delivery location
@@ -745,7 +744,6 @@ class LoadController extends Controller
                     'name' => $request->delivery_location_address[$i],
                     'city_id' => $deliveryCityId,
                     'country_id' => $deliveryCountryId,
-                    'user_id' => Auth::id(),
                 ]);
 
                 $loadLeg = new LoadLeg();
