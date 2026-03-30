@@ -273,17 +273,16 @@
             const newRow = `
             <tr>
                 <td>${rowCount}</td>
-                <td><input type="text" name="doc_name[]" class="form-control" required /></td>
+                <td><input type="text" name="doc_name[]" class="form-control" /></td>
                 <td>
-                    <select name="doc_type[]" required class="form-control">
+                    <select name="doc_type[]" class="form-control">
                         <option value="standard">Standard</option>
                         <option value="blockchain">Blockchain</option>
                     </select>
                 </td>
                 <td>
                     <input type="file" name="documents[]" class="form-control"
-                           accept=".pdf,.jpg,.jpeg,.png,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"
-                           required />
+                           accept=".pdf,.jpg,.jpeg,.png,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png" />
                 </td>
                 <td><button type="button" class="btn btn-danger remove-row">Remove</button></td>
             </tr>`;
