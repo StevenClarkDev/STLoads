@@ -447,6 +447,18 @@ class LoadController extends Controller
 
             'delivery_location_address' => ['required', 'array', 'min:1'],
             'delivery_location_address.*' => ['required', 'string', 'max:500'],
+            
+            'pickup_city' => ['nullable', 'array'],
+            'pickup_city.*' => ['nullable', 'string', 'max:255'],
+            
+            'pickup_country' => ['nullable', 'array'],
+            'pickup_country.*' => ['nullable', 'string', 'max:255'],
+            
+            'delivery_city' => ['nullable', 'array'],
+            'delivery_city.*' => ['nullable', 'string', 'max:255'],
+            
+            'delivery_country' => ['nullable', 'array'],
+            'delivery_country.*' => ['nullable', 'string', 'max:255'],
 
             'pickup_date' => ['required', 'array', 'min:1'],
             'pickup_date.*' => ['required', 'date'],
@@ -582,17 +594,77 @@ class LoadController extends Controller
             $legNo = 1;
 
             for ($i = 0; $i < $rowCount; $i++) {
+                // Lookup city and country IDs for pickup location
+                $pickupCityId = null;
+                $pickupCountryId = null;
+                
+                if (!empty($request->pickup_city[$i]) && !empty($request->pickup_country[$i])) {
+                    // Find country first
+                    $pickupCountry = Country::where('name', 'LIKE', '%' . $request->pickup_country[$i] . '%')
+                        ->orWhere('short_name', strtoupper(substr($request->pickup_country[$i], 0, 2)))
+                        ->first();
+                    
+                    if ($pickupCountry) {
+                        $pickupCountryId = $pickupCountry->id;
+                        
+                        // Find or create city
+                        $pickupCity = City::where('country_id', $pickupCountryId)
+                            ->where('name', 'LIKE', '%' . $request->pickup_city[$i] . '%')
+                            ->first();
+                        
+                        if (!$pickupCity) {
+                            $pickupCity = City::create([
+                                'name' => $request->pickup_city[$i],
+                                'country_id' => $pickupCountryId
+                            ]);
+                        }
+                        $pickupCityId = $pickupCity->id;
+                    }
+                }
+                
                 // Create pickup location from Google Maps address
                 $pickupLocation = Locations::create([
                     'name' => $request->pickup_location_address[$i],
                     'address' => $request->pickup_location_address[$i],
+                    'city_id' => $pickupCityId,
+                    'country_id' => $pickupCountryId,
                     'user_id' => Auth::id(),
                 ]);
+                
+                // Lookup city and country IDs for delivery location
+                $deliveryCityId = null;
+                $deliveryCountryId = null;
+                
+                if (!empty($request->delivery_city[$i]) && !empty($request->delivery_country[$i])) {
+                    // Find country first
+                    $deliveryCountry = Country::where('name', 'LIKE', '%' . $request->delivery_country[$i] . '%')
+                        ->orWhere('short_name', strtoupper(substr($request->delivery_country[$i], 0, 2)))
+                        ->first();
+                    
+                    if ($deliveryCountry) {
+                        $deliveryCountryId = $deliveryCountry->id;
+                        
+                        // Find or create city
+                        $deliveryCity = City::where('country_id', $deliveryCountryId)
+                            ->where('name', 'LIKE', '%' . $request->delivery_city[$i] . '%')
+                            ->first();
+                        
+                        if (!$deliveryCity) {
+                            $deliveryCity = City::create([
+                                'name' => $request->delivery_city[$i],
+                                'country_id' => $deliveryCountryId
+                            ]);
+                        }
+                        $deliveryCityId = $deliveryCity->id;
+                    }
+                }
 
                 // Create delivery location from Google Maps address
                 $deliveryLocation = Locations::create([
                     'name' => $request->delivery_location_address[$i],
                     'address' => $request->delivery_location_address[$i],
+                    'city_id' => $deliveryCityId,
+                    'country_id' => $deliveryCountryId,
                     'user_id' => Auth::id(),
                 ]);
 

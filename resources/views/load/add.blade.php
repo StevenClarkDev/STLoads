@@ -203,11 +203,15 @@
           <td style="width: 300px;">
             <input type="text" name="pickup_location_address[]" class="form-control location-autocomplete pickup-location" 
                    placeholder="Search pickup address..." required>
+            <input type="hidden" name="pickup_city[]" class="pickup-city-hidden">
+            <input type="hidden" name="pickup_country[]" class="pickup-country-hidden">
           </td>
 
           <td style="width: 300px;">
             <input type="text" name="delivery_location_address[]" class="form-control location-autocomplete delivery-location" 
                    placeholder="Search delivery address..." required>
+            <input type="hidden" name="delivery_city[]" class="delivery-city-hidden">
+            <input type="hidden" name="delivery_country[]" class="delivery-country-hidden">
           </td>
 
           <td>
@@ -451,6 +455,9 @@
                 fields: ['formatted_address', 'geometry', 'name', 'address_components', 'place_id'],
                 componentRestrictions: { country: ['us', 'ca'] }  // Restrict to US and Canada only
             };
+            
+            // Store address components in hidden inputs
+            $(input).data('address-components', null);
 
             // Try to get user's location for biasing results
             if (navigator.geolocation) {
@@ -502,8 +509,48 @@
                 // Update the input value with formatted address
                 $(input).val(place.formatted_address);
                 
+                // Extract city and country from address_components
+                let city = '';
+                let country = '';
+                let countryShort = '';
+                
+                if (place.address_components) {
+                    place.address_components.forEach(component => {
+                        if (component.types.includes('locality')) {
+                            city = component.long_name;
+                        } else if (component.types.includes('administrative_area_level_1') && !city) {
+                            city = component.long_name; // Fallback to state/province
+                        }
+                        if (component.types.includes('country')) {
+                            country = component.long_name;
+                            countryShort = component.short_name;
+                        }
+                    });
+                }
+                
+                // Store address components in data attribute
+                $(input).data('address-components', {
+                    city: city,
+                    country: country,
+                    countryShort: countryShort,
+                    lat: place.geometry.location.lat(),
+                    lng: place.geometry.location.lng()
+                });
+                
+                // Update hidden inputs for city and country
+                const $row = $(input).closest('tr');
+                if ($(input).hasClass('pickup-location')) {
+                    $row.find('.pickup-city-hidden').val(city);
+                    $row.find('.pickup-country-hidden').val(country);
+                } else if ($(input).hasClass('delivery-location')) {
+                    $row.find('.delivery-city-hidden').val(city);
+                    $row.find('.delivery-country-hidden').val(country);
+                }
+                
                 console.log('Selected location:', {
                     address: place.formatted_address,
+                    city: city,
+                    country: country,
                     lat: place.geometry.location.lat(),
                     lng: place.geometry.location.lng()
                 });
