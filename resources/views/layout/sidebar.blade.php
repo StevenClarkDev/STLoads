@@ -58,12 +58,12 @@
                         </div>
                     </li>
 
-                    <!-- Manage Loads -->
+                    <!-- Loads -->
                     <li class="sidebar-list">
                         <a class="sidebar-link sidebar-title link-nav {{ Request::is('manage-loads') ? 'active' : '' }}"
                             href="{{ url('manage-loads') }}">
-                            <i data-feather="package" class="me-2"></i>
-                            <span>Manage Loads</span>
+                            <i data-feather="truck" class="me-2"></i>
+                            <span>Loads</span>
                         </a>
                     </li>
 
