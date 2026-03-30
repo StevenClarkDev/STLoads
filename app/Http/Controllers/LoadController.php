@@ -550,24 +550,38 @@ class LoadController extends Controller
 
         $validated = $validator->validate();
 
-        if (
-            count($request->input('doc_name', [])) !== count($request->input('doc_type', [])) ||
-            count($request->input('doc_name', [])) !== count($request->file('documents', []))
-        ) {
-            throw ValidationException::withMessages([
-                'documents' => 'Document name, type, and file count must match.',
-            ]);
+        // Only validate document counts if documents were uploaded
+        if ($request->has('doc_name') || $request->hasFile('documents')) {
+            $docNameCount = count($request->input('doc_name', []));
+            $docTypeCount = count($request->input('doc_type', []));
+            $docFileCount = count($request->file('documents', []));
+            
+            if ($docNameCount !== $docTypeCount || $docNameCount !== $docFileCount) {
+                throw ValidationException::withMessages([
+                    'documents' => 'Document name, type, and file count must match.',
+                ]);
+            }
         }
 
         // Make sure all leg arrays have the same length
         $counts = [
-            count($request->pickup_location ?? []),
-            count($request->delivery_location ?? []),
+            count($request->pickup_location_address ?? []),
+            count($request->delivery_location_address ?? []),
             count($request->pickup_date ?? []),
             count($request->delivery_date ?? []),
             count($request->bid_status ?? []),
             count($request->price ?? []),
         ];
+        
+        \Log::info('LoadController@store - Load leg field counts: ' . json_encode([
+            'pickup_location_address' => count($request->pickup_location_address ?? []),
+            'delivery_location_address' => count($request->delivery_location_address ?? []),
+            'pickup_date' => count($request->pickup_date ?? []),
+            'delivery_date' => count($request->delivery_date ?? []),
+            'bid_status' => count($request->bid_status ?? []),
+            'price' => count($request->price ?? []),
+        ]));
+        
         if (count(array_unique($counts)) !== 1) {
             return back()->withInput()->withErrors([
                 'load_legs' => 'Each load leg row must have all fields filled.',
