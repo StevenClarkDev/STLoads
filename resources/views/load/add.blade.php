@@ -342,11 +342,39 @@
                 return;
             }
 
-            // Create the autocomplete object
-            const autocomplete = new google.maps.places.Autocomplete(input, {
+            // Autocomplete configuration with US/Canada restriction
+            const autocompleteOptions = {
                 types: ['address'],
-                fields: ['formatted_address', 'geometry', 'name', 'address_components']
-            });
+                fields: ['formatted_address', 'geometry', 'name', 'address_components'],
+                componentRestrictions: { country: ['us', 'ca'] }  // Restrict to US and Canada only
+            };
+
+            // Try to get user's location for biasing results
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const userLocation = new google.maps.LatLng(
+                            position.coords.latitude,
+                            position.coords.longitude
+                        );
+                        
+                        // Create circle for biasing (500km radius)
+                        autocompleteOptions.bounds = {
+                            north: position.coords.latitude + 4.5,
+                            south: position.coords.latitude - 4.5,
+                            east: position.coords.longitude + 4.5,
+                            west: position.coords.longitude - 4.5
+                        };
+                        autocompleteOptions.strictBounds = false;  // Don't strictly enforce bounds, just bias
+                    },
+                    function(error) {
+                        console.log('Geolocation not available, using default biasing');
+                    }
+                );
+            }
+
+            // Create the autocomplete object
+            const autocomplete = new google.maps.places.Autocomplete(input, autocompleteOptions);
 
             // When user selects a place from dropdown
             autocomplete.addListener('place_changed', function() {

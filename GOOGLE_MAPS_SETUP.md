@@ -64,8 +64,9 @@ When creating a load, users can now:
 
 - **Real-time suggestions**: Google Maps provides location suggestions as the user types
 - **Accurate addresses**: Selected addresses include full formatting from Google Maps
-- **Dual input options**: Users can choose between autocomplete or saved locations
-- **Auto-clear**: Selecting one input method clears the other to avoid confusion
+- **Country restriction**: Only US and Canada addresses are shown in autocomplete results
+- **Location biasing**: Autocomplete prioritizes locations near the user's current location (based on browser geolocation)
+- **Automatic location detection**: When the page loads, the browser requests permission to access the user's location to provide better suggestions
 
 ### Location Storage
 
@@ -101,6 +102,20 @@ When creating a load, users can now:
   - `name` (string)
   - `address` (string)
   - `user_id` (integer)
+
+### Geolocation permission denied
+
+- If the browser blocks location access, the autocomplete will still work but won't prioritize nearby locations
+- To enable geolocation:
+  1. Click the location icon in the browser address bar
+  2. Select "Allow" for location access
+  3. Refresh the page
+- Geolocation is optional - the autocomplete works without it, just without location biasing
+
+### Only showing US/Canada addresses
+
+- This is by design - the autocomplete is configured to only show addresses from the United States and Canada
+- If you need other countries, update the `componentRestrictions` in `resources/views/load/add.blade.php`
 
 ## Billing Information
 
