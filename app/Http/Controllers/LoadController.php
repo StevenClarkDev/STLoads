@@ -80,35 +80,55 @@ class LoadController extends Controller
                     $debug = []; // To store debug info for what is being matched
 
                     // Match Country and City (pickupLocation or deliveryLocation)
-                    $pickupLocationMatch = in_array($load_leg->pickupLocation->country_id, $carrierPreference->country_id) &&
-                        in_array($load_leg->pickupLocation->city_id, $carrierPreference->city_id);
-                    $deliveryLocationMatch = in_array($load_leg->deliveryLocation->country_id, $carrierPreference->country_id) &&
-                        in_array($load_leg->deliveryLocation->city_id, $carrierPreference->city_id);
+                    $pickupLocationMatch = false;
+                    $deliveryLocationMatch = false;
+                    
+                    if ($load_leg->pickupLocation && $load_leg->pickupLocation->country_id && $load_leg->pickupLocation->city_id) {
+                        $pickupLocationMatch = in_array($load_leg->pickupLocation->country_id, $carrierPreference->country_id) &&
+                            in_array($load_leg->pickupLocation->city_id, $carrierPreference->city_id);
+                    }
+                    
+                    if ($load_leg->deliveryLocation && $load_leg->deliveryLocation->country_id && $load_leg->deliveryLocation->city_id) {
+                        $deliveryLocationMatch = in_array($load_leg->deliveryLocation->country_id, $carrierPreference->country_id) &&
+                            in_array($load_leg->deliveryLocation->city_id, $carrierPreference->city_id);
+                    }
 
                     if ($pickupLocationMatch || $deliveryLocationMatch) {
                         $score++;
-                        $debug[] = 'Location matched: ' . ($pickupLocationMatch ? 'Pickup ' : 'Delivery ') .
-                            'Country: ' . $load_leg->pickupLocation->country->name .
-                            ', City: ' . $load_leg->pickupLocation->city->name;
+                        $locationInfo = '';
+                        if ($pickupLocationMatch && $load_leg->pickupLocation->city && $load_leg->pickupLocation->country) {
+                            $locationInfo = 'Pickup - Country: ' . $load_leg->pickupLocation->country->name . ', City: ' . $load_leg->pickupLocation->city->name;
+                        } elseif ($deliveryLocationMatch && $load_leg->deliveryLocation->city && $load_leg->deliveryLocation->country) {
+                            $locationInfo = 'Delivery - Country: ' . $load_leg->deliveryLocation->country->name . ', City: ' . $load_leg->deliveryLocation->city->name;
+                        }
+                        if ($locationInfo) {
+                            $debug[] = 'Location matched: ' . $locationInfo;
+                        }
                     }
 
                     // Match Equipment and Load Type
-                    $equipmentMatch = in_array($load_leg->load_master->equipment_id, (array) $carrierPreference->equipment_id);
-                    $loadTypeMatch = in_array($load_leg->load_master->load_type_id, (array) $carrierPreference->load_type_id);
-                    if ($equipmentMatch) {
-                        $score++;
-                        $debug[] = 'Equipment matched: ' . $load_leg->load_master->equipment->name;
-                    }
-                    if ($loadTypeMatch) {
-                        $score++;
-                        $debug[] = 'Load Type matched: ' . $load_leg->load_master->load_type->name;
-                    }
-
-                    // Match Weight
-                    $weightMatch = $load_leg->load_master->weight <= $carrierPreference->max_weight_capacity;
-                    if ($weightMatch) {
-                        $score++;
-                        $debug[] = 'Weight matched: ' . $load_leg->load_master->weight . ' <= ' . $carrierPreference->max_weight_capacity;
+                    $equipmentMatch = false;
+                    $loadTypeMatch = false;
+                    
+                    if ($load_leg->load_master) {
+                        $equipmentMatch = in_array($load_leg->load_master->equipment_id, (array) $carrierPreference->equipment_id);
+                        $loadTypeMatch = in_array($load_leg->load_master->load_type_id, (array) $carrierPreference->load_type_id);
+                        
+                        if ($equipmentMatch && $load_leg->load_master->equipment) {
+                            $score++;
+                            $debug[] = 'Equipment matched: ' . $load_leg->load_master->equipment->name;
+                        }
+                        if ($loadTypeMatch && $load_leg->load_master->load_type) {
+                            $score++;
+                            $debug[] = 'Load Type matched: ' . $load_leg->load_master->load_type->name;
+                        }
+                        
+                        // Match Weight
+                        $weightMatch = $load_leg->load_master->weight <= $carrierPreference->max_weight_capacity;
+                        if ($weightMatch) {
+                            $score++;
+                            $debug[] = 'Weight matched: ' . $load_leg->load_master->weight . ' <= ' . $carrierPreference->max_weight_capacity;
+                        }
                     }
 
                     // Match Availability Days (pickup or delivery)
