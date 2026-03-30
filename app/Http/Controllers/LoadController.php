@@ -525,11 +525,11 @@ class LoadController extends Controller
             'price' => ['required', 'array', 'min:1'],
             'price.*' => ['required', 'numeric', 'min:0'],
 
-            'doc_name' => 'required|array|min:1',
-            'doc_name.*' => 'required|string|max:255',
-            'doc_type' => 'required|array',
-            'doc_type.*' => ['required', Rule::in(['standard', 'blockchain'])],
-            'documents' => 'required|array|min:1',
+            'doc_name' => 'nullable|array',
+            'doc_name.*' => 'required_with:documents.*|string|max:255',
+            'doc_type' => 'nullable|array',
+            'doc_type.*' => ['required_with:documents.*', Rule::in(['standard', 'blockchain'])],
+            'documents' => 'nullable|array',
             'documents.*' => 'required|file|mimes:jpeg,jpg,png,pdf,docx'
                 . '|mimetypes:image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 . '|max:20480',
@@ -607,17 +607,23 @@ class LoadController extends Controller
             $verifyLoad = Load::find($load->id);
             \Log::info('LoadController@store VERIFY - Re-fetched load user_id: ' . $verifyLoad->user_id);
 
-            $names = $request->input('doc_name', []);
-            $types = $request->input('doc_type', []);
-            $files = $request->file('documents', []);
+            // Process documents only if they were uploaded
+            if ($request->has('doc_name') && $request->hasFile('documents')) {
+                $names = $request->input('doc_name', []);
+                $types = $request->input('doc_type', []);
+                $files = $request->file('documents', []);
 
-            foreach ($names as $i => $name) {
-                $file = $files[$i];
-                $storedPath = $file->store('loads/documents', 'public');
+                foreach ($names as $i => $name) {
+                    if (!isset($files[$i])) {
+                        continue; // Skip if file not uploaded for this index
+                    }
+                    
+                    $file = $files[$i];
+                    $storedPath = $file->store('loads/documents', 'public');
 
-                // $storedPath = $file->store("load_documents/{$load->id}", 'public');
+                    // $storedPath = $file->store("load_documents/{$load->id}", 'public');
 
-                $documentType = strtolower($types[$i] ?? 'standard');
+                    $documentType = strtolower($types[$i] ?? 'standard');
 
                 $payload = [
                     'load_id' => $load->id,
@@ -641,6 +647,7 @@ class LoadController extends Controller
                 }
 
                 LoadDocuments::create($payload);
+                }
             }
 
             $user_id = Auth::user()->id;
