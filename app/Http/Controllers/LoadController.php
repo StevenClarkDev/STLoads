@@ -685,7 +685,6 @@ class LoadController extends Controller
                 if (!empty($request->pickup_city[$i]) && !empty($request->pickup_country[$i])) {
                     // Find country first
                     $pickupCountry = Country::where('name', 'LIKE', '%' . $request->pickup_country[$i] . '%')
-                        ->orWhere('short_name', strtoupper(substr($request->pickup_country[$i], 0, 2)))
                         ->first();
                     
                     if ($pickupCountry) {
@@ -722,7 +721,6 @@ class LoadController extends Controller
                 if (!empty($request->delivery_city[$i]) && !empty($request->delivery_country[$i])) {
                     // Find country first
                     $deliveryCountry = Country::where('name', 'LIKE', '%' . $request->delivery_country[$i] . '%')
-                        ->orWhere('short_name', strtoupper(substr($request->delivery_country[$i], 0, 2)))
                         ->first();
                     
                     if ($deliveryCountry) {
