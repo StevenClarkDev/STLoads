@@ -67,6 +67,15 @@
                         </a>
                     </li>
 
+                    <!-- Add Load Button -->
+                    <li class="sidebar-list">
+                        <a class="sidebar-link sidebar-title link-nav {{ Request::is('loads/add') ? 'active' : '' }}"
+                            href="{{ route('loads.add') }}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; padding: 10px 15px; color: white !important;">
+                            <i data-feather="plus-circle" class="me-2"></i>
+                            <span>Add Load</span>
+                        </a>
+                    </li>
+
                     <!-- Chat -->
                     <li class="sidebar-list">
                         <a class="sidebar-link sidebar-title link-nav {{ Request::is('chat') ? 'active' : '' }}"
