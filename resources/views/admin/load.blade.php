@@ -23,8 +23,14 @@
                                         <button type="button" class="btn btn-sm btn-outline-light rounded-4 border active"
                                             onclick="switchTab(this, 'all')">All Loads ({{ $loadCount }})</button>
                                         <button type="button" class="btn btn-sm btn-outline-light rounded-4 border"
-                                            onclick="switchTab(this, 'pending')">Pending Loads
+                                            onclick="switchTab(this, 'pending')">Pending Approval
                                             ({{ $pendingLoadCount }})</button>
+                                        <button type="button" class="btn btn-sm btn-outline-light rounded-4 border"
+                                            onclick="switchTab(this, 'approved')">Approved/Active
+                                            ({{ $approvedLoadCount }})</button>
+                                        <button type="button" class="btn btn-sm btn-outline-light rounded-4 border"
+                                            onclick="switchTab(this, 'completed')">Completed
+                                            ({{ $completedLoadCount }})</button>
                                         <button type="button" class="btn btn-sm btn-outline-light rounded-4 border"
                                             onclick="switchTab(this, 'release-funds')">Fund Release
                                             ({{ $releasedLoadCount }})</button>
@@ -250,6 +256,174 @@
                                     </div>
                                 </div>
                                 
+<!-- Approved/Active Loads Tab -->
+<div class="tab-pane fade" id="tab-approved">
+    <div class="table-responsive">
+        <table class="table table-striped align-middle text-nowrap" id="user-approved-table"
+            style="font-size: 0.875rem;">
+            <thead class="bg-white" style="position: sticky; top: 0; z-index: 2;">
+                <tr>
+                    <th>Load ID</th>
+                    <th>Origin</th>
+                    <th>Destination</th>
+                    <th>Pickup Date</th>
+                    <th>Delivery Date</th>
+                    <th>Status</th>
+                    <th>Bid Status</th>
+                    <th>Amount</th>
+                    <th>Carrier</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if(count($approved_load_legs) > 0)
+                    @foreach ($approved_load_legs as $i => $load_leg)
+                        <tr>
+                            <td>{{ $load_leg->leg_code }}</td>
+                            <td>
+                                @php
+                                    $pickupTitle = $load_leg->pickupLocation?->name;
+                                    if ($load_leg->pickupLocation?->city && $load_leg->pickupLocation?->country) {
+                                        $pickupTitle = $load_leg->pickupLocation->city->name . ', ' . $load_leg->pickupLocation->country->name;
+                                    }
+                                @endphp
+                                <span class="badge rounded-circle p-2 badge-primary me-1"
+                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                    title="{{ $load_leg->pickupLocation?->name }}">
+                                    <i data-feather="map-pin"></i>
+                                </span>
+                                <span class="text-nowrap">{{ $pickupTitle }}</span>
+                            </td>
+                            <td>
+                                @php
+                                    $deliveryTitle = $load_leg->deliveryLocation?->name;
+                                    if ($load_leg->deliveryLocation?->city && $load_leg->deliveryLocation?->country) {
+                                        $deliveryTitle = $load_leg->deliveryLocation->city->name . ', ' . $load_leg->deliveryLocation->country->name;
+                                    }
+                                @endphp
+                                <span class="badge rounded-circle p-2 badge-primary me-1"
+                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                    title="{{ $load_leg->deliveryLocation?->name }}">
+                                    <i data-feather="map-pin"></i>
+                                </span>
+                                <span class="text-nowrap">{{ $deliveryTitle }}</span>
+                            </td>
+                            <td>{{ \Carbon\Carbon::parse($load_leg->pickup_date)->format('jS M, Y') }}</td>
+                            <td>{{ \Carbon\Carbon::parse($load_leg->delivery_date)->format('jS M, Y') }}</td>
+                            <td>
+                                <span class="badge rounded-pill bg-success p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
+                            </td>
+                            <td>
+                                @if ($load_leg->bid_status == 'Fixed')
+                                    <span class="badge rounded-pill bg-primary p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
+                                @else
+                                    <span class="badge rounded-pill bg-info p-2 text-capitalize">{{ $load_leg->bid_status }}</span>
+                                @endif
+                            </td>
+                            <td>
+                                <button class="btn btn-outline-primary btn-sm fix-width">
+                                    ${{ number_format($load_leg->booked_amount ?? $load_leg->price ?? 0, 0) }}
+                                </button>
+                            </td>
+                            <td>{{ $load_leg->carrier?->name ?? '-' }}</td>
+                            <td class="d-flex gap-1">
+                                <a href="{{ route('admin.loads.view', $load_leg->load_master->id) }}"
+                                    class="btn btn-info btn-sm w-80">Profile</a>
+                                <a href="{{ route('leg.track', $load_leg->id) }}" 
+                                    class="btn btn-success btn-sm w-80" target="_blank">Track</a>
+                            </td>
+                        </tr>
+                    @endforeach
+                @else
+                    <tr>
+                        <td colspan="10" class="text-center py-4">No approved/active loads found.</td>
+                    </tr>
+                @endif
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Completed Loads Tab -->
+<div class="tab-pane fade" id="tab-completed">
+    <div class="table-responsive">
+        <table class="table table-striped align-middle text-nowrap" id="user-completed-table"
+            style="font-size: 0.875rem;">
+            <thead class="bg-white" style="position: sticky; top: 0; z-index: 2;">
+                <tr>
+                    <th>Load ID</th>
+                    <th>Origin</th>
+                    <th>Destination</th>
+                    <th>Pickup Date</th>
+                    <th>Delivery Date</th>
+                    <th>Status</th>
+                    <th>Amount</th>
+                    <th>Carrier</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if(count($completed_load_legs) > 0)
+                    @foreach ($completed_load_legs as $i => $load_leg)
+                        <tr>
+                            <td>{{ $load_leg->leg_code }}</td>
+                            <td>
+                                @php
+                                    $pickupTitle = $load_leg->pickupLocation?->name;
+                                    if ($load_leg->pickupLocation?->city && $load_leg->pickupLocation?->country) {
+                                        $pickupTitle = $load_leg->pickupLocation->city->name . ', ' . $load_leg->pickupLocation->country->name;
+                                    }
+                                @endphp
+                                <span class="badge rounded-circle p-2 badge-primary me-1"
+                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                    title="{{ $load_leg->pickupLocation?->name }}">
+                                    <i data-feather="map-pin"></i>
+                                </span>
+                                <span class="text-nowrap">{{ $pickupTitle }}</span>
+                            </td>
+                            <td>
+                                @php
+                                    $deliveryTitle = $load_leg->deliveryLocation?->name;
+                                    if ($load_leg->deliveryLocation?->city && $load_leg->deliveryLocation?->country) {
+                                        $deliveryTitle = $load_leg->deliveryLocation->city->name . ', ' . $load_leg->deliveryLocation->country->name;
+                                    }
+                                @endphp
+                                <span class="badge rounded-circle p-2 badge-primary me-1"
+                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                    title="{{ $load_leg->deliveryLocation?->name }}">
+                                    <i data-feather="map-pin"></i>
+                                </span>
+                                <span class="text-nowrap">{{ $deliveryTitle }}</span>
+                            </td>
+                            <td>{{ \Carbon\Carbon::parse($load_leg->pickup_date)->format('jS M, Y') }}</td>
+                            <td>{{ \Carbon\Carbon::parse($load_leg->delivery_date)->format('jS M, Y') }}</td>
+                            <td>
+                                <span class="badge rounded-pill bg-secondary p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
+                            </td>
+                            <td>
+                                <button class="btn btn-outline-primary btn-sm fix-width">
+                                    ${{ number_format($load_leg->booked_amount ?? $load_leg->price ?? 0, 0) }}
+                                </button>
+                            </td>
+                            <td>{{ $load_leg->carrier?->name ?? '-' }}</td>
+                            <td class="d-flex gap-1">
+                                <a href="{{ route('admin.loads.view', $load_leg->load_master->id) }}"
+                                    class="btn btn-info btn-sm w-80">Profile</a>
+                                <a href="{{ route('leg.track', $load_leg->id) }}" 
+                                    class="btn btn-success btn-sm w-80" target="_blank">Track</a>
+                            </td>
+                        </tr>
+                    @endforeach
+                @else
+                    <tr>
+                        <td colspan="9" class="text-center py-4">No completed loads found.</td>
+                    </tr>
+                @endif
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <div class="tab-pane fade" id="tab-release-funds">
     <div class="table-responsive">
         <table class="table table-striped align-middle text-nowrap" id="user-pending-table"
@@ -388,7 +562,7 @@
             if (searchInput) {
                 searchInput.addEventListener('keyup', function() {
                     const filter = this.value.toLowerCase();
-                    const tables = ['user-approval-table', 'user-pending-table', 'user-release-table'];
+                    const tables = ['user-approval-table', 'user-pending-table', 'user-approved-table', 'user-completed-table', 'user-release-table'];
                     
                     tables.forEach(tableId => {
                         const table = document.getElementById(tableId);

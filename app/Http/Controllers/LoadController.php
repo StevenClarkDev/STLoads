@@ -198,15 +198,19 @@ class LoadController extends Controller
             $load_legs = LoadLeg::all();
             $loadCount = $load_legs->count();
             $pending_load_legs = LoadLeg::where('status_id', 1)->get();
+            $approved_load_legs = LoadLeg::whereIn('status_id', [2, 3, 4, 5, 6, 8, 9])->get(); // Approved and in-progress loads
             $release_load_legs = LoadLeg::where('status_id', 10)->get();
+            $completed_load_legs = LoadLeg::where('status_id', 11)->get(); // Completed loads
             $pendingLoadCount = $pending_load_legs->count();
+            $approvedLoadCount = $approved_load_legs->count();
             $releasedLoadCount = $release_load_legs->count();
+            $completedLoadCount = $completed_load_legs->count();
             
             // Debug logging
-            \Log::info('LoadController@adminIndex - Total loads: ' . $loadCount . ', Pending: ' . $pendingLoadCount . ', Released: ' . $releasedLoadCount);
+            \Log::info('LoadController@adminIndex - Total loads: ' . $loadCount . ', Pending: ' . $pendingLoadCount . ', Approved: ' . $approvedLoadCount . ', Released: ' . $releasedLoadCount . ', Completed: ' . $completedLoadCount);
             
             $logsController->createLog(__METHOD__, 'success', 'Admin is attempting to index load in', null, null);
-            return view('admin.load', compact('load_legs', 'loadCount', 'pendingLoadCount', 'pending_load_legs', 'release_load_legs', 'releasedLoadCount'));
+            return view('admin.load', compact('load_legs', 'loadCount', 'pendingLoadCount', 'pending_load_legs', 'approved_load_legs', 'approvedLoadCount', 'release_load_legs', 'releasedLoadCount', 'completed_load_legs', 'completedLoadCount'));
         } catch (\Exception $e) {
             $logsController->createLog(__METHOD__, 'error', 'Failed to create log entry: ' . $e->getMessage(), null, null);
             return redirect()->back()->with('error', 'An error occurred while processing your request.' . $e->getMessage());
