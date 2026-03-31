@@ -500,7 +500,6 @@ feather.replace();
 
 ### Planned Features
 - [ ] Notification center dropdown
-- [ ] Dark mode toggle
 - [ ] Advanced search with filters
 - [ ] Bulk action toasts
 - [ ] Real-time load status updates
@@ -509,6 +508,76 @@ feather.replace();
 - [ ] Drag-and-drop file uploads with progress
 - [ ] Advanced data tables with sorting/filtering
 - [ ] Charts and analytics dashboard
+
+---
+
+## 🌓 Dark Mode System
+
+### Overview
+ST Loads now features a comprehensive dark mode system that preserves the blue background theme while converting all UI elements to a dark color scheme.
+
+### Features
+- **Persistent State**: Remembers user preference via localStorage
+- **Toggle Button**: Accessible in top-right corner of both user and admin portals
+- **Smooth Transitions**: 0.3s ease transitions between modes
+- **Icon Indicators**: Moon icon for light mode, Sun icon for dark mode
+- **Toast Notifications**: Optional notifications on theme change
+- **Full Coverage**: Affects sidebar, cards, tables, forms, modals, and more
+
+### Usage
+Click the moon/sun icon in the top-right corner of the header to toggle dark mode. Your preference is automatically saved and will persist across sessions.
+
+### What Changes in Dark Mode
+✅ **Sidebar**: Dark gradient background (#1a1a2e → #16213e)  
+✅ **Cards**: Dark gradient (#1f2937 → #1a202c)  
+✅ **Tables**: Dark backgrounds with subtle borders  
+✅ **Forms**: Dark inputs with light text  
+✅ **Modals**: Dark backgrounds matching card theme  
+✅ **Dropdowns**: Consistent dark styling  
+✅ **Breadcrumbs**: Dark with light text  
+
+❌ **Background**: Stays blue theme (as requested)  
+❌ **Badges**: Keep original colors for clarity  
+❌ **Primary Buttons**: Maintain purple gradient  
+
+### Color Palette
+- **Background Gradient**: `#1a1a2e` → `#16213e` (sidebar), `#1f2937` → `#1a202c` (cards)
+- **Text**: `#e0e0e0` (primary), `#fff` (headings)
+- **Borders**: `rgba(255, 255, 255, 0.1)`
+- **Hover**: `rgba(115, 102, 255, 0.2)`
+- **Active**: Purple gradient maintained (`#7366ff` → `#5e54d9`)
+
+### Technical Details
+```html
+<!-- Toggle Button (automatically included in header) -->
+<button class="mode-toggle-btn" id="darkModeToggle">
+    <i data-feather="moon" class="moon-icon"></i>
+    <i data-feather="sun" class="sun-icon d-none"></i>
+</button>
+```
+
+```javascript
+// Check current state
+const isDarkMode = document.body.classList.contains('dark-mode');
+
+// Manually toggle (if needed in custom scripts)
+document.body.classList.toggle('dark-mode');
+localStorage.setItem('darkMode', 'enabled'); // or 'disabled'
+```
+
+```css
+/* Custom dark mode styles for your components */
+body.dark-mode .your-component {
+    background: rgba(255, 255, 255, 0.05);
+    color: #e0e0e0;
+}
+```
+
+### Browser Support
+- Chrome/Edge: Full support
+- Firefox: Full support
+- Safari: Full support
+- IE11: Graceful degradation (no localStorage persistence)
 
 ---
 
