@@ -50,6 +50,9 @@
 </head>
 
 <body>
+    <!-- Toast Container -->
+    @include('components.toast-container')
+    
     <div class="main-wrapper d-flex flex-column min-vh-100"
         style="background: url('{{ url('assets/images/login/texture-bg.jpg') }}') no-repeat center center / cover;">
 
