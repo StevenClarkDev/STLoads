@@ -138,7 +138,7 @@
                 </div>
                 <div class="card-body">
                     <div class="table-responsive user-datatable">
-                        <div style="max-height: 500px; overflow: auto;">
+                        <div style="max-height: 800px; overflow: auto;">
                             <table class="table table-striped align-middle text-nowrap" id="user-approval-table">
                                 <thead>
                                     <tr>
