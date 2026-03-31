@@ -1769,16 +1769,16 @@ svg.f-light {
 }
 
 .btn-warning {
-  background-color: #FFAA05 !important;
-  border-color: #FFAA05 !important;
+  background-color: #fecd6b !important;
+  border-color: #fecd6b !important;
   -webkit-tap-highlight-color: transparent;
   transform: translateZ(0);
 }
 
 .btn-warning.disabled,
 .btn-warning:disabled {
-  background-color: #FFAA05 !important;
-  border-color: #FFAA05 !important;
+  background-color: #fecd6b !important;
+  border-color: #fecd6b !important;
 }
 
 .btn-warning:focus {

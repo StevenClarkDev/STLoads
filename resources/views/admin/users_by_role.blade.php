@@ -17,7 +17,7 @@
                     </div>
                     <div class="card-body">
                         <div class="table-responsive user-datatable">
-                            <div style="height: 800px; overflow-y: auto;">
+                            <div style="max-height: 800px; min-height: 210px; overflow-y: auto;">
                                 <div class="table-responsive">
                                     <table class="table table-striped align-middle text-nowrap" id="user-approval-table"
                                         style="font-size: 0.875rem;">

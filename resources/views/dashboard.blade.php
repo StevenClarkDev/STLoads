@@ -235,7 +235,7 @@
                                         </div>
                                         <span class="ms-auto">
                                             <!-- Open the document in a new window -->
-                                            <a href="{{ asset('storage/' . $doc->file_path) }}" target="_blank"
+                                            <a href="{{ route('admin.serve-kyc-file', ['path' => $doc->file_path]) }}" target="_blank"
                                                 data-bs-toggle="tooltip" data-bs-placement="top" title="View Document">
                                                 <i data-feather="eye" class="badge rounded-circle p-2 badge-primary"></i>
                                             </a>

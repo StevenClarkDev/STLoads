@@ -100,7 +100,7 @@
                             @forelse ($load->loadDocuments as $i => $doc)
                                 @php
                                     $exists = $doc->file_path && Storage::disk('public')->exists($doc->file_path);
-                                    $url = $exists ? $doc->file_url : null;
+                                    $url = $exists ? route('admin.serve-kyc-file', ['path' => $doc->file_path]) : null;
                                     $ext = $doc->original_name
                                         ? strtolower(pathinfo($doc->original_name, PATHINFO_EXTENSION))
                                         : null;

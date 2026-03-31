@@ -131,7 +131,7 @@
                         @forelse($documents as $doc)
                             <div class="mb-2">
                                 <strong>{{ ucwords(str_replace('_', ' ', $doc->type)) }}</strong><br>
-                                <a href="{{ asset('storage/' . $doc->path) }}" target="_blank">
+                                <a href="{{ route('admin.serve-kyc-file', ['path' => $doc->path]) }}" target="_blank">
                                     View document
                                 </a>
                             </div>
