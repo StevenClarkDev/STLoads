@@ -126,8 +126,15 @@
         <div class="col-12">
             <div class="card">
                 <div class="card-header pb-0 card-no-border">
-                    <h4>User Approval List</h4>
-                    <span>Approve or reject users below.</span>
+                    <div class="d-flex justify-content-between align-items-center flex-wrap">
+                        <div>
+                            <h4>User Approval List</h4>
+                            <span>Approve or reject users below.</span>
+                        </div>
+                        <div class="mb-2" style="min-width: 300px;">
+                            <input type="text" id="searchUserApproval" class="form-control form-control-sm" placeholder="Search by Name, Email, Role...">
+                        </div>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive user-datatable">
@@ -215,4 +222,32 @@
             </div>
         </div>
     </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Search functionality for User Approval table
+        const searchInput = document.getElementById('searchUserApproval');
+        const table = document.getElementById('user-approval-table');
+        
+        if (searchInput && table) {
+            searchInput.addEventListener('keyup', function() {
+                const filter = this.value.toLowerCase();
+                const rows = table.querySelectorAll('tbody tr');
+                
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    let found = false;
+                    
+                    cells.forEach(cell => {
+                        if (cell.textContent.toLowerCase().includes(filter)) {
+                            found = true;
+                        }
+                    });
+                    
+                    row.style.display = found ? '' : 'none';
+                });
+            });
+        }
+    });
+</script>
 @endsection

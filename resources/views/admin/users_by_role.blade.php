@@ -5,8 +5,15 @@
             <div class="card-body p-0">
                 <div class="card mx-3">
                     <div class="card-header pb-0 card-no-border">
-                        <h4>{{ $role->name }}s List</h4>
-                        <span>See registered users below.</span>
+                        <div class="d-flex justify-content-between align-items-center flex-wrap">
+                            <div>
+                                <h4>{{ $role->name }}s List</h4>
+                                <span>See registered users below.</span>
+                            </div>
+                            <div class="mb-2" style="min-width: 300px;">
+                                <input type="text" id="searchUsersByRole" class="form-control form-control-sm" placeholder="Search by Name, Email, Role...">
+                            </div>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive user-datatable">
@@ -98,6 +105,34 @@
             </div> <!-- outer card-body -->
         </div> <!-- outer card -->
     </div> <!-- col -->
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Search functionality for Users by Role table
+        const searchInput = document.getElementById('searchUsersByRole');
+        const table = document.getElementById('user-approval-table');
+        
+        if (searchInput && table) {
+            searchInput.addEventListener('keyup', function() {
+                const filter = this.value.toLowerCase();
+                const rows = table.querySelectorAll('tbody tr');
+                
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    let found = false;
+                    
+                    cells.forEach(cell => {
+                        if (cell.textContent.toLowerCase().includes(filter)) {
+                            found = true;
+                        }
+                    });
+                    
+                    row.style.display = found ? '' : 'none';
+                });
+            });
+        }
+    });
+</script>
 @endsection
 
 <!-- Contact Modal -->

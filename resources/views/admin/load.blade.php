@@ -12,6 +12,9 @@
                                         <h4 class="mb-1 text-start">Loads List</h4>
                                         <span>See Registered Loads below.</span>
                                     </div>
+                                    <div class="mb-2" style="min-width: 300px;">
+                                        <input type="text" id="searchManageLoads" class="form-control form-control-sm" placeholder="Search by Load ID, Customer, Carrier, Status...">
+                                    </div>
                                 </div>
                             </div>
                             <div class="card-body">
@@ -379,6 +382,36 @@
     <script src="https://unpkg.com/feather-icons"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // --- Search functionality for Manage Loads ---
+            const searchInput = document.getElementById('searchManageLoads');
+            
+            if (searchInput) {
+                searchInput.addEventListener('keyup', function() {
+                    const filter = this.value.toLowerCase();
+                    const tables = ['user-approval-table', 'user-pending-table', 'user-release-table'];
+                    
+                    tables.forEach(tableId => {
+                        const table = document.getElementById(tableId);
+                        if (table) {
+                            const rows = table.querySelectorAll('tbody tr');
+                            
+                            rows.forEach(row => {
+                                const cells = row.querySelectorAll('td');
+                                let found = false;
+                                
+                                cells.forEach(cell => {
+                                    if (cell.textContent.toLowerCase().includes(filter)) {
+                                        found = true;
+                                    }
+                                });
+                                
+                                row.style.display = found ? '' : 'none';
+                            });
+                        }
+                    });
+                });
+            }
+
             // --- Tabs ---
             window.switchTab = function(btn, tabType) {
                 // limit to these buttons only

@@ -5,14 +5,19 @@
         <div class="card">
             <div class="card-body p-0">
                 <div class="card mx-3">
-                    <div class="card-header pb-0 card-no-border d-flex justify-content-between align-items-center">
-                        <div>
-                            <h4>All Users</h4>
-                            <span>Manage all registered users across all roles</span>
+                    <div class="card-header pb-0 card-no-border">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap">
+                            <div>
+                                <h4>All Users</h4>
+                                <span>Manage all registered users across all roles</span>
+                            </div>
+                            <div class="d-flex gap-2 align-items-center">
+                                <input type="text" id="searchAllUsers" class="form-control form-control-sm" placeholder="Search by Name, Email, Role..." style="min-width: 250px;">
+                                <a class="btn btn-success btn-sm" href="{{ route('users.create') }}">
+                                    <i class="fa fa-plus"></i> Create New User
+                                </a>
+                            </div>
                         </div>
-                        <a class="btn btn-success btn-sm" href="{{ route('users.create') }}">
-                            <i class="fa fa-plus"></i> Create New User
-                        </a>
                     </div>
 
                     @session('success')
@@ -117,6 +122,34 @@
             </div> <!-- outer card-body -->
         </div> <!-- outer card -->
     </div> <!-- col -->
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Search functionality for All Users table
+        const searchInput = document.getElementById('searchAllUsers');
+        const table = document.querySelector('.table');
+        
+        if (searchInput && table) {
+            searchInput.addEventListener('keyup', function() {
+                const filter = this.value.toLowerCase();
+                const rows = table.querySelectorAll('tbody tr');
+                
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    let found = false;
+                    
+                    cells.forEach(cell => {
+                        if (cell.textContent.toLowerCase().includes(filter)) {
+                            found = true;
+                        }
+                    });
+                    
+                    row.style.display = found ? '' : 'none';
+                });
+            });
+        }
+    });
+</script>
 @endsection
 
 <!-- User Profile Modal -->
