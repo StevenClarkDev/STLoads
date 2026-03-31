@@ -45,6 +45,8 @@
     <link id="color" rel="stylesheet" href="{{ url('assets/css/color-1.css') }}" media="screen">
     <!-- Responsive css-->
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/custom-responsive.css') }}">
+    <!-- Dark Mode css-->
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/dark-mode.css') }}">
     <!-- <link rel="stylesheet" type="text/css" href="{{ url('assets/css/responsive.css') }}"> -->
 
 </head>
@@ -56,9 +58,14 @@
     <div class="main-wrapper d-flex flex-column min-vh-100"
         style="background: url('{{ url('assets/images/login/texture-bg.jpg') }}') no-repeat center center / cover;">
 
-        <!-- Logo -->
-        <div class="d-flex justify-content-center align-items-start pt-4 my-4" style="height: 100px;">
+        <!-- Logo and Header -->
+        <div class="d-flex justify-content-between align-items-center pt-4 px-4 my-4">
+            <div style="width: 40px;"></div> <!-- Spacer for centering -->
             <img src="{{ url('assets/images/logo/logo-white.png') }}" alt="Logo" style="height: 100px;">
+            <button class="mode-toggle-btn admin-dark-toggle" id="darkModeToggle" type="button" title="Toggle Dark Mode">
+                <i data-feather="moon" class="moon-icon"></i>
+                <i data-feather="sun" class="sun-icon d-none"></i>
+            </button>
         </div>
 
         <!-- Main Content -->
@@ -175,6 +182,59 @@
             });
         </script>
     @endif
+    
+    <!-- Dark Mode Toggle Script -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const darkModeToggle = document.getElementById('darkModeToggle');
+            const body = document.body;
+            const moonIcon = document.querySelector('.moon-icon');
+            const sunIcon = document.querySelector('.sun-icon');
+            
+            // Check for saved dark mode preference
+            const isDarkMode = localStorage.getItem('darkMode') === 'enabled';
+            
+            // Apply saved preference on load
+            if (isDarkMode) {
+                body.classList.add('dark-mode');
+                if (moonIcon) moonIcon.classList.add('d-none');
+                if (sunIcon) sunIcon.classList.remove('d-none');
+            }
+            
+            // Toggle dark mode
+            if (darkModeToggle) {
+                darkModeToggle.addEventListener('click', function() {
+                    body.classList.toggle('dark-mode');
+                    
+                    if (body.classList.contains('dark-mode')) {
+                        localStorage.setItem('darkMode', 'enabled');
+                        if (moonIcon) moonIcon.classList.add('d-none');
+                        if (sunIcon) sunIcon.classList.remove('d-none');
+                        
+                        // Show toast notification
+                        if (typeof toastInfo === 'function') {
+                            toastInfo('Dark mode enabled', 'Theme');
+                        }
+                    } else {
+                        localStorage.setItem('darkMode', 'disabled');
+                        if (moonIcon) moonIcon.classList.remove('d-none');
+                        if (sunIcon) sunIcon.classList.add('d-none');
+                        
+                        // Show toast notification
+                        if (typeof toastInfo === 'function') {
+                            toastInfo('Light mode enabled', 'Theme');
+                        }
+                    }
+                    
+                    // Re-initialize feather icons after toggle
+                    if (typeof feather !== 'undefined') {
+                        feather.replace();
+                    }
+                });
+            }
+        });
+    </script>
+    
     @stack('scripts')
 
 </body>

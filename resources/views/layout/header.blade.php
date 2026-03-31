@@ -202,6 +202,15 @@
                         </ul>
                     </div>
                 </li> -->
+                
+                <!-- Dark Mode Toggle -->
+                <li class="dark-mode-toggle">
+                    <button class="mode-toggle-btn" id="darkModeToggle" type="button" title="Toggle Dark Mode">
+                        <i data-feather="moon" class="moon-icon"></i>
+                        <i data-feather="sun" class="sun-icon d-none"></i>
+                    </button>
+                </li>
+                
                 <li class="profile-nav onhover-dropdown pe-0 py-0">
                     <div class="media profile-media">
                         <img class="b-r-10" src="{{ url('assets/images/dashboard/profile.png') }}" alt="">

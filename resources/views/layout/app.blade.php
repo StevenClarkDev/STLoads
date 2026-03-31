@@ -52,6 +52,8 @@
     <link id="color" rel="stylesheet" href="{{ url('assets/css/color-1.css') }}" media="screen">
     <!-- Responsive css-->
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/responsive.css') }}">
+    <!-- Dark Mode css-->
+    <link rel="stylesheet" type="text/css" href="{{ url('assets/css/dark-mode.css') }}">
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <style>.msger-inputarea { position: relative; }</style>
 </head>
@@ -152,6 +154,58 @@
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pusher-js@8/dist/web/pusher.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1/dist/echo.iife.js"></script>
+    
+    <!-- Dark Mode Toggle Script -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const darkModeToggle = document.getElementById('darkModeToggle');
+            const body = document.body;
+            const moonIcon = document.querySelector('.moon-icon');
+            const sunIcon = document.querySelector('.sun-icon');
+            
+            // Check for saved dark mode preference
+            const isDarkMode = localStorage.getItem('darkMode') === 'enabled';
+            
+            // Apply saved preference on load
+            if (isDarkMode) {
+                body.classList.add('dark-mode');
+                moonIcon.classList.add('d-none');
+                sunIcon.classList.remove('d-none');
+            }
+            
+            // Toggle dark mode
+            if (darkModeToggle) {
+                darkModeToggle.addEventListener('click', function() {
+                    body.classList.toggle('dark-mode');
+                    
+                    if (body.classList.contains('dark-mode')) {
+                        localStorage.setItem('darkMode', 'enabled');
+                        moonIcon.classList.add('d-none');
+                        sunIcon.classList.remove('d-none');
+                        
+                        // Show toast notification
+                        if (typeof toastInfo === 'function') {
+                            toastInfo('Dark mode enabled', 'Theme');
+                        }
+                    } else {
+                        localStorage.setItem('darkMode', 'disabled');
+                        moonIcon.classList.remove('d-none');
+                        sunIcon.classList.add('d-none');
+                        
+                        // Show toast notification
+                        if (typeof toastInfo === 'function') {
+                            toastInfo('Light mode enabled', 'Theme');
+                        }
+                    }
+                    
+                    // Re-initialize feather icons after toggle
+                    if (typeof feather !== 'undefined') {
+                        feather.replace();
+                    }
+                });
+            }
+        });
+    </script>
 
     <script src="{{ url('assets/js/datepicker/date-picker/datepicker.js') }}"></script>
     <script src="{{ url('assets/js/datepicker/date-picker/datepicker.en.js') }}"></script>
