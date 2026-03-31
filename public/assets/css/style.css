@@ -50915,7 +50915,7 @@ html[dir=rtl] body.dark-only .page-wrapper .page-body-wrapper .page-body .card:n
 }
 
 .table-responsive {
-  max-height: 250px;
+  max-height: 800px;
   overflow-y: auto;
   overflow-x: auto;
 }
