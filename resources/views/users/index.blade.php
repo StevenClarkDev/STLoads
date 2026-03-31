@@ -29,7 +29,7 @@
 
                     <div class="card-body">
                         <div class="table-responsive user-datatable">
-                            <div style="max-height: 800px; min-height: 210px; overflow-y: auto;">
+                            <div style="height: 800px; overflow-y: auto;">
                                 <div class="table-responsive">
                                     <table class="table table-striped align-middle text-nowrap" 
                                         style="font-size: 0.875rem;">
