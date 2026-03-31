@@ -25,10 +25,11 @@ class UserController extends Controller
      */
     public function index(Request $request): View
     {
-        $data = User::latest()->paginate(20);
+        $perPage = $request->input('per_page', 10);
+        $data = User::latest()->paginate($perPage);
 
         return view('users.index', compact('data'))
-            ->with('i', ($request->input('page', 1) - 1) * 20);
+            ->with('i', ($request->input('page', 1) - 1) * $perPage);
     }
 
     /**

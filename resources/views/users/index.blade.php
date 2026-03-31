@@ -29,7 +29,7 @@
 
                     <div class="card-body">
                         <div class="table-responsive user-datatable">
-                            <div style="height: 800px; overflow-y: auto;">
+                            <div style="max-height: 800px; min-height: 210px; overflow-y: auto;">
                                 <div class="table-responsive">
                                     <table class="table table-striped align-middle text-nowrap" 
                                         style="font-size: 0.875rem;">
@@ -114,8 +114,20 @@
                             </div>
                         </div>
 
-                        <div class="mt-3">
-                            {!! $data->links('pagination::bootstrap-5') !!}
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <div class="d-flex align-items-center gap-2">
+                                <label class="mb-0 text-muted small">Show:</label>
+                                <select id="perPageSelect" class="form-select form-select-sm" style="width: auto;" onchange="changePerPage(this.value)">
+                                    <option value="10" {{ request('per_page', 10) == 10 ? 'selected' : '' }}>10</option>
+                                    <option value="20" {{ request('per_page', 10) == 20 ? 'selected' : '' }}>20</option>
+                                    <option value="50" {{ request('per_page', 10) == 50 ? 'selected' : '' }}>50</option>
+                                    <option value="100" {{ request('per_page', 10) == 100 ? 'selected' : '' }}>100</option>
+                                </select>
+                                <span class="text-muted small">entries per page</span>
+                            </div>
+                            <div>
+                                {!! $data->appends(['per_page' => request('per_page', 10)])->links('pagination::bootstrap-5') !!}
+                            </div>
                         </div>
                     </div> <!-- end card-body -->
                 </div> <!-- inner card -->
@@ -124,6 +136,13 @@
     </div> <!-- col -->
 
 <script>
+    function changePerPage(value) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('per_page', value);
+        url.searchParams.delete('page'); // Reset to page 1 when changing per_page
+        window.location.href = url.toString();
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
         // Search functionality for All Users table
         const searchInput = document.getElementById('searchAllUsers');
