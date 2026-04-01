@@ -55,7 +55,22 @@
     <!-- Dark Mode css-->
     <link rel="stylesheet" type="text/css" href="{{ url('assets/css/dark-mode.css') }}">
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-    <style>.msger-inputarea { position: relative; }</style>
+    <style>
+        .msger-inputarea { position: relative; }
+
+        /* Fix: sidebar nav arrows appear inline to the right of text */
+        .sidebar-list .sidebar-link {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+        }
+        .sidebar-list .sidebar-link .sidebar-badge {
+            display: flex !important;
+            align-items: center !important;
+            margin-left: auto !important;
+            gap: 4px;
+        }
+    </style>
 </head>
 
 <body onload="startTime()">

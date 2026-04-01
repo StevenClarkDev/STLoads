@@ -314,6 +314,10 @@ class AuthController extends Controller
             return view('auth.carrier_register', compact('id', 'role_name'));
         }
 
+        if ($id == 4) {
+            return view('auth.broker_register', compact('id', 'role_name'));
+        }
+
         if ($id == 5) {
             return view('auth.freight_forwarder_register', compact('id', 'role_name'));
         }
@@ -482,12 +486,12 @@ class AuthController extends Controller
                 ]);
             }
 
-            DB::commit();
-
-            // Prepare email content
+            // Send OTP email BEFORE committing – if mail fails the transaction rolls back
+            // and the user record is not persisted, preventing ghost accounts with no OTP.
             $to = $request->email;
-
             Mail::to($to)->send(new OtpMail($otp));
+
+            DB::commit();
 
             // Custom application log
             $logsController->createLog(
@@ -511,6 +515,143 @@ class AuthController extends Controller
                 json_encode(['email' => $request->email ?? 'N/A'])
             );
 
+            return redirect()->back()->withErrors(['error' => 'Something went wrong: ' . $e->getMessage()]);
+        }
+    }
+
+    public function sendOtpBroker(Request $request, LogsController $logsController)
+    {
+        try {
+            $request->validate([
+                'email'                    => 'required|string|email|unique:users,email',
+                'phone_no'                 => 'required|string|max:30',
+                'password'                 => 'required|string|min:8|confirmed',
+                'role_id'                  => 'required|integer',
+                'name'                     => 'required|string|max:255',
+                'dob'                      => 'required|date',
+                'gender'                   => 'required|string|in:Male,Female,Other',
+                'nationality'              => 'required|string|max:255',
+                'ssn_no'                   => 'required|string|max:20',
+                'gov_id_number'            => 'required|string|max:255',
+                'address'                  => 'required|string|max:500',
+                'fmcsa_broker_license'     => 'required|string|max:255',
+                'mc_authority_number'      => 'required|string|max:255',
+                'surety_bond_number'       => 'nullable|string|max:255',
+                'company_name'             => 'required|string|max:255',
+                'registration_number'      => 'required|string|max:255',
+                'tax_id'                   => 'required|string|max:255',
+                'country_of_incorporation' => 'required|string|max:255',
+                'company_address'          => 'required|string|max:500',
+                'bank_account'             => 'nullable|string|max:255',
+                'source_of_funds'          => 'required|string',
+                'consent_sanctions_screening' => 'required|accepted',
+                'agree_aml_policies'       => 'required|accepted',
+                'terms_agreed'             => 'required|accepted',
+                'gov_id_front'             => 'required|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'gov_id_back'              => 'required|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'selfie'                   => 'required|file|mimes:jpeg,jpg,png|max:5120',
+                'proof_address'            => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'fmcsa_license_doc'        => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'surety_bond_doc'          => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+                'incorporation_doc'        => 'nullable|file|mimes:jpeg,jpg,png,pdf|max:5120',
+            ]);
+
+            $otp       = rand(100000, 999999);
+            $otpExpiry = Carbon::now()->addMinutes(5);
+
+            DB::beginTransaction();
+
+            $user = User::create([
+                'name'                        => $request->name,
+                'email'                       => $request->email,
+                'phone_no'                    => $request->phone_no,
+                'password'                    => Hash::make($request->password),
+                'dob'                         => $request->dob,
+                'gender'                      => $request->gender,
+                'nationality'                 => $request->nationality,
+                'ssn_no'                      => $request->ssn_no,
+                'gov_id_number'               => $request->gov_id_number,
+                'address'                     => $request->address,
+                // broker-specific regulatory fields
+                'mc_cbsa_usdot_no'            => $request->fmcsa_broker_license,
+                'ucr_hcc_no'                  => $request->mc_authority_number,
+                // company info
+                'company_name'                => $request->company_name,
+                'registration_number'         => $request->registration_number,
+                'tax_id'                      => $request->tax_id,
+                'country_of_incorporation'    => $request->country_of_incorporation,
+                'company_address'             => $request->company_address,
+                'bank_account'                => $request->bank_account,
+                // compliance
+                'consent_sanctions_screening' => true,
+                'politically_exposed_person'  => $request->boolean('politically_exposed_person'),
+                'source_of_funds'             => $request->source_of_funds,
+                'agree_aml_policies'          => true,
+                'terms_agreed'                => true,
+                // OTP & status
+                'otp'                         => $otp,
+                'otp_expires_at'              => $otpExpiry,
+                'otp_resend_count'            => 1,
+                'last_otp_resend_at'          => Carbon::now(),
+                'email_verified_at'           => null,
+                'status'                      => 4,
+            ]);
+
+            $role = Role::findOrFail($request->role_id);
+            $user->assignRole($role->name);
+
+            // Store KYC documents
+            $docMap = [
+                'gov_id_front'      => 'Government ID (Front)',
+                'gov_id_back'       => 'Government ID (Back)',
+                'selfie'            => 'Selfie / Facial Verification',
+                'proof_address'     => 'Proof of Address',
+                'fmcsa_license_doc' => 'FMCSA Broker License Document',
+                'surety_bond_doc'   => 'Surety Bond Document',
+                'incorporation_doc' => 'Certificate of Incorporation',
+            ];
+
+            foreach ($docMap as $field => $docName) {
+                if ($request->hasFile($field)) {
+                    $file       = $request->file($field);
+                    $storedPath = $file->store("kyc_documents/{$user->id}", 'public');
+                    KycDocuments::create([
+                        'user_id'       => $user->id,
+                        'document_name' => $docName,
+                        'document_type' => $field,
+                        'file_path'     => $storedPath,
+                        'original_name' => $file->getClientOriginalName(),
+                        'mime_type'     => $file->getClientMimeType(),
+                        'file_size'     => $file->getSize(),
+                    ]);
+                }
+            }
+
+            // Send OTP email BEFORE committing so a mail failure rolls back the transaction.
+            $to = $request->email;
+            Mail::to($to)->send(new OtpMail($otp));
+
+            DB::commit();
+
+            $logsController->createLog(
+                __METHOD__, 'success',
+                "Broker OTP {$otp} sent to {$to}",
+                null,
+                json_encode(['email' => $to, 'otp' => $otp])
+            );
+
+            return view('auth.enter_otp', compact('to'));
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $logsController->createLog(
+                __METHOD__, 'error',
+                'Broker OTP failed: ' . $e->getMessage(),
+                null,
+                json_encode(['email' => $request->email ?? 'N/A'])
+            );
             return redirect()->back()->withErrors(['error' => 'Something went wrong: ' . $e->getMessage()]);
         }
     }
@@ -597,11 +738,11 @@ class AuthController extends Controller
                 }
             }
 
-            DB::commit();
-
+            // Send OTP email BEFORE committing so a mail failure rolls back the transaction.
             $to = $request->email;
-
             Mail::to($to)->send(new OtpMail($otp));
+
+            DB::commit();
 
             $logsController->createLog(
                 __METHOD__, 'success',
@@ -755,11 +896,11 @@ class AuthController extends Controller
                 }
             }
 
-            DB::commit();
-
+            // Send OTP email BEFORE committing so a mail failure rolls back the transaction.
             $to = $request->email;
-
             Mail::to($to)->send(new OtpMail($otp));
+
+            DB::commit();
 
             $logsController->createLog(
                 __METHOD__, 'success',
@@ -929,11 +1070,11 @@ class AuthController extends Controller
                 }
             }
 
-            DB::commit();
-
+            // Send OTP email BEFORE committing so a mail failure rolls back the transaction.
             $to = $request->email;
-
             Mail::to($to)->send(new OtpMail($otp));
+
+            DB::commit();
 
             $logsController->createLog(
                 __METHOD__, 'success',
@@ -1110,6 +1251,18 @@ class AuthController extends Controller
 
     public function onboardingForm(User $user)
     {
+        // Prevent bypassing OTP: user must have verified their email first.
+        if (!$user->email_verified_at) {
+            return redirect()->route('otp', ['email' => $user->email])
+                ->with('error', 'Please verify your email OTP before proceeding.');
+        }
+
+        // Prevent re-submission if already onboarded or approved.
+        if (in_array($user->status, [1, 2, 3, 5])) {
+            return redirect()->route('role')
+                ->with('info', 'Your onboarding has already been submitted.');
+        }
+
         $role = $user->roles()->first();
         if ($role->id == 2) {
             return view('users.shipper_onboarding_form', compact('role', 'user'));
@@ -1119,6 +1272,12 @@ class AuthController extends Controller
     }
     public function onboardingFormSave(User $user, Request $request)
     {
+        // Security: ensure OTP was verified before allowing onboarding submission.
+        if (!$user->email_verified_at) {
+            return redirect()->route('otp', ['email' => $user->email])
+                ->with('error', 'Email verification required before onboarding.');
+        }
+
         $role = $user->roles()->first();
         if (!$role) {
             abort(422, 'User role not found.');

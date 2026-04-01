@@ -43,6 +43,7 @@ Route::middleware('guest')->group(function () {
     Route::post('/register', [AuthController::class, 'sendOtp'])->name('register');
     Route::post('/register/shipper', [AuthController::class, 'sendOtpShipper'])->name('register.shipper');
     Route::post('/register/carrier', [AuthController::class, 'sendOtpCarrier'])->name('register.carrier');
+    Route::post('/register/broker', [AuthController::class, 'sendOtpBroker'])->name('register.broker');
     Route::post('/register/freight-forwarder', [AuthController::class, 'sendOtpFreightForwarder'])->name('register.freight-forwarder');
     Route::post('/verify-otp', [AuthController::class, 'verifyOTP'])->name('verify-otp');
     Route::post('/verify-otp-forget', [AuthController::class, 'verifyOTPPassword'])->name('verify-otp-forget');
