@@ -222,8 +222,33 @@ body.dark-mode .form-control::placeholder {
     color: rgba(255, 255, 255, 0.4);
 }
 
+/* Target ALL input, textarea, and select elements (even without .form-control class) */
+body.dark-mode input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+body.dark-mode textarea,
+body.dark-mode select {
+    color: #2c323f !important;
+}
+
+/* If inputs have white or light backgrounds, ensure dark text */
+body.dark-mode input[style*="background: white"],
+body.dark-mode input[style*="background: #fff"],
+body.dark-mode input[style*="background-color: white"],
+body.dark-mode input[style*="background-color: #fff"],
+body.dark-mode textarea[style*="background: white"],
+body.dark-mode textarea[style*="background: #fff"],
+body.dark-mode select[style*="background: white"],
+body.dark-mode select[style*="background: #fff"] {
+    color: #2c323f !important;
+}
+
 body.dark-mode .form-label {
     color: #e0e0e0;
+}
+
+/* Placeholder for all inputs/textareas */
+body.dark-mode input::placeholder,
+body.dark-mode textarea::placeholder {
+    color: rgba(44, 50, 63, 0.5) !important;
 }
 
 /* Input Groups */
