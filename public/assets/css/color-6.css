@@ -9324,6 +9324,8 @@ btn-group .dropdown-wrapper .input-group .input-group-text {
     max-width: 100%;
     margin: 0 auto;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -12338,6 +12340,8 @@ th {
   height: 65px;
   margin: 0 auto;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -12485,6 +12489,8 @@ input::-webkit-inner-spin-button {
 /* Firefox */
 input[type=number] {
   -moz-appearance: textfield;
+  ppearance: textfield;
+  appearance: textfield;
 }
 
 /**=====================
@@ -12684,6 +12690,8 @@ input[type=number] {
   font-size: 14px;
   line-height: 26px !important;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -13242,6 +13250,8 @@ input[type=number] {
   text-overflow: ellipsis;
   overflow: hidden;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
+  line-clamp: 1;
   display: -webkit-box;
   -webkit-box-orient: vertical;
 }
@@ -13255,12 +13265,16 @@ input[type=number] {
   text-overflow: ellipsis;
   overflow: hidden;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
+  line-clamp: 3;
   display: -webkit-box;
   -webkit-box-orient: vertical;
 }
 @media (max-width: 1570px) {
   .blog-box .blog-details p {
     -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-clamp: 2;
   }
 }
 .blog-box .blog-details h4 {
@@ -13471,6 +13485,8 @@ input[type=number] {
 .bookmark-tabcontent .details-bookmark .bookmark-card.card .title-bookmark h6 {
   display: -webkit-box;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
+  line-clamp: 1;
   -webkit-box-orient: vertical;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -13788,6 +13804,8 @@ input[type=number] {
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
+  line-clamp: 1;
   -webkit-box-orient: vertical;
   width: 100%;
 }
@@ -13802,6 +13820,8 @@ input[type=number] {
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
+  line-clamp: 1;
   -webkit-box-orient: vertical;
   width: 100%;
 }
@@ -16466,6 +16486,8 @@ p.data-attributes svg {
   overflow: hidden;
   text-overflow: ellipsis;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-clamp: 2;
   display: -webkit-box;
 }
 .recent-activity ul li span {
@@ -16473,6 +16495,8 @@ p.data-attributes svg {
   overflow: hidden;
   text-overflow: ellipsis;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-clamp: 2;
   display: -webkit-box;
 }
 
@@ -17605,12 +17629,16 @@ p.data-attributes svg {
     overflow: hidden;
     text-overflow: ellipsis;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-clamp: 2;
     display: -webkit-box;
   }
 }
 @media (max-width: 767px) {
   .crypto-main-card .deposit-wrap > div h5 {
     -webkit-line-clamp: 1;
+    line-clamp: 1;
+    line-clamp: 1;
   }
 }
 .crypto-main-card .deposit-wrap img {
@@ -17665,6 +17693,8 @@ p.data-attributes svg {
 }
 .radial-progress-card p {
   -webkit-line-clamp: 1;
+  line-clamp: 1;
+  line-clamp: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
@@ -17675,6 +17705,8 @@ p.data-attributes svg {
   overflow: hidden;
   text-overflow: ellipsis;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
+  line-clamp: 1;
   display: -webkit-box;
 }
 .radial-progress-card .sale-details {
@@ -17852,6 +17884,8 @@ select.crypto-select.primary {
 }
 .crypto-form input[type=number] {
   -moz-appearance: textfield;
+  ppearance: textfield;
+  appearance: textfield;
 }
 
 .balance-box {
@@ -18491,6 +18525,8 @@ select.crypto-select.primary {
   overflow: hidden;
   text-overflow: ellipsis;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
+  line-clamp: 1;
   display: -webkit-box;
 }
 
@@ -19187,6 +19223,8 @@ select.crypto-select.primary {
   max-width: 100%;
   margin: 0 auto;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -20389,6 +20427,8 @@ select.crypto-select.primary {
 .notification .card .d-flex .w-100 h6 ~ p {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
+  line-clamp: 1;
   text-emphasis: inherit;
   white-space: nowrap;
   overflow: hidden;
@@ -20399,6 +20439,8 @@ select.crypto-select.primary {
 @media (max-width: 767px) {
   .notification .card .d-flex .w-100 h6 ~ p {
     -webkit-line-clamp: unset;
+    line-clamp: unset;
+    line-clamp: unset;
     text-emphasis: unset;
     white-space: unset;
     text-overflow: unset;
@@ -22879,6 +22921,8 @@ footer.blockquote-footer {
   max-width: 100%;
   margin: 0 auto;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
+  line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -23524,6 +23568,8 @@ footer.blockquote-footer {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
+  line-clamp: 4;
+  line-clamp: 4;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -26182,6 +26228,8 @@ footer {
 .landing-home .content h1 span {
   background: linear-gradient(90deg, #FFB905 20.35%, #6AEBAD 50%), linear-gradient(0deg, #FFFFFF, #FFFFFF);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-home .content p {
@@ -26503,66 +26551,92 @@ footer {
 .landing-title .gradient-1 {
   background: linear-gradient(90.78deg, #7366FF 49.33%, #FF3364 82.24%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title .gradient-2 {
   background: linear-gradient(90deg, #FF6A5B 4.44%, #1E52B9 50%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title .gradient-3 {
   background: linear-gradient(90deg, #7B5DFE 11.24%, #FFAB2E 50%), linear-gradient(0deg, #FF6A5B, #FF6A5B);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title .gradient-4 {
   background: linear-gradient(90deg, #22AC16 65.06%, #1C97BE 92.34%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title .gradient-5 {
   background: linear-gradient(90deg, #6A2FE7 2%, #46B7D0 40%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title .gradient-6 {
   background: linear-gradient(271deg, #F1305F 30%, #0066FF 80%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title .gradient-7 {
   background: linear-gradient(90deg, #FF7A00 20%, #D72695 89.68%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title .gradient-8 {
   background: linear-gradient(257.2deg, #FF5E51 21.09%, #FFAB6F 100%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title .gradient-9 {
   background: linear-gradient(90deg, rgba(255, 57, 57, 0.88) 2%, #24D34B 103.68%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title .gradient-10 {
   background: linear-gradient(90deg, #4A86FB 50%, #FF5823 68.37%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title .gradient-11 {
   background: linear-gradient(90deg, #FF1717 22.23%, #0A96E6 68.75%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title .gradient-12 {
   background: linear-gradient(90deg, #89D32B 5.6%, #FF7A00 36.2%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title .gradient-13 {
   background: linear-gradient(90deg, #FF6056 31.63%, #7F74FE 67.63%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .landing-title p {
@@ -27410,6 +27484,8 @@ footer .sub-footer ul li i {
   font-size: calc(100px + 150 * (100vw - 300px) / 1620);
   background: linear-gradient(180deg, #5456AA 0%, rgba(0, 2, 72, 0) 88.85%);
   -webkit-background-clip: text;
+  ackground-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   margin-bottom: 0;
   line-height: 1;
@@ -30347,7 +30423,11 @@ html {
   left: 51%;
   margin-left: -30px;
   -webkit-transform: translateZ(0);
+  	ransform: translateZ(0);
+  transform: translateZ(0);
   -webkit-backface-visibility: hidden;
+  ackface-visibility: hidden;
+  backface-visibility: hidden;
   position: absolute;
   top: 0;
   border-radius: 50px;
@@ -30654,6 +30734,8 @@ html {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-clamp: 2;
 }
 .list-inline.events .event-list .event-date {
   position: absolute;
@@ -30667,6 +30749,8 @@ html {
 }
 .list-inline.events .event-list .event-date p {
   -webkit-line-clamp: 3;
+  line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   display: -webkit-box;
   overflow: hidden;
@@ -30693,6 +30777,8 @@ html {
 }
 .timeline-list.list-inline.events .event-list .event-date p {
   -webkit-line-clamp: 3;
+  line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   display: -webkit-box;
   overflow: hidden;
@@ -36145,6 +36231,8 @@ table.table-bordered thead tr th p {
     width: 160px;
     overflow: hidden;
     -webkit-line-clamp: 1;
+    line-clamp: 1;
+    line-clamp: 1;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
