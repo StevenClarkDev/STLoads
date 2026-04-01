@@ -126,8 +126,8 @@
 
                     <!-- Profile -->
                     <li class="sidebar-list">
-                        <a class="sidebar-link sidebar-title link-nav {{ Request::is('profile') ? 'active' : '' }}"
-                            href="{{ url('profile') }}">
+                        <a class="sidebar-link sidebar-title link-nav {{ Request::is('profile/' . Auth::user()->id) ? 'active' : '' }}"
+                            href="{{ route('profile', Auth::user()->id) }}">
                             <i data-feather="user-check" class="me-2"></i>
                             <span>My Profile</span>
                             <div class="sidebar-badge">
