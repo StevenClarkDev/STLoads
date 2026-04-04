@@ -79,18 +79,6 @@
                         </a>
                     </li>
 
-                    <!-- Add Load -->
-                    <li class="sidebar-list">
-                        <a class="sidebar-link sidebar-title link-nav {{ Request::is('loads/add') ? 'active' : '' }}"
-                            href="{{ route('loads.add') }}">
-                            <i data-feather="plus-circle" class="me-2"></i>
-                            <span>Create Load</span>
-                            <div class="sidebar-badge">
-                                <i data-feather="chevron-right" class="nav-arrow"></i>
-                            </div>
-                        </a>
-                    </li>
-
                     <!-- Communication Section -->
                     <li class="sidebar-main-title">
                         <div>
