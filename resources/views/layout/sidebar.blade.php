@@ -90,6 +90,16 @@
                             </div>
                         </a>
                     </li>
+                    <li class="sidebar-list">
+                        <a class="sidebar-link sidebar-title link-nav {{ Request::is('stloads/reconciliation*') ? 'active' : '' }}"
+                            href="{{ route('stloads.reconciliation') }}">
+                            <i data-feather="git-pull-request" class="me-2"></i>
+                            <span>Reconciliation</span>
+                            <div class="sidebar-badge">
+                                <i data-feather="chevron-right" class="nav-arrow"></i>
+                            </div>
+                        </a>
+                    </li>
 
                     <!-- Communication Section -->
                     <li class="sidebar-main-title">

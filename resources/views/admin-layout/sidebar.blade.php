@@ -123,6 +123,14 @@
                                         </div>
                                     </a>
                                 </li>
+                                <li class="nav-item mb-2">
+                                    <a href="{{ route('stloads.reconciliation') }}" class="admin-nav-link">
+                                        <div class="btn btn-{{ request()->routeIs('stloads.reconciliation') ? 'primary' : 'light' }} w-100 text-start">
+                                            <i data-feather="git-pull-request" class="me-2"></i> Reconciliation
+                                            <i data-feather="chevron-right" class="float-end mt-1"></i>
+                                        </div>
+                                    </a>
+                                </li>
                             </ul>
                         </div>
 

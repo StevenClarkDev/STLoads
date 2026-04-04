@@ -71,7 +71,55 @@
                             <label class="f-light small">Source Module</label>
                             <div>{{ $handoff->source_module ?? '—' }}</div>
                         </div>
+                        <div class="col-md-4">
+                            <label class="f-light small">TMS Dispatch Status</label>
+                            <div>
+                                @if($handoff->tms_status)
+                                    @php
+                                        $tmsBadge = match($handoff->tms_status) {
+                                            'dispatched'  => 'bg-info',
+                                            'in_transit'  => 'bg-primary',
+                                            'at_pickup'   => 'bg-warning text-dark',
+                                            'at_delivery' => 'bg-warning text-dark',
+                                            'delivered'   => 'bg-success',
+                                            'cancelled'   => 'bg-danger',
+                                            'invoiced'    => 'bg-dark',
+                                            'settled'     => 'bg-dark',
+                                            default       => 'bg-light text-dark',
+                                        };
+                                    @endphp
+                                    <span class="badge {{ $tmsBadge }} p-2">{{ str_replace('_', ' ', ucfirst($handoff->tms_status)) }}</span>
+                                    @if($handoff->tms_status_at)
+                                        <span class="text-muted small ms-1">{{ $handoff->tms_status_at->diffForHumans() }}</span>
+                                    @endif
+                                @else
+                                    <span class="text-muted">No updates received</span>
+                                @endif
+                            </div>
+                        </div>
                     </div>
+
+                    @if(in_array($handoff->status, ['published', 'push_failed', 'requeue_required', 'withdrawn']))
+                    <hr class="my-3">
+                    <form action="{{ route('stloads.handoff.force-sync', $handoff) }}" method="POST" class="d-flex gap-2 align-items-end flex-wrap"
+                          onsubmit="return confirm('Force sync this handoff? This action cannot be undone.')">
+                        @csrf
+                        <div>
+                            <label class="form-label small mb-1">Force Sync To</label>
+                            <select name="target_status" class="form-select form-select-sm" style="width: 140px;">
+                                <option value="withdrawn">Withdrawn</option>
+                                <option value="closed">Closed</option>
+                            </select>
+                        </div>
+                        <div class="flex-grow-1">
+                            <label class="form-label small mb-1">Reason</label>
+                            <input type="text" name="reason" class="form-control form-control-sm" placeholder="Reason for force-sync" required>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                            <i data-feather="zap" style="width:14px;height:14px;"></i> Force Sync
+                        </button>
+                    </form>
+                    @endif
                 </div>
             </div>
 
@@ -384,6 +432,60 @@
                                                 </form>
                                             @endunless
                                         </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            @endif
+
+            <!-- Reconciliation Log -->
+            @if($handoff->reconciliationLogs->isNotEmpty())
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Reconciliation Log</h5>
+                    <a href="{{ route('stloads.reconciliation') }}" class="btn btn-xs btn-outline-dark">Full Dashboard</a>
+                </div>
+                <div class="card-body p-0">
+                    <div style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-sm mb-0" style="font-size: 0.8rem;">
+                            <thead>
+                                <tr>
+                                    <th>Action</th>
+                                    <th>Transition</th>
+                                    <th>By</th>
+                                    <th>When</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($handoff->reconciliationLogs as $rlog)
+                                    <tr>
+                                        <td>
+                                            @php
+                                                $actBadge = match($rlog->action) {
+                                                    'status_update'     => 'bg-info text-dark',
+                                                    'auto_withdraw'     => 'bg-warning text-dark',
+                                                    'auto_close'        => 'bg-secondary',
+                                                    'auto_archive'      => 'bg-dark',
+                                                    'rate_update'       => 'bg-primary',
+                                                    'force_sync'        => 'bg-success',
+                                                    default             => 'bg-light text-dark',
+                                                };
+                                            @endphp
+                                            <span class="badge {{ $actBadge }}">{{ str_replace('_', ' ', $rlog->action) }}</span>
+                                        </td>
+                                        <td class="small">
+                                            @if($rlog->tms_status_from || $rlog->tms_status_to)
+                                                TMS: {{ $rlog->tms_status_from ?? '—' }} → {{ $rlog->tms_status_to ?? '—' }}
+                                            @endif
+                                            @if($rlog->stloads_status_from !== $rlog->stloads_status_to && ($rlog->stloads_status_from || $rlog->stloads_status_to))
+                                                <br>SL: {{ $rlog->stloads_status_from ?? '—' }} → {{ $rlog->stloads_status_to ?? '—' }}
+                                            @endif
+                                        </td>
+                                        <td>{{ $rlog->triggered_by ?? '—' }}</td>
+                                        <td>{{ $rlog->created_at->format('M d H:i') }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>

@@ -28,6 +28,8 @@ class StloadsHandoff extends Model
         'published_at'                => 'datetime',
         'withdrawn_at'                => 'datetime',
         'closed_at'                   => 'datetime',
+        'tms_status_at'               => 'datetime',
+        'last_webhook_at'             => 'datetime',
     ];
 
     // ── Status constants ──────────────────────────────────────
@@ -38,6 +40,16 @@ class StloadsHandoff extends Model
     const STATUS_REQUEUE_REQUIRED   = 'requeue_required';
     const STATUS_WITHDRAWN          = 'withdrawn';
     const STATUS_CLOSED             = 'closed';
+
+    // ── TMS dispatch status constants ─────────────────────────
+    const TMS_DISPATCHED    = 'dispatched';
+    const TMS_IN_TRANSIT    = 'in_transit';
+    const TMS_AT_PICKUP     = 'at_pickup';
+    const TMS_AT_DELIVERY   = 'at_delivery';
+    const TMS_DELIVERED     = 'delivered';
+    const TMS_CANCELLED     = 'cancelled';
+    const TMS_INVOICED      = 'invoiced';
+    const TMS_SETTLED       = 'settled';
 
     // ── Relationships ─────────────────────────────────────────
     public function load()
@@ -58,6 +70,11 @@ class StloadsHandoff extends Model
     public function syncErrors()
     {
         return $this->hasMany(StloadsSyncError::class, 'handoff_id');
+    }
+
+    public function reconciliationLogs()
+    {
+        return $this->hasMany(StloadsReconciliationLog::class, 'handoff_id');
     }
 
     // ── Helpers ───────────────────────────────────────────────

@@ -20,4 +20,10 @@ Route::middleware('auth:sanctum')->prefix('stloads')->group(function () {
     Route::post('/requeue',  [\App\Http\Controllers\Api\TmsInboundController::class, 'requeue']);
     Route::post('/withdraw', [\App\Http\Controllers\Api\TmsInboundController::class, 'withdraw']);
     Route::post('/close',    [\App\Http\Controllers\Api\TmsInboundController::class, 'close']);
+
+    // Webhooks — TMS pushes status updates back to STLOADS
+    Route::post('/webhook/status',      [\App\Http\Controllers\Api\TmsWebhookController::class, 'status']);
+    Route::post('/webhook/bulk-status', [\App\Http\Controllers\Api\TmsWebhookController::class, 'bulkStatus']);
+    Route::post('/webhook/cancel',      [\App\Http\Controllers\Api\TmsWebhookController::class, 'cancel']);
+    Route::post('/webhook/close',       [\App\Http\Controllers\Api\TmsWebhookController::class, 'archiveClose']);
 });
