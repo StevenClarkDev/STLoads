@@ -10,6 +10,7 @@ use App\Models\LoadDocuments;
 use App\Models\LoadLeg;
 use App\Models\Load;
 use App\Models\StloadsHandoff;
+use App\Models\StloadsSyncError;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -42,6 +43,7 @@ class DashboardController extends Controller
             $stloadsPublished = StloadsHandoff::where('status', StloadsHandoff::STATUS_PUBLISHED)->count();
             $stloadsFailed    = StloadsHandoff::whereIn('status', [StloadsHandoff::STATUS_PUSH_FAILED, StloadsHandoff::STATUS_REQUEUE_REQUIRED])->count();
             $stloadsWithdrawn = StloadsHandoff::where('status', StloadsHandoff::STATUS_WITHDRAWN)->count();
+            $stloadsSyncErrors = StloadsSyncError::unresolved()->count();
 
             // Logs for dashboard loaded successfully
             $logsController->createLog(
@@ -59,6 +61,7 @@ class DashboardController extends Controller
                 'stloadsPublished' => $stloadsPublished,
                 'stloadsFailed' => $stloadsFailed,
                 'stloadsWithdrawn' => $stloadsWithdrawn,
+                'stloadsSyncErrors' => $stloadsSyncErrors,
             ], $metrics));
 
         } catch (\Exception $e) {

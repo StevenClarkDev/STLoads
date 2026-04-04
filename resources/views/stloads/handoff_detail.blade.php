@@ -303,6 +303,95 @@
                     </div>
                 </div>
             </div>
+
+            <!-- External References -->
+            @if($handoff->externalRefs->isNotEmpty())
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">External References</h5>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0" style="font-size: 0.8rem;">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Value</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($handoff->externalRefs as $ref)
+                                <tr>
+                                    <td><code>{{ $ref->ref_type }}</code></td>
+                                    <td class="fw-semibold">{{ $ref->ref_value }}</td>
+                                    <td>{{ $ref->ref_source ?? '—' }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            @endif
+
+            <!-- Sync Errors for this Handoff -->
+            @if($handoff->syncErrors->isNotEmpty())
+            <div class="card mb-4 border-start border-4 border-warning">
+                <div class="card-header">
+                    <h5 class="mb-0">Sync Errors</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-sm mb-0" style="font-size: 0.8rem;">
+                            <thead>
+                                <tr>
+                                    <th>Severity</th>
+                                    <th>Class</th>
+                                    <th>Title</th>
+                                    <th>Status</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($handoff->syncErrors as $err)
+                                    <tr class="{{ $err->resolved ? 'opacity-50' : '' }}">
+                                        <td>
+                                            @php
+                                                $sevBadge = match($err->severity) {
+                                                    'critical' => 'bg-danger',
+                                                    'error'    => 'bg-warning text-dark',
+                                                    'warning'  => 'bg-info text-dark',
+                                                    default    => 'bg-light text-dark',
+                                                };
+                                            @endphp
+                                            <span class="badge {{ $sevBadge }}">{{ ucfirst($err->severity) }}</span>
+                                        </td>
+                                        <td><code>{{ $err->error_class }}</code></td>
+                                        <td class="text-truncate" style="max-width: 160px;" title="{{ $err->title }}">{{ $err->title }}</td>
+                                        <td>
+                                            @if($err->resolved)
+                                                <span class="badge bg-success">Resolved</span>
+                                            @else
+                                                <span class="badge bg-danger">Open</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            @unless($err->resolved)
+                                                <form action="{{ route('stloads.sync-error.resolve', $err) }}" method="POST" class="d-inline">
+                                                    @csrf
+                                                    <button type="submit" class="btn btn-xs btn-outline-success p-1" title="Resolve">
+                                                        <i data-feather="check" style="width:12px;height:12px;"></i>
+                                                    </button>
+                                                </form>
+                                            @endunless
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            @endif
         </div>
     </div>
 </div>

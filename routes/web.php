@@ -101,6 +101,8 @@ Route::middleware('auth')->group(function () {
     // STLOADS Operations
     Route::get('/stloads/operations', [StloadsOperationsController::class, 'index'])->name('stloads.operations');
     Route::get('/stloads/handoff/{handoff}', [StloadsOperationsController::class, 'show'])->name('stloads.handoff.show');
+    Route::get('/stloads/sync-errors', [StloadsOperationsController::class, 'syncErrors'])->name('stloads.sync-errors');
+    Route::post('/stloads/sync-error/{error}/resolve', [StloadsOperationsController::class, 'resolveError'])->name('stloads.sync-error.resolve');
     Route::get('/profile/{user}', [AuthController::class, 'profile'])->name('profile');
     Route::get('/profile/{user}/edit', [AuthController::class, 'editProfile'])->name('profile.edit');
     Route::post('/profile/{user}/update', [AuthController::class, 'updateProfile'])->name('profile.update');

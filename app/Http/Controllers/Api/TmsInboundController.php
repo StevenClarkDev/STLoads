@@ -12,6 +12,7 @@ use App\Models\LoadType;
 use App\Models\Locations;
 use App\Models\StloadsHandoff;
 use App\Services\StloadsReleaseGate;
+use App\Services\StloadsSyncMonitor;
 use App\Support\LoadNumbers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,6 +33,8 @@ class TmsInboundController extends Controller
         $validator = $this->validatePayload($request);
 
         if ($validator->fails()) {
+            StloadsSyncMonitor::payloadValidationFailed($request->all(), $validator->errors()->toArray());
+
             return response()->json([
                 'status'  => 'validation_error',
                 'errors'  => $validator->errors(),
@@ -41,10 +44,26 @@ class TmsInboundController extends Controller
         // Release gate check
         $gate = StloadsReleaseGate::evaluate($request->all());
         if (!$gate['pass']) {
+            StloadsSyncMonitor::releaseGateFailed($request->all(), $gate['blockers']);
+
             return response()->json([
                 'status'   => 'release_gate_failed',
                 'blockers' => $gate['blockers'],
             ], 422);
+        }
+
+        // Duplicate publish detection
+        $duplicate = StloadsSyncMonitor::checkDuplicatePublish(
+            $request->input('tms_load_id'),
+            $request->input('tenant_id')
+        );
+        if ($duplicate) {
+            return response()->json([
+                'status'              => 'duplicate',
+                'message'             => 'This TMS load is already published.',
+                'existing_handoff_id' => $duplicate->id,
+                'existing_load_id'    => $duplicate->load_id,
+            ], 409);
         }
 
         try {
@@ -52,6 +71,11 @@ class TmsInboundController extends Controller
 
             $handoff = $this->createHandoff($request, StloadsHandoff::STATUS_PUSH_IN_PROGRESS);
             $handoff->recordEvent('push_started', $request->input('pushed_by'), $request->input('source_module'));
+
+            // Store external references if provided
+            if ($request->has('external_refs')) {
+                StloadsSyncMonitor::storeExternalRefs($handoff, $request->input('external_refs'));
+            }
 
             $load = $this->materializeLoad($request, $handoff);
 
@@ -70,10 +94,11 @@ class TmsInboundController extends Controller
             DB::rollBack();
             Log::error('TmsInbound@push failed', ['error' => $e->getMessage(), 'tms_load_id' => $request->input('tms_load_id')]);
 
-            // If handoff was created before the error, mark it failed
+            // If handoff was created before the error, mark it failed and record sync error
             if (isset($handoff) && $handoff->exists) {
                 $handoff->markFailed($e->getMessage());
                 $handoff->recordEvent('push_failed', $request->input('pushed_by'), $request->input('source_module'), $e->getMessage());
+                StloadsSyncMonitor::pushFailed($handoff, $e->getMessage(), $request->input('pushed_by'));
             }
 
             return response()->json([
@@ -94,6 +119,8 @@ class TmsInboundController extends Controller
         $validator = $this->validatePayload($request);
 
         if ($validator->fails()) {
+            StloadsSyncMonitor::payloadValidationFailed($request->all(), $validator->errors()->toArray());
+
             return response()->json([
                 'status'  => 'validation_error',
                 'errors'  => $validator->errors(),
@@ -103,6 +130,8 @@ class TmsInboundController extends Controller
         // Release gate check (validate structure even for queue)
         $gate = StloadsReleaseGate::evaluate($request->all());
         if (!$gate['pass']) {
+            StloadsSyncMonitor::releaseGateFailed($request->all(), $gate['blockers']);
+
             return response()->json([
                 'status'   => 'release_gate_failed',
                 'blockers' => $gate['blockers'],
@@ -112,6 +141,11 @@ class TmsInboundController extends Controller
         try {
             $handoff = $this->createHandoff($request, StloadsHandoff::STATUS_QUEUED);
             $handoff->recordEvent('queued', $request->input('pushed_by'), $request->input('source_module'));
+
+            // Store external references if provided
+            if ($request->has('external_refs')) {
+                StloadsSyncMonitor::storeExternalRefs($handoff, $request->input('external_refs'));
+            }
 
             return response()->json([
                 'status'     => 'queued',
@@ -176,6 +210,7 @@ class TmsInboundController extends Controller
 
             $handoff->markFailed($e->getMessage());
             $handoff->recordEvent('requeue_failed', $request->input('pushed_by'), $request->input('source_module'), $e->getMessage());
+            StloadsSyncMonitor::pushFailed($handoff, 'Requeue attempt: ' . $e->getMessage(), $request->input('pushed_by'));
 
             return response()->json([
                 'status'  => 'push_failed',
@@ -348,6 +383,12 @@ class TmsInboundController extends Controller
             'push_reason'          => ['nullable', 'string', 'max:500'],
             'source_module'        => ['nullable', 'string', 'max:100'],
             'payload_version'      => ['nullable', 'string', 'max:20'],
+
+            // External references
+            'external_refs'             => ['nullable', 'array'],
+            'external_refs.*.type'      => ['required_with:external_refs', 'string', 'max:50'],
+            'external_refs.*.value'     => ['required_with:external_refs', 'string', 'max:255'],
+            'external_refs.*.source'    => ['nullable', 'string', 'max:100'],
         ]);
     }
 

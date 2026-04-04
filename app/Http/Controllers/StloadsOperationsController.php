@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\StloadsHandoff;
+use App\Models\StloadsSyncError;
 use Illuminate\Http\Request;
 
 class StloadsOperationsController extends Controller
@@ -30,15 +31,69 @@ class StloadsOperationsController extends Controller
             'closed'           => StloadsHandoff::where('status', StloadsHandoff::STATUS_CLOSED)->count(),
         ];
 
-        return view('stloads.operations', compact('handoffs', 'counts', 'statusFilter'));
+        // Unresolved sync errors for alert banner
+        $syncErrors = StloadsSyncError::unresolved()
+            ->latest()
+            ->limit(10)
+            ->get();
+
+        $syncErrorCounts = [
+            'total'    => StloadsSyncError::unresolved()->count(),
+            'critical' => StloadsSyncError::unresolved()->bySeverity('critical')->count(),
+            'error'    => StloadsSyncError::unresolved()->bySeverity('error')->count(),
+            'warning'  => StloadsSyncError::unresolved()->bySeverity('warning')->count(),
+        ];
+
+        return view('stloads.operations', compact('handoffs', 'counts', 'statusFilter', 'syncErrors', 'syncErrorCounts'));
     }
 
     public function show(StloadsHandoff $handoff)
     {
         $handoff->load(['load', 'events' => function ($q) {
             $q->latest();
+        }, 'externalRefs', 'syncErrors' => function ($q) {
+            $q->latest();
         }]);
 
         return view('stloads.handoff_detail', compact('handoff'));
+    }
+
+    /**
+     * POST /stloads/sync-error/{error}/resolve
+     */
+    public function resolveError(Request $request, StloadsSyncError $error)
+    {
+        $request->validate([
+            'resolution_note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $error->resolve(
+            auth()->user()->name ?? auth()->user()->email,
+            $request->input('resolution_note')
+        );
+
+        return back()->with('success', 'Sync error resolved.');
+    }
+
+    /**
+     * GET /stloads/sync-errors
+     */
+    public function syncErrors(Request $request)
+    {
+        $query = StloadsSyncError::with('handoff')->latest();
+
+        if ($request->input('resolved') === '0') {
+            $query->unresolved();
+        } elseif ($request->input('resolved') === '1') {
+            $query->where('resolved', true);
+        }
+
+        if ($request->has('severity')) {
+            $query->bySeverity($request->input('severity'));
+        }
+
+        $errors = $query->paginate(30);
+
+        return view('stloads.sync_errors', compact('errors'));
     }
 }

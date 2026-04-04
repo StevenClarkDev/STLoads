@@ -17,6 +17,88 @@
 </div>
 
 <div class="container-fluid">
+    <!-- Sync Error Alert Banner -->
+    @if($syncErrorCounts['total'] > 0)
+    <div class="alert {{ $syncErrorCounts['critical'] > 0 ? 'alert-danger' : ($syncErrorCounts['error'] > 0 ? 'alert-warning' : 'alert-info') }} d-flex align-items-center justify-content-between mb-4" role="alert">
+        <div>
+            <i data-feather="alert-octagon" style="width:20px;height:20px;" class="me-2"></i>
+            <strong>{{ $syncErrorCounts['total'] }} unresolved sync {{ $syncErrorCounts['total'] === 1 ? 'issue' : 'issues' }}</strong>
+            @if($syncErrorCounts['critical'] > 0)
+                &mdash; <span class="text-danger fw-bold">{{ $syncErrorCounts['critical'] }} critical</span>
+            @endif
+            @if($syncErrorCounts['error'] > 0)
+                &mdash; {{ $syncErrorCounts['error'] }} {{ Str::plural('error', $syncErrorCounts['error']) }}
+            @endif
+            @if($syncErrorCounts['warning'] > 0)
+                &mdash; {{ $syncErrorCounts['warning'] }} {{ Str::plural('warning', $syncErrorCounts['warning']) }}
+            @endif
+        </div>
+        <a href="{{ route('stloads.sync-errors', ['resolved' => '0']) }}" class="btn btn-sm btn-outline-dark">
+            View All Issues
+        </a>
+    </div>
+
+    <!-- Recent Sync Errors -->
+    @if($syncErrors->isNotEmpty())
+    <div class="card mb-4 border-start border-4 {{ $syncErrorCounts['critical'] > 0 ? 'border-danger' : 'border-warning' }}">
+        <div class="card-header card-no-border pb-0">
+            <h6 class="mb-0">Recent Sync Issues</h6>
+        </div>
+        <div class="card-body pt-2">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle text-nowrap mb-0" style="font-size: 0.82rem;">
+                    <thead>
+                        <tr>
+                            <th>Severity</th>
+                            <th>Class</th>
+                            <th>Title</th>
+                            <th>Handoff</th>
+                            <th>When</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($syncErrors as $err)
+                        <tr>
+                            <td>
+                                @php
+                                    $sevBadge = match($err->severity) {
+                                        'critical' => 'bg-danger',
+                                        'error'    => 'bg-warning text-dark',
+                                        'warning'  => 'bg-info text-dark',
+                                        default    => 'bg-light text-dark',
+                                    };
+                                @endphp
+                                <span class="badge {{ $sevBadge }} rounded-pill">{{ ucfirst($err->severity) }}</span>
+                            </td>
+                            <td><code>{{ $err->error_class }}</code></td>
+                            <td class="text-truncate" style="max-width: 300px;" title="{{ $err->title }}">{{ $err->title }}</td>
+                            <td>
+                                @if($err->handoff_id)
+                                    <a href="{{ route('stloads.handoff.show', $err->handoff_id) }}">#{{ $err->handoff_id }}</a>
+                                @else
+                                    <span class="text-muted">—</span>
+                                @endif
+                            </td>
+                            <td>{{ $err->created_at->diffForHumans() }}</td>
+                            <td>
+                                <form action="{{ route('stloads.sync-error.resolve', $err) }}" method="POST" class="d-inline">
+                                    @csrf
+                                    <button type="submit" class="btn btn-xs btn-outline-success" title="Mark resolved">
+                                        <i data-feather="check" style="width:14px;height:14px;"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    @endif
+    @endif
+
     <!-- Status Summary Cards -->
     <div class="row g-3 mb-4">
         <div class="col-xl col-sm-4 col-6">

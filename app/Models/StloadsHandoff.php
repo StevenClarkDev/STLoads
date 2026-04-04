@@ -50,6 +50,16 @@ class StloadsHandoff extends Model
         return $this->hasMany(StloadsHandoffEvent::class, 'handoff_id');
     }
 
+    public function externalRefs()
+    {
+        return $this->hasMany(StloadsExternalRef::class, 'handoff_id');
+    }
+
+    public function syncErrors()
+    {
+        return $this->hasMany(StloadsSyncError::class, 'handoff_id');
+    }
+
     // ── Helpers ───────────────────────────────────────────────
     public function recordEvent(string $type, ?string $performedBy = null, ?string $module = null, $result = null): StloadsHandoffEvent
     {

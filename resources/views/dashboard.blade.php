@@ -207,6 +207,14 @@
                                     </div>
                                 </div>
                             </div>
+                            @if(($stloadsSyncErrors ?? 0) > 0)
+                            <div class="mt-3">
+                                <a href="{{ route('stloads.sync-errors', ['resolved' => '0']) }}" class="d-flex align-items-center gap-2 text-decoration-none text-danger">
+                                    <i data-feather="alert-octagon" style="width:16px;height:16px;"></i>
+                                    <span class="small fw-semibold">{{ $stloadsSyncErrors }} unresolved sync {{ $stloadsSyncErrors === 1 ? 'issue' : 'issues' }}</span>
+                                </a>
+                            </div>
+                            @endif
                         </div>
                     </div>
                 </div>
