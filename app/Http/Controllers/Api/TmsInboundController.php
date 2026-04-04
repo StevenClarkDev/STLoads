@@ -374,9 +374,16 @@ class TmsInboundController extends Controller
             'rate_currency'        => ['nullable', 'string', 'max:10'],
             'bid_type'             => ['required', 'string', 'in:Fixed,Open'],
 
-            // Compliance
+            // Commercial projection (Group D)
+            'accessorial_flags'    => ['nullable', 'array'],
+            'quote_status'         => ['nullable', 'string', 'max:50'],
+            'tender_posture'       => ['nullable', 'string', 'max:50'],
+
+            // Compliance & readiness (Group E)
             'compliance_passed'    => ['nullable', 'boolean'],
             'compliance_summary'   => ['nullable', 'array'],
+            'required_documents_status' => ['nullable', 'array'],
+            'readiness'            => ['nullable', 'string', 'max:50'],
 
             // Meta
             'pushed_by'            => ['nullable', 'string', 'max:255'],

@@ -79,6 +79,66 @@
                         </a>
                     </li>
 
+                    <!-- Dispatch Desks Section -->
+                    <li class="sidebar-main-title">
+                        <div>
+                            <h6 class="lan-1">
+                                <i data-feather="layout" class="section-icon me-2"></i>
+                                Dispatch Desks
+                            </h6>
+                        </div>
+                    </li>
+                    <li class="sidebar-list">
+                        <a class="sidebar-link sidebar-title link-nav {{ Request::is('desk/quote') ? 'active' : '' }}"
+                            href="{{ route('desk.quote') }}">
+                            <i data-feather="dollar-sign" class="me-2"></i>
+                            <span>Quote Desk</span>
+                            <div class="sidebar-badge"><i data-feather="chevron-right" class="nav-arrow"></i></div>
+                        </a>
+                    </li>
+                    <li class="sidebar-list">
+                        <a class="sidebar-link sidebar-title link-nav {{ Request::is('desk/tender') ? 'active' : '' }}"
+                            href="{{ route('desk.tender') }}">
+                            <i data-feather="send" class="me-2"></i>
+                            <span>Tender Desk</span>
+                            <div class="sidebar-badge"><i data-feather="chevron-right" class="nav-arrow"></i></div>
+                        </a>
+                    </li>
+                    <li class="sidebar-list">
+                        <a class="sidebar-link sidebar-title link-nav {{ Request::is('desk/facility') ? 'active' : '' }}"
+                            href="{{ route('desk.facility') }}">
+                            <i data-feather="map-pin" class="me-2"></i>
+                            <span>Facility Desk</span>
+                            <div class="sidebar-badge"><i data-feather="chevron-right" class="nav-arrow"></i></div>
+                        </a>
+                    </li>
+                    <li class="sidebar-list">
+                        <a class="sidebar-link sidebar-title link-nav {{ Request::is('desk/closeout') ? 'active' : '' }}"
+                            href="{{ route('desk.closeout') }}">
+                            <i data-feather="check-square" class="me-2"></i>
+                            <span>Closeout Desk</span>
+                            <div class="sidebar-badge"><i data-feather="chevron-right" class="nav-arrow"></i></div>
+                        </a>
+                    </li>
+                    <li class="sidebar-list">
+                        <a class="sidebar-link sidebar-title link-nav {{ Request::is('desk/collections') ? 'active' : '' }}"
+                            href="{{ route('desk.collections') }}">
+                            <i data-feather="credit-card" class="me-2"></i>
+                            <span>Collections Desk</span>
+                            <div class="sidebar-badge"><i data-feather="chevron-right" class="nav-arrow"></i></div>
+                        </a>
+                    </li>
+
+                    <!-- STLOADS Integration Section -->
+                    <li class="sidebar-main-title">
+                        <div>
+                            <h6 class="lan-1">
+                                <i data-feather="radio" class="section-icon me-2"></i>
+                                STLOADS Integration
+                            </h6>
+                        </div>
+                    </li>
+
                     <!-- STLOADS Operations -->
                     <li class="sidebar-list">
                         <a class="sidebar-link sidebar-title link-nav {{ Request::is('stloads/operations*') ? 'active' : '' }}"

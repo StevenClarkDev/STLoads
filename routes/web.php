@@ -21,6 +21,7 @@ use App\Http\Controllers\BidChatController;
 use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\OfferController;
 use App\Http\Controllers\StloadsOperationsController;
+use App\Http\Controllers\DispatchDeskController;
 use App\Events\TestPing;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -99,6 +100,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/manage-loads', [LoadController::class, 'index'])->name('manage-loads');
 
     // STLOADS Operations
+    // Dispatch Desk Routes
+    Route::get('/desk/quote', [DispatchDeskController::class, 'quoteDesk'])->name('desk.quote');
+    Route::get('/desk/tender', [DispatchDeskController::class, 'tenderDesk'])->name('desk.tender');
+    Route::get('/desk/facility', [DispatchDeskController::class, 'facilityDesk'])->name('desk.facility');
+    Route::get('/desk/closeout', [DispatchDeskController::class, 'closeoutDesk'])->name('desk.closeout');
+    Route::get('/desk/collections', [DispatchDeskController::class, 'collectionsDesk'])->name('desk.collections');
+
     Route::get('/stloads/operations', [StloadsOperationsController::class, 'index'])->name('stloads.operations');
     Route::get('/stloads/handoff/{handoff}', [StloadsOperationsController::class, 'show'])->name('stloads.handoff.show');
     Route::get('/stloads/sync-errors', [StloadsOperationsController::class, 'syncErrors'])->name('stloads.sync-errors');

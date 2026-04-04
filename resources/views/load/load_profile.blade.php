@@ -66,6 +66,72 @@
                     </div>
                 </div>
             </div>
+
+            {{-- STLOADS Board Status --}}
+            @php $ho = $load->stloadsHandoff; @endphp
+            <div class="col-xl-12 mt-3">
+                <div class="card mx-3">
+                    <div class="card-header d-flex justify-content-between align-items-center py-3">
+                        <h5 class="mb-0"><i data-feather="radio" class="me-2"></i> STLOADS Board Status</h5>
+                        @if($ho)
+                            <a href="{{ route('stloads.handoff.show', $ho) }}" class="btn btn-outline-primary btn-sm">View Handoff Detail</a>
+                        @endif
+                    </div>
+                    <div class="card-body">
+                        @if($ho)
+                            <div class="row g-3">
+                                <div class="col-sm-4">
+                                    <label class="form-label text-muted">Handoff Status</label>
+                                    <div>
+                                        <span class="badge fs-6 {{ match($ho->status) {
+                                            'published' => 'bg-success',
+                                            'push_failed', 'requeue_required' => 'bg-danger',
+                                            'queued', 'push_in_progress' => 'bg-info',
+                                            'withdrawn' => 'bg-secondary',
+                                            'closed' => 'bg-dark',
+                                            default => 'bg-light text-dark',
+                                        } }}">{{ str_replace('_', ' ', ucfirst($ho->status)) }}</span>
+                                    </div>
+                                </div>
+                                <div class="col-sm-4">
+                                    <label class="form-label text-muted">TMS Load ID</label>
+                                    <div class="fw-bold">{{ $ho->tms_load_id }}</div>
+                                </div>
+                                <div class="col-sm-4">
+                                    <label class="form-label text-muted">Board Rate</label>
+                                    <div class="fw-bold">{{ $ho->rate_currency ?? 'USD' }} {{ number_format($ho->board_rate, 2) }}</div>
+                                </div>
+                                @if($ho->tms_status)
+                                    <div class="col-sm-4">
+                                        <label class="form-label text-muted">TMS Dispatch Status</label>
+                                        <div>
+                                            <span class="badge bg-outline-primary">{{ str_replace('_', ' ', ucfirst($ho->tms_status)) }}</span>
+                                            @if($ho->tms_status_at)
+                                                <small class="text-muted ms-1">{{ $ho->tms_status_at->diffForHumans() }}</small>
+                                            @endif
+                                        </div>
+                                    </div>
+                                @endif
+                                <div class="col-sm-4">
+                                    <label class="form-label text-muted">Published</label>
+                                    <div>{{ $ho->published_at ? $ho->published_at->format('M j, Y g:i A') : '—' }}</div>
+                                </div>
+                                <div class="col-sm-4">
+                                    <label class="form-label text-muted">Pushed By</label>
+                                    <div>{{ $ho->pushed_by ?? '—' }}</div>
+                                </div>
+                            </div>
+                        @else
+                            <div class="text-center text-muted py-3">
+                                <i data-feather="radio" style="width:32px;height:32px;" class="mb-2 text-muted"></i>
+                                <p class="mb-0">This load has not been pushed to STLOADS.</p>
+                                <small>Loads are pushed to STLOADS via the TMS integration when they pass the release gate.</small>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+
             <div class="col-md-12">
     <form method="POST" action="{{ route('load.revise.save', $load->id) }}" enctype="multipart/form-data">
         @csrf

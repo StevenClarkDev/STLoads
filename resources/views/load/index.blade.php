@@ -184,6 +184,20 @@
                                                                     } }}" data-bs-toggle="tooltip" title="STLOADS: {{ str_replace('_', ' ', ucfirst($ho->status)) }}">
                                                                         <i data-feather="radio" style="width:10px;height:10px;"></i>
                                                                     </span>
+                                                                    {{-- Severity overlay: sync issue warnings --}}
+                                                                    @if(in_array($ho->status, ['push_failed', 'requeue_required']))
+                                                                        <span class="badge rounded-pill bg-danger p-1 ms-1" data-bs-toggle="tooltip" title="STLOADS push failed — needs attention">
+                                                                            <i data-feather="alert-circle" style="width:10px;height:10px;"></i>
+                                                                        </span>
+                                                                    @elseif($ho->status === 'published' && in_array($load_leg->status_id, [9, 10, 11]))
+                                                                        <span class="badge rounded-pill bg-warning text-dark p-1 ms-1" data-bs-toggle="tooltip" title="Delivered/completed but still live on STLOADS board">
+                                                                            <i data-feather="alert-triangle" style="width:10px;height:10px;"></i>
+                                                                        </span>
+                                                                    @elseif($ho->tms_status === 'cancelled' && $ho->status === 'published')
+                                                                        <span class="badge rounded-pill bg-danger p-1 ms-1" data-bs-toggle="tooltip" title="TMS cancelled but still published on board">
+                                                                            <i data-feather="x-octagon" style="width:10px;height:10px;"></i>
+                                                                        </span>
+                                                                    @endif
                                                                 @endif
                                                             </td>
                                                             @if ($roleId != 3)

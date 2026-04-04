@@ -134,6 +134,56 @@
                             </ul>
                         </div>
 
+                        <!-- Dispatch Desks Section -->
+                        <div class="admin-nav-section mb-4">
+                            <h6 class="admin-nav-title">
+                                <i data-feather="layout" class="me-2"></i>
+                                Dispatch Desks
+                            </h6>
+                            <ul class="nav flex-column">
+                                <li class="nav-item mb-2">
+                                    <a href="{{ route('desk.quote') }}" class="admin-nav-link">
+                                        <div class="btn btn-{{ request()->routeIs('desk.quote') ? 'primary' : 'light' }} w-100 text-start">
+                                            <i data-feather="dollar-sign" class="me-2"></i> Quote Desk
+                                            <i data-feather="chevron-right" class="float-end mt-1"></i>
+                                        </div>
+                                    </a>
+                                </li>
+                                <li class="nav-item mb-2">
+                                    <a href="{{ route('desk.tender') }}" class="admin-nav-link">
+                                        <div class="btn btn-{{ request()->routeIs('desk.tender') ? 'primary' : 'light' }} w-100 text-start">
+                                            <i data-feather="send" class="me-2"></i> Tender Desk
+                                            <i data-feather="chevron-right" class="float-end mt-1"></i>
+                                        </div>
+                                    </a>
+                                </li>
+                                <li class="nav-item mb-2">
+                                    <a href="{{ route('desk.facility') }}" class="admin-nav-link">
+                                        <div class="btn btn-{{ request()->routeIs('desk.facility') ? 'primary' : 'light' }} w-100 text-start">
+                                            <i data-feather="map-pin" class="me-2"></i> Facility Desk
+                                            <i data-feather="chevron-right" class="float-end mt-1"></i>
+                                        </div>
+                                    </a>
+                                </li>
+                                <li class="nav-item mb-2">
+                                    <a href="{{ route('desk.closeout') }}" class="admin-nav-link">
+                                        <div class="btn btn-{{ request()->routeIs('desk.closeout') ? 'primary' : 'light' }} w-100 text-start">
+                                            <i data-feather="check-square" class="me-2"></i> Closeout Desk
+                                            <i data-feather="chevron-right" class="float-end mt-1"></i>
+                                        </div>
+                                    </a>
+                                </li>
+                                <li class="nav-item mb-2">
+                                    <a href="{{ route('desk.collections') }}" class="admin-nav-link">
+                                        <div class="btn btn-{{ request()->routeIs('desk.collections') ? 'primary' : 'light' }} w-100 text-start">
+                                            <i data-feather="credit-card" class="me-2"></i> Collections Desk
+                                            <i data-feather="chevron-right" class="float-end mt-1"></i>
+                                        </div>
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+
                         <!-- System Configuration Section -->
                         <div class="admin-nav-section mb-4">
                             <h6 class="admin-nav-title">
