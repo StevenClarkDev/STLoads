@@ -79,6 +79,18 @@
                         </a>
                     </li>
 
+                    <!-- STLOADS Operations -->
+                    <li class="sidebar-list">
+                        <a class="sidebar-link sidebar-title link-nav {{ Request::is('stloads/operations*') ? 'active' : '' }}"
+                            href="{{ route('stloads.operations') }}">
+                            <i data-feather="radio" class="me-2"></i>
+                            <span>STLOADS Ops</span>
+                            <div class="sidebar-badge">
+                                <i data-feather="chevron-right" class="nav-arrow"></i>
+                            </div>
+                        </a>
+                    </li>
+
                     <!-- Communication Section -->
                     <li class="sidebar-main-title">
                         <div>

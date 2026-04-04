@@ -161,6 +161,56 @@
                     </div>
                 </div>
 
+                <!-- STLOADS Handoff Status -->
+                <div class="col-12 mb-4">
+                    <div class="card">
+                        <div class="card-header card-no-border d-flex justify-content-between align-items-center">
+                            <h5 class="m-0"><i data-feather="radio" class="me-2" style="width:18px;height:18px;"></i>STLOADS Board Status</h5>
+                            <a href="{{ route('stloads.operations') }}" class="btn btn-sm btn-outline-primary">View All</a>
+                        </div>
+                        <div class="card-body pt-0">
+                            <div class="row g-2">
+                                <div class="col-sm-3 col-6">
+                                    <div class="d-flex align-items-center gap-2 p-2 rounded bg-light">
+                                        <i data-feather="clock" class="text-warning" style="width:20px;height:20px;"></i>
+                                        <div>
+                                            <h6 class="mb-0">{{ $stloadsQueued ?? 0 }}</h6>
+                                            <span class="f-light small">Queued</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-sm-3 col-6">
+                                    <div class="d-flex align-items-center gap-2 p-2 rounded bg-light">
+                                        <i data-feather="check-circle" class="text-success" style="width:20px;height:20px;"></i>
+                                        <div>
+                                            <h6 class="mb-0">{{ $stloadsPublished ?? 0 }}</h6>
+                                            <span class="f-light small">Published</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-sm-3 col-6">
+                                    <div class="d-flex align-items-center gap-2 p-2 rounded {{ ($stloadsFailed ?? 0) > 0 ? 'bg-danger bg-opacity-10' : 'bg-light' }}">
+                                        <i data-feather="alert-triangle" class="text-danger" style="width:20px;height:20px;"></i>
+                                        <div>
+                                            <h6 class="mb-0">{{ $stloadsFailed ?? 0 }}</h6>
+                                            <span class="f-light small">Failed</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-sm-3 col-6">
+                                    <div class="d-flex align-items-center gap-2 p-2 rounded bg-light">
+                                        <i data-feather="x-circle" class="text-secondary" style="width:20px;height:20px;"></i>
+                                        <div>
+                                            <h6 class="mb-0">{{ $stloadsWithdrawn ?? 0 }}</h6>
+                                            <span class="f-light small">Withdrawn</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Recent Activity (Upcoming Schedule) -->
                 <div class="col-xxl-4 col-ed-6 col-md-7 box-col-7">
                     <div class="card schedule-card py-2">

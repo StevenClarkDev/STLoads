@@ -54,6 +54,11 @@ class Load extends Models
         return $this->hasOne(LoadHistory::class, 'load_id')->latestOfMany(); // uses created_at/id
     }
 
+    public function stloadsHandoff()
+    {
+        return $this->hasOne(StloadsHandoff::class, 'load_id');
+    }
+
 }
 
 

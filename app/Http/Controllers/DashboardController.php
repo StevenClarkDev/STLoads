@@ -9,6 +9,7 @@ use App\Models\LegEvent;
 use App\Models\LoadDocuments;
 use App\Models\LoadLeg;
 use App\Models\Load;
+use App\Models\StloadsHandoff;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -36,6 +37,12 @@ class DashboardController extends Controller
             // Activity feed (Recent Activity)
             $activities = $this->getActivities($user, $role_id);
 
+            // STLOADS handoff counts for dashboard widget
+            $stloadsQueued    = StloadsHandoff::where('status', StloadsHandoff::STATUS_QUEUED)->count();
+            $stloadsPublished = StloadsHandoff::where('status', StloadsHandoff::STATUS_PUBLISHED)->count();
+            $stloadsFailed    = StloadsHandoff::whereIn('status', [StloadsHandoff::STATUS_PUSH_FAILED, StloadsHandoff::STATUS_REQUEUE_REQUIRED])->count();
+            $stloadsWithdrawn = StloadsHandoff::where('status', StloadsHandoff::STATUS_WITHDRAWN)->count();
+
             // Logs for dashboard loaded successfully
             $logsController->createLog(
                 __METHOD__,
@@ -48,6 +55,10 @@ class DashboardController extends Controller
             return view('dashboard', array_merge([
                 'role_id' => $role_id,
                 'activities' => $activities,
+                'stloadsQueued' => $stloadsQueued,
+                'stloadsPublished' => $stloadsPublished,
+                'stloadsFailed' => $stloadsFailed,
+                'stloadsWithdrawn' => $stloadsWithdrawn,
             ], $metrics));
 
         } catch (\Exception $e) {

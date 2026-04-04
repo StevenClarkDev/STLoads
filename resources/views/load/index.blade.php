@@ -172,6 +172,19 @@
                                                             <td>
                                                                 <span
                                                                     class="badge rounded-pill bg-warning p-2 text-capitalize">{{ $load_leg->status_master?->name }}</span>
+                                                                @if($load_leg->load_master && $load_leg->load_master->stloadsHandoff)
+                                                                    @php $ho = $load_leg->load_master->stloadsHandoff; @endphp
+                                                                    <span class="badge rounded-pill p-1 ms-1 {{ match($ho->status) {
+                                                                        'published' => 'bg-success',
+                                                                        'push_failed', 'requeue_required' => 'bg-danger',
+                                                                        'queued', 'push_in_progress' => 'bg-info',
+                                                                        'withdrawn' => 'bg-secondary',
+                                                                        'closed' => 'bg-dark',
+                                                                        default => 'bg-light text-dark',
+                                                                    } }}" data-bs-toggle="tooltip" title="STLOADS: {{ str_replace('_', ' ', ucfirst($ho->status)) }}">
+                                                                        <i data-feather="radio" style="width:10px;height:10px;"></i>
+                                                                    </span>
+                                                                @endif
                                                             </td>
                                                             @if ($roleId != 3)
                                                                 <td>

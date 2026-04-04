@@ -15,7 +15,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
 // ── TMS Inbound API (service-to-service, Sanctum token auth) ──
 Route::middleware('auth:sanctum')->prefix('stloads')->group(function () {
-    Route::post('/push',    [\App\Http\Controllers\Api\TmsInboundController::class, 'push']);
-    Route::post('/queue',   [\App\Http\Controllers\Api\TmsInboundController::class, 'queue']);
-    Route::post('/requeue', [\App\Http\Controllers\Api\TmsInboundController::class, 'requeue']);
+    Route::post('/push',     [\App\Http\Controllers\Api\TmsInboundController::class, 'push']);
+    Route::post('/queue',    [\App\Http\Controllers\Api\TmsInboundController::class, 'queue']);
+    Route::post('/requeue',  [\App\Http\Controllers\Api\TmsInboundController::class, 'requeue']);
+    Route::post('/withdraw', [\App\Http\Controllers\Api\TmsInboundController::class, 'withdraw']);
+    Route::post('/close',    [\App\Http\Controllers\Api\TmsInboundController::class, 'close']);
 });

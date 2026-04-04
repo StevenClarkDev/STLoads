@@ -115,6 +115,14 @@
                                         </div>
                                     </a>
                                 </li>
+                                <li class="nav-item mb-2">
+                                    <a href="{{ route('stloads.operations') }}" class="admin-nav-link">
+                                        <div class="btn btn-{{ request()->routeIs('stloads.operations') || request()->routeIs('stloads.handoff.show') ? 'primary' : 'light' }} w-100 text-start">
+                                            <i data-feather="radio" class="me-2"></i> STLOADS Operations
+                                            <i data-feather="chevron-right" class="float-end mt-1"></i>
+                                        </div>
+                                    </a>
+                                </li>
                             </ul>
                         </div>
 

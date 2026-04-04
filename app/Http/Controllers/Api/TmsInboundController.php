@@ -11,6 +11,7 @@ use App\Models\LoadLeg;
 use App\Models\LoadType;
 use App\Models\Locations;
 use App\Models\StloadsHandoff;
+use App\Services\StloadsReleaseGate;
 use App\Support\LoadNumbers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,6 +35,15 @@ class TmsInboundController extends Controller
             return response()->json([
                 'status'  => 'validation_error',
                 'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        // Release gate check
+        $gate = StloadsReleaseGate::evaluate($request->all());
+        if (!$gate['pass']) {
+            return response()->json([
+                'status'   => 'release_gate_failed',
+                'blockers' => $gate['blockers'],
             ], 422);
         }
 
@@ -87,6 +97,15 @@ class TmsInboundController extends Controller
             return response()->json([
                 'status'  => 'validation_error',
                 'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        // Release gate check (validate structure even for queue)
+        $gate = StloadsReleaseGate::evaluate($request->all());
+        if (!$gate['pass']) {
+            return response()->json([
+                'status'   => 'release_gate_failed',
+                'blockers' => $gate['blockers'],
             ], 422);
         }
 
@@ -163,6 +182,109 @@ class TmsInboundController extends Controller
                 'message' => 'Requeue attempt failed.',
             ], 500);
         }
+    }
+
+    /**
+     * POST /api/stloads/withdraw
+     *
+     * Withdraw a published handoff from the board. Soft-deletes the linked load.
+     */
+    public function withdraw(Request $request): JsonResponse
+    {
+        $request->validate([
+            'handoff_id' => ['required', 'integer', 'exists:stloads_handoffs,id'],
+            'reason'     => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $handoff = StloadsHandoff::findOrFail($request->input('handoff_id'));
+
+        if ($handoff->status !== StloadsHandoff::STATUS_PUBLISHED) {
+            return response()->json([
+                'status'  => 'invalid_state',
+                'message' => "Handoff #{$handoff->id} is in status '{$handoff->status}' and cannot be withdrawn.",
+            ], 409);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Soft-delete the linked load so it disappears from the board
+            if ($handoff->load_id) {
+                $load = Load::find($handoff->load_id);
+                $load?->delete();
+            }
+
+            $handoff->update([
+                'status'       => StloadsHandoff::STATUS_WITHDRAWN,
+                'withdrawn_at' => now(),
+            ]);
+
+            $handoff->recordEvent(
+                'withdrawn',
+                $request->input('pushed_by'),
+                $request->input('source_module'),
+                $request->input('reason', 'Withdrawn by TMS')
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'status'     => 'withdrawn',
+                'handoff_id' => $handoff->id,
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error('TmsInbound@withdraw failed', ['error' => $e->getMessage(), 'handoff_id' => $handoff->id]);
+
+            return response()->json([
+                'status'  => 'withdraw_failed',
+                'message' => 'Failed to withdraw handoff.',
+            ], 500);
+        }
+    }
+
+    /**
+     * POST /api/stloads/close
+     *
+     * Close a handoff record. Used after delivery/reconciliation.
+     */
+    public function close(Request $request): JsonResponse
+    {
+        $request->validate([
+            'handoff_id' => ['required', 'integer', 'exists:stloads_handoffs,id'],
+            'reason'     => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $handoff = StloadsHandoff::findOrFail($request->input('handoff_id'));
+
+        $closeable = [
+            StloadsHandoff::STATUS_PUBLISHED,
+            StloadsHandoff::STATUS_WITHDRAWN,
+        ];
+
+        if (!in_array($handoff->status, $closeable)) {
+            return response()->json([
+                'status'  => 'invalid_state',
+                'message' => "Handoff #{$handoff->id} is in status '{$handoff->status}' and cannot be closed.",
+            ], 409);
+        }
+
+        $handoff->update([
+            'status'    => StloadsHandoff::STATUS_CLOSED,
+            'closed_at' => now(),
+        ]);
+
+        $handoff->recordEvent(
+            'closed',
+            $request->input('pushed_by'),
+            $request->input('source_module'),
+            $request->input('reason', 'Closed by TMS')
+        );
+
+        return response()->json([
+            'status'     => 'closed',
+            'handoff_id' => $handoff->id,
+        ]);
     }
 
     // ── Private helpers ───────────────────────────────────────

@@ -20,6 +20,7 @@ use App\Http\Controllers\CarrierPayoutController;
 use App\Http\Controllers\BidChatController;
 use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\OfferController;
+use App\Http\Controllers\StloadsOperationsController;
 use App\Events\TestPing;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -96,6 +97,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/load-update-status/{id}', [LoadController::class, 'updateStatus'])->name('load.update-status');
     Route::get('/admin/loads/view/{load}', [LoadController::class, 'adminView'])->name('admin.loads.view');
     Route::get('/manage-loads', [LoadController::class, 'index'])->name('manage-loads');
+
+    // STLOADS Operations
+    Route::get('/stloads/operations', [StloadsOperationsController::class, 'index'])->name('stloads.operations');
+    Route::get('/stloads/handoff/{handoff}', [StloadsOperationsController::class, 'show'])->name('stloads.handoff.show');
     Route::get('/profile/{user}', [AuthController::class, 'profile'])->name('profile');
     Route::get('/profile/{user}/edit', [AuthController::class, 'editProfile'])->name('profile.edit');
     Route::post('/profile/{user}/update', [AuthController::class, 'updateProfile'])->name('profile.update');
