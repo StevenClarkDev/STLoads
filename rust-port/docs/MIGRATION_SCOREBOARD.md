@@ -33,7 +33,7 @@ It should be updated after every major implementation milestone so the repo itse
 | Admin STLOADS reconciliation | `partial` | Real Rust screens and DB-backed data exist; broader admin surface is still incomplete. |
 | Master-data admin visibility | `partial` | Rust now has a DB-backed admin master-data catalog page with first-write tooling for key lookup datasets, but full parity is still missing. |
 | Master-data CRUD | `partial` | Rust now supports first-write workflows for locations, load types, equipments, and commodity types; countries, cities, deletes, and richer edit UX are still pending. |
-| Load create/edit workflow | `not_started` | `load/add.blade.php` and related dynamic multi-leg builder behavior are not ported yet. |
+| Load create/edit workflow | `partial` | Rust now has a first-pass `/dispatch/load-builder` + `/dispatch/loads` flow and Leptos `/loads/new` form for core multi-leg creation, but edit mode, documents, and address autocomplete are still pending. |
 | Load detail/profile/documents | `partial` | Core data models exist, but the Blade detail and document experience is not fully ported. |
 | Tracking/execution UI | `not_started` | Execution contracts exist, but live tracking UI and execution flows are not yet migrated. |
 | Onboarding and registration flows | `not_started` | Login exists, but multi-role registration, OTP, reset, and onboarding parity are still Laravel-only. |
@@ -55,13 +55,13 @@ It should be updated after every major implementation milestone so the repo itse
 ## Current Rust Surface
 
 - Backend route modules: 10
-- Leptos page modules: 11
+- Leptos page modules: 12
 - Rust backend is already meaningful, but frontend parity is still much smaller than the Laravel view surface.
 
 ## Current Remaining High-Value Work
 
 1. Finish auth/onboarding parity.
-2. Port load creation and load detail/document workflows.
+2. Deepen load detail/profile/document workflows now that first-pass load creation exists.
 3. Port tracking/execution pages and map/browser integrations.
 4. Port remaining master-data CRUD depth and admin user/role CRUD.
 5. Port dispatch desk workflows.
@@ -79,6 +79,15 @@ It should be updated after every major implementation milestone so the repo itse
 - Added Leptos `/admin/master-data` and linked it from the admin shell.
 - Updated the migration score so master-data admin visibility is now `partial` instead of effectively missing.
 
+### 2026-04-07 - Load Builder First Pass
+
+- Added shared Rust contracts for load-builder screen data and create-load actions.
+- Added backend GET /dispatch/load-builder and POST /dispatch/loads for auth-scoped load creation backed by PostgreSQL.
+- Added SQLx create-load persistence with generated RUST-LD-###### load numbers, multi-leg inserts, and load history writes.
+- Added Leptos /loads/new with core load fields, dynamic leg rows, shared auth-session gating, and save flow wired to the Rust backend.
+- Updated the user shell so accounts with manage_loads can navigate directly into the Rust load builder.
+- Load creation is now partial; document uploads, Google-style address autocomplete, edit mode, and richer parity with the Blade workflow are still pending.
+
 ### 2026-04-07 - Master Data First Write Flows
 
 - Added shared Rust contracts for master-data write actions and DB-backed option payloads.
@@ -89,5 +98,5 @@ It should be updated after every major implementation milestone so the repo itse
 
 ## Next Recommended Slice
 
-- Move directly into load creation (`load/add.blade.php`) because it depends on the master-data datasets that are now readable and first-write capable in Rust.
-- After that, deepen the master-data UX with richer edit/delete flows for countries, cities, and the remaining admin catalogs.
+- Move into load detail/profile and document handling so the newly created Rust loads have a real follow-up workflow after `/loads/new` saves them.
+- After that, deepen the load builder with document upload rows and address autocomplete, then return to richer master-data edit/delete coverage for countries, cities, and the remaining admin catalogs.

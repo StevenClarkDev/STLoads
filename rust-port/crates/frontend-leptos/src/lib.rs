@@ -13,7 +13,8 @@ use leptos_router::{
 use layouts::{AdminFrame, AuthFrame, UserFrame};
 use pages::{
     AdminDashboardPage, ChatWorkspacePage, DashboardPage, EscrowOperationsPage, LoadBoardPage,
-    LoginPage, MasterDataPage, NotFoundPage, StloadsOperationsPage, StloadsReconciliationPage,
+    LoadBuilderPage, LoginPage, MasterDataPage, NotFoundPage, StloadsOperationsPage,
+    StloadsReconciliationPage,
 };
 use session::AuthProvider;
 
@@ -36,6 +37,14 @@ pub fn App() -> impl IntoView {
                         view=|| view! {
                             <UserFrame>
                                 <LoadBoardPage />
+                            </UserFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("loads/new")
+                        view=|| view! {
+                            <UserFrame>
+                                <LoadBuilderPage />
                             </UserFrame>
                         }
                     />

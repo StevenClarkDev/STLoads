@@ -19,6 +19,9 @@ pub fn UserFrame(children: Children) -> impl IntoView {
             || session::has_permission(&auth, "manage_tms_operations")
     });
 
+    let show_create_load_link =
+        Signal::derive(move || session::has_permission(&auth, "manage_loads"));
+
     view! {
         <main class="user-frame">
             <header style="display:grid;gap:0.75rem;">
@@ -60,6 +63,14 @@ pub fn UserFrame(children: Children) -> impl IntoView {
                     <A href="/">"Dashboard"</A>
                     " | "
                     <A href="/loads">"Loads"</A>
+                    {move || {
+                        show_create_load_link.get().then(|| view! {
+                            <>
+                                " | "
+                                <A href="/loads/new">"Create Load"</A>
+                            </>
+                        })
+                    }}
                     " | "
                     <A href="/chat">"Chat"</A>
                     " | "

@@ -1,14 +1,15 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use shared::{
     ApiResponse, AuthSessionState, BookLoadLegRequest, BookLoadLegResponse, ChatSendMessageRequest,
-    ChatSendMessageResponse, ChatWorkspaceScreen, ConversationReadResponse, EscrowFundRequest,
-    EscrowHoldRequest, EscrowLifecycleResponse, EscrowReleaseRequest, LoadBoardScreen,
-    LocationUpsertRequest, LoginRequest, LoginResponse, LogoutResponse, MasterDataMutationResponse,
-    MasterDataScreen, OfferReviewRequest, OfferReviewResponse, RealtimeTopic,
-    ResolveSyncErrorRequest, ResolveSyncErrorResponse, SimpleCatalogUpsertRequest,
-    StloadsOperationsScreen, StloadsReconciliationScreen, StripeWebhookRequest,
-    StripeWebhookResponse, TmsCloseRequest, TmsHandoffPayload, TmsHandoffResponse,
-    TmsRequeueRequest, TmsStatusWebhookRequest, TmsWebhookResponse, TmsWithdrawRequest,
+    ChatSendMessageResponse, ChatWorkspaceScreen, ConversationReadResponse, CreateLoadRequest,
+    CreateLoadResponse, EscrowFundRequest, EscrowHoldRequest, EscrowLifecycleResponse,
+    EscrowReleaseRequest, LoadBoardScreen, LoadBuilderScreen, LocationUpsertRequest, LoginRequest,
+    LoginResponse, LogoutResponse, MasterDataMutationResponse, MasterDataScreen,
+    OfferReviewRequest, OfferReviewResponse, RealtimeTopic, ResolveSyncErrorRequest,
+    ResolveSyncErrorResponse, SimpleCatalogUpsertRequest, StloadsOperationsScreen,
+    StloadsReconciliationScreen, StripeWebhookRequest, StripeWebhookResponse, TmsCloseRequest,
+    TmsHandoffPayload, TmsHandoffResponse, TmsRequeueRequest, TmsStatusWebhookRequest,
+    TmsWebhookResponse, TmsWithdrawRequest,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -94,6 +95,14 @@ pub async fn upsert_location(
     payload: &LocationUpsertRequest,
 ) -> Result<MasterDataMutationResponse, String> {
     post_api("/master-data/locations", payload).await
+}
+
+pub async fn fetch_load_builder_screen() -> Result<LoadBuilderScreen, String> {
+    get_api("/dispatch/load-builder").await
+}
+
+pub async fn create_load(payload: &CreateLoadRequest) -> Result<CreateLoadResponse, String> {
+    post_api("/dispatch/loads", payload).await
 }
 
 pub async fn fetch_load_board_screen(tab: &str) -> Result<LoadBoardScreen, String> {

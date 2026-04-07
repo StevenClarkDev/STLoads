@@ -246,6 +246,37 @@ pub struct LoadBoardMetricsRecord {
     pub funding_watch_total: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateLoadParams {
+    pub title: String,
+    pub owner_user_id: i64,
+    pub load_type_id: i64,
+    pub equipment_id: i64,
+    pub commodity_type_id: i64,
+    pub weight_unit: String,
+    pub weight: f64,
+    pub special_instructions: Option<String>,
+    pub is_hazardous: bool,
+    pub is_temperature_controlled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateLoadLegParams {
+    pub pickup_location_id: i64,
+    pub delivery_location_id: i64,
+    pub pickup_date: NaiveDateTime,
+    pub delivery_date: NaiveDateTime,
+    pub bid_status: String,
+    pub price: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatedLoadRecord {
+    pub load_id: i64,
+    pub load_number: String,
+    pub leg_count: u64,
+}
+
 pub async fn list_recent_loads(pool: &DbPool, limit: i64) -> Result<Vec<LoadRecord>, sqlx::Error> {
     sqlx::query_as::<_, LoadRecord>(
         "SELECT id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight,
@@ -731,4 +762,113 @@ fn load_board_select_sql() -> &'static str {
             LIMIT 1
         )
     "#
+}
+
+pub async fn create_load_with_legs(
+    pool: &DbPool,
+    params: &CreateLoadParams,
+    legs: &[CreateLoadLegParams],
+    actor_user_id: Option<i64>,
+) -> Result<CreatedLoadRecord, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let created_load: (i64,) = sqlx::query_as(
+        "INSERT INTO loads (
+            title,
+            user_id,
+            load_type_id,
+            equipment_id,
+            commodity_type_id,
+            weight_unit,
+            weight,
+            special_instructions,
+            is_hazardous,
+            is_temperature_controlled,
+            status,
+            leg_count,
+            created_at,
+            updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id"
+    )
+    .bind(&params.title)
+    .bind(params.owner_user_id)
+    .bind(params.load_type_id)
+    .bind(params.equipment_id)
+    .bind(params.commodity_type_id)
+    .bind(&params.weight_unit)
+    .bind(params.weight)
+    .bind(&params.special_instructions)
+    .bind(params.is_hazardous)
+    .bind(params.is_temperature_controlled)
+    .bind(legs.len() as i32)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let load_id = created_load.0;
+    let load_number = format!("RUST-LD-{:06}", load_id.max(0));
+
+    sqlx::query(
+        "UPDATE loads
+         SET load_number = $1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2",
+    )
+    .bind(&load_number)
+    .bind(load_id)
+    .execute(&mut *tx)
+    .await?;
+
+    for (index, leg) in legs.iter().enumerate() {
+        let leg_no = (index + 1) as i32;
+        let leg_code = format!("{}-{}", load_number, leg_no);
+
+        sqlx::query(
+            "INSERT INTO load_legs (
+                load_id,
+                leg_no,
+                leg_code,
+                pickup_location_id,
+                delivery_location_id,
+                pickup_date,
+                delivery_date,
+                bid_status,
+                price,
+                status_id,
+                created_at,
+                updated_at
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .bind(load_id)
+        .bind(leg_no)
+        .bind(&leg_code)
+        .bind(leg.pickup_location_id)
+        .bind(leg.delivery_location_id)
+        .bind(leg.pickup_date)
+        .bind(leg.delivery_date)
+        .bind(&leg.bid_status)
+        .bind(leg.price)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    sqlx::query(
+        "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
+         VALUES ($1, $2, 1, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(load_id)
+    .bind(actor_user_id)
+    .bind("Rust load builder created load")
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(CreatedLoadRecord {
+        load_id,
+        load_number,
+        leg_count: legs.len() as u64,
+    })
 }

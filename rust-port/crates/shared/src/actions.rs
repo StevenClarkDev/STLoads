@@ -14,6 +14,38 @@ pub struct BookLoadLegResponse {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateLoadLegRequest {
+    pub pickup_location_id: u64,
+    pub delivery_location_id: u64,
+    pub pickup_date: String,
+    pub delivery_date: String,
+    pub bid_status: String,
+    pub price: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateLoadRequest {
+    pub title: String,
+    pub load_type_id: u64,
+    pub equipment_id: u64,
+    pub commodity_type_id: u64,
+    pub weight_unit: String,
+    pub weight: f64,
+    pub special_instructions: Option<String>,
+    pub is_hazardous: bool,
+    pub is_temperature_controlled: bool,
+    pub legs: Vec<CreateLoadLegRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateLoadResponse {
+    pub success: bool,
+    pub load_id: Option<i64>,
+    pub load_number: Option<String>,
+    pub leg_count: u64,
+    pub message: String,
+}
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OfferReviewDecision {

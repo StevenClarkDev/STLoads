@@ -150,6 +150,25 @@ pub struct LoadBoardScreen {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadBuilderOption {
+    pub id: u64,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadBuilderScreen {
+    pub title: String,
+    pub subtitle: String,
+    pub load_type_options: Vec<LoadBuilderOption>,
+    pub equipment_options: Vec<LoadBuilderOption>,
+    pub commodity_type_options: Vec<LoadBuilderOption>,
+    pub location_options: Vec<LoadBuilderOption>,
+    pub weight_units: Vec<String>,
+    pub bid_status_options: Vec<String>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatConversationItem {
     pub id: u64,
     pub participant_user_id: u64,
