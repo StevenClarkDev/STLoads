@@ -62,6 +62,20 @@ pub struct SimpleCatalogUpsertRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CountryUpsertRequest {
+    pub id: Option<u64>,
+    pub name: String,
+    pub iso_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CityUpsertRequest {
+    pub id: Option<u64>,
+    pub name: String,
+    pub country_id: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocationUpsertRequest {
     pub id: Option<u64>,
     pub name: String,
@@ -75,4 +89,9 @@ pub struct MasterDataMutationResponse {
     pub kind: String,
     pub row_id: Option<u64>,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MasterDataDeleteRequest {
+    pub id: u64,
 }

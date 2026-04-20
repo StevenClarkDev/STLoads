@@ -6,3 +6,6 @@ target
 !.env.ibm.example
 /docs
 /scripts
+.cos-*
+.tmp-ibm-*
+crates/frontend-leptos/dist

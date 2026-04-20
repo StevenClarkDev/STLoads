@@ -7,3 +7,6 @@ target
 README.md
 /docs
 /scripts
+.cos-*
+.tmp-ibm-*
+crates/frontend-leptos/dist

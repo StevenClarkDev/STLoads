@@ -1,0 +1,23 @@
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location = /health {
+        access_log off;
+        default_type application/json;
+        return 200 '{"service":"stloads-frontend","status":"ok"}';
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location ~* \.(js|css|wasm|json|svg|png|jpg|jpeg|gif|ico|woff|woff2)$ {
+        expires 1h;
+        add_header Cache-Control "public";
+        try_files $uri =404;
+    }
+}

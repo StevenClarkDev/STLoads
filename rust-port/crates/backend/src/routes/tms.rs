@@ -112,7 +112,7 @@ async fn push(
     headers: HeaderMap,
     Json(payload): Json<TmsHandoffPayload>,
 ) -> Result<Json<ApiResponse<TmsHandoffResponse>>, StatusCode> {
-    let actor_session = authorize_tms_request(&state, &headers).await?;
+    let actor_session = authorize_tms_lifecycle_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(unavailable_handoff_response(
             &state, "Push",
@@ -198,7 +198,7 @@ async fn queue(
     headers: HeaderMap,
     Json(payload): Json<TmsHandoffPayload>,
 ) -> Result<Json<ApiResponse<TmsHandoffResponse>>, StatusCode> {
-    let actor_session = authorize_tms_request(&state, &headers).await?;
+    let actor_session = authorize_tms_lifecycle_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(unavailable_handoff_response(
             &state, "Queue",
@@ -259,7 +259,7 @@ async fn requeue(
     headers: HeaderMap,
     Json(payload): Json<TmsRequeueRequest>,
 ) -> Result<Json<ApiResponse<TmsHandoffResponse>>, StatusCode> {
-    let actor_session = authorize_tms_request(&state, &headers).await?;
+    let actor_session = authorize_tms_lifecycle_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(unavailable_handoff_response(
             &state, "Requeue",
@@ -352,7 +352,7 @@ async fn withdraw(
     headers: HeaderMap,
     Json(payload): Json<TmsWithdrawRequest>,
 ) -> Result<Json<ApiResponse<TmsHandoffResponse>>, StatusCode> {
-    let actor_session = authorize_tms_request(&state, &headers).await?;
+    let actor_session = authorize_tms_lifecycle_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(unavailable_handoff_response(
             &state, "Withdraw",
@@ -446,7 +446,7 @@ async fn close(
     headers: HeaderMap,
     Json(payload): Json<TmsCloseRequest>,
 ) -> Result<Json<ApiResponse<TmsHandoffResponse>>, StatusCode> {
-    let actor_session = authorize_tms_request(&state, &headers).await?;
+    let actor_session = authorize_tms_lifecycle_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(unavailable_handoff_response(
             &state, "Close",
@@ -540,7 +540,7 @@ async fn webhook_status(
     headers: HeaderMap,
     Json(payload): Json<TmsStatusWebhookRequest>,
 ) -> Result<Json<ApiResponse<TmsWebhookResponse>>, StatusCode> {
-    let actor_session = authorize_tms_request(&state, &headers).await?;
+    let actor_session = authorize_tms_webhook_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(TmsWebhookResponse {
             success: false,
@@ -584,7 +584,7 @@ async fn webhook_bulk_status(
     headers: HeaderMap,
     Json(payload): Json<TmsBulkStatusWebhookRequest>,
 ) -> Result<Json<ApiResponse<TmsBulkStatusWebhookResponse>>, StatusCode> {
-    let actor_session = authorize_tms_request(&state, &headers).await?;
+    let actor_session = authorize_tms_webhook_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(TmsBulkStatusWebhookResponse {
             processed: 0,
@@ -667,7 +667,7 @@ async fn webhook_close(
     headers: HeaderMap,
     Json(payload): Json<LifecycleWebhookRequest>,
 ) -> Result<Json<ApiResponse<TmsWebhookResponse>>, StatusCode> {
-    let actor_session = authorize_tms_request(&state, &headers).await?;
+    let actor_session = authorize_tms_webhook_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(TmsWebhookResponse {
             success: false,
@@ -742,7 +742,32 @@ async fn webhook_close(
     }
 }
 
-async fn authorize_tms_request(
+async fn authorize_tms_lifecycle_request(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<Option<ResolvedSession>, StatusCode> {
+    let Some(session) = auth_session::resolve_session_from_headers(state, headers)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let allowed = session.session.permissions.iter().any(|permission| {
+        permission == "manage_tms_operations"
+            || permission == "access_admin_portal"
+            || permission == "manage_dispatch_desk"
+            || permission == "manage_loads"
+    });
+
+    if allowed {
+        Ok(Some(session))
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
+async fn authorize_tms_webhook_request(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<Option<ResolvedSession>, StatusCode> {

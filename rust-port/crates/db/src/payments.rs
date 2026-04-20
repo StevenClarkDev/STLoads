@@ -304,6 +304,7 @@ pub async fn update_user_connect_state(
         "UPDATE users
          SET payouts_enabled = $1,
              kyc_status = $2,
+             status = CASE WHEN $1 = TRUE THEN 1 ELSE 3 END,
              updated_at = CURRENT_TIMESTAMP
          WHERE stripe_connect_account_id = $3",
     )
@@ -320,6 +321,34 @@ pub async fn update_user_connect_state(
          LIMIT 1",
     )
     .bind(stripe_connect_account_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn set_user_stripe_connect_account_id(
+    pool: &DbPool,
+    user_id: i64,
+    stripe_connect_account_id: &str,
+) -> Result<Option<UserConnectStateRecord>, sqlx::Error> {
+    sqlx::query(
+        "UPDATE users
+         SET stripe_connect_account_id = $1,
+             kyc_status = COALESCE(kyc_status, 'pending'),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2",
+    )
+    .bind(stripe_connect_account_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+
+    sqlx::query_as::<_, UserConnectStateRecord>(
+        "SELECT id, stripe_connect_account_id, payouts_enabled, kyc_status, updated_at
+         FROM users
+         WHERE id = $1
+         LIMIT 1",
+    )
+    .bind(user_id)
     .fetch_optional(pool)
     .await
 }

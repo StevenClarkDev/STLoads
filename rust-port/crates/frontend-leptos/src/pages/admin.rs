@@ -37,6 +37,8 @@ pub fn AdminDashboardPage() -> impl IntoView {
             || session::has_permission(&auth, "manage_tms_operations")
             || session::has_permission(&auth, "manage_payments")
             || session::has_permission(&auth, "manage_master_data")
+            || session::has_permission(&auth, "manage_users")
+            || session::has_permission(&auth, "manage_roles")
     });
 
     Effect::new(move |_| {
@@ -132,7 +134,7 @@ pub fn AdminDashboardPage() -> impl IntoView {
             if let Some(guard) = admin_guard_view(
                 &auth,
                 "Admin Dashboard",
-                &["access_admin_portal", "manage_tms_operations", "manage_payments", "manage_master_data"],
+                &["access_admin_portal", "manage_tms_operations", "manage_payments", "manage_master_data", "manage_users", "manage_roles"],
             ) {
                 guard
             } else {
@@ -213,6 +215,18 @@ pub fn AdminDashboardPage() -> impl IntoView {
 
 fn render_admin_card(route: String) -> impl IntoView {
     let (label, detail) = match route.as_str() {
+        "/admin/users" => (
+            "User Directory",
+            "Role and account-state controls for all users",
+        ),
+        "/admin/loads" => (
+            "Admin Loads",
+            "Approval-stage, active, completed, and release-ready load oversight",
+        ),
+        "/admin/roles/permissions" | "/admin/roles" => (
+            "Roles & Permissions",
+            "Database-backed role permission matrix for live Rust sessions",
+        ),
         "/admin/stloads/operations" => (
             "STLOADS Operations",
             "Publish queue, alerts, and handoff table",

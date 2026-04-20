@@ -8,14 +8,18 @@ Today, the deployable Rust workload is the Axum backend API in `crates/backend`.
 
 That means this guide gets you to a live backend with:
 - auth/session routes
+- onboarding and KYC routes
 - load board APIs
+- load builder and load profile APIs
+- tracking and execution APIs
 - chat and marketplace APIs
 - payments APIs
 - STLOADS/TMS APIs
 - admin ops APIs
 - realtime websocket endpoint
+- protected document upload and download routed through IBM Cloud Object Storage-compatible storage
 
-The Leptos frontend crate is not yet packaged as its own deployable IBM workload, so the safest first IBM milestone is: deploy the backend first, point it at IBM PostgreSQL, then run the smoke script against the live Code Engine URL.
+The Leptos frontend crate is not yet packaged as its own deployable IBM workload, so the safest first IBM milestone is: deploy the backend first, point it at IBM PostgreSQL and IBM Cloud Object Storage, then run the smoke script and staging checklist against the live Code Engine URL.
 
 ## Files Added For IBM
 
@@ -24,7 +28,8 @@ The Leptos frontend crate is not yet packaged as its own deployable IBM workload
 - `.ceignore`: keeps Code Engine local-source uploads small.
 - `.env.ibm.example`: runtime variable template for IBM.
 - `scripts/seed_postgres_smoke_data.sql`: disposable PostgreSQL smoke dataset.
-- `scripts/smoke_test_backend.ps1`: end-to-end backend smoke run.
+- `scripts/smoke_test_backend.ps1`: end-to-end backend smoke run, now including execution lifecycle checks.
+- `docs/IBM_STAGING_SMOKE_CHECKLIST.md`: hosted validation checklist for PostgreSQL plus IBM COS.
 
 ## Recommended First Path
 
@@ -43,10 +48,11 @@ Why this is the easiest first path:
 3. IBM Cloud CLI installed.
 4. Code Engine plugin installed.
 5. IBM PostgreSQL instance created and reachable.
-6. `psql` available locally for the seed step.
+6. IBM Cloud Object Storage bucket created for document uploads.
+7. `psql` available locally for the seed step.
 
 Optional now, useful later:
-- Docker Desktop if you want to build/test the image locally.
+- Docker Desktop if you want to build or test the image locally.
 - A real domain and TLS cert if you want `api.yourdomain.com` instead of the default Code Engine URL.
 
 ## Step 1: Install The CLI Plugin
@@ -95,6 +101,14 @@ Edit `rust-port\.env.ibm.runtime` and set at minimum:
 - `PUBLIC_BASE_URL`
 - `APP_ENV`
 - `RUN_MIGRATIONS`
+- `DOCUMENT_STORAGE_BACKEND`
+- `OBJECT_STORAGE_BUCKET`
+- `OBJECT_STORAGE_REGION`
+- `OBJECT_STORAGE_ENDPOINT`
+- `OBJECT_STORAGE_ACCESS_KEY_ID`
+- `OBJECT_STORAGE_SECRET_ACCESS_KEY`
+- `OBJECT_STORAGE_FORCE_PATH_STYLE`
+- `OBJECT_STORAGE_PREFIX`
 - `STRIPE_WEBHOOK_SHARED_SECRET`
 - `TMS_SHARED_SECRET`
 
@@ -102,11 +116,19 @@ For the very first deploy:
 - set `RUN_MIGRATIONS=true`
 - keep `PORT=8080`
 - keep `DEPLOYMENT_TARGET=ibm-code-engine`
+- set `DOCUMENT_STORAGE_BACKEND=ibm_cos`
+- point the `OBJECT_STORAGE_*` values at the IBM Cloud Object Storage bucket for this environment
 
 Example PostgreSQL DSN shape:
 
 ```text
 postgres://USERNAME:PASSWORD@HOST:PORT/DATABASE?sslmode=require
+```
+
+Example IBM COS endpoint shape:
+
+```text
+https://s3.us-south.cloud-object-storage.appdomain.cloud
 ```
 
 ## Step 5: Create A Runtime Secret In Code Engine
@@ -146,8 +168,8 @@ ibmcloud ce app create `
 Notes:
 - `--build-source .\rust-port` tells Code Engine to upload the Rust workspace from your local machine.
 - `--build-dockerfile Dockerfile` tells Code Engine to use the Dockerfile in `rust-port`.
-- `--request-timeout 600` is important because this app includes websocket/realtime behavior and Code Engine caps app connections at 10 minutes.
-- `--min-scale 1` avoids cold-start pain during your first admin/chat testing pass.
+- `--request-timeout 600` is important because this app includes websocket and realtime behavior and Code Engine caps app connections at 10 minutes.
+- `--min-scale 1` avoids cold-start pain during the first admin, chat, document, and execution testing pass.
 
 ## Step 7: Get The Live URL And Logs
 
@@ -158,7 +180,7 @@ ibmcloud ce app logs --name stloads-rust-backend --follow
 
 The `app get` output includes the default Code Engine public URL.
 
-## Step 8: Seed IBM PostgreSQL And Run The Smoke Test
+## Step 8: Seed IBM PostgreSQL And Run The Hosted Smoke Pass
 
 After the app is up, seed the database from your workstation.
 
@@ -171,6 +193,11 @@ Then run the smoke test against the live Code Engine URL:
 ```powershell
 powershell -ExecutionPolicy Bypass -File "rust-port\scripts\smoke_test_backend.ps1" -BaseUrl "https://YOUR-CODE-ENGINE-URL"
 ```
+
+Important notes:
+- the smoke script now validates execution lifecycle and GPS ping endpoints in addition to auth, board, chat, payments, and TMS flows
+- document upload, protected file reads, onboarding KYC, and Google-address browser behavior should still be checked manually in the browser
+- use `docs/IBM_STAGING_SMOKE_CHECKLIST.md` as the hosted signoff checklist
 
 ## Step 9: Turn Off Startup Migrations After The First Healthy Deploy
 
@@ -239,7 +266,7 @@ ibmcloud ce app update `
 
 The included `Dockerfile` also supports a manual image workflow.
 
-That path is useful later for CI/CD, but for your first IBM deployment the local-source Code Engine flow is simpler and less error-prone.
+That path is useful later for CI/CD, but for the first IBM deployment the local-source Code Engine flow is simpler and less error-prone.
 
 ## Important Current Limitation
 
@@ -247,5 +274,5 @@ The backend is ready for this first IBM deployment path.
 
 The frontend is not yet packaged as its own finalized IBM workload, so treat this as:
 - backend deployment first
-- IBM PostgreSQL validation second
-- frontend hosting/cutover after that
+- IBM PostgreSQL plus IBM Cloud Object Storage validation second
+- frontend hosting and cutover after that

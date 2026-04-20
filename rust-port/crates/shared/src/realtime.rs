@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum RealtimeTopic {
     Conversation,
     LoadBoard,
+    ExecutionTracking,
     AdminDashboard,
     AdminTmsOperations,
     AdminTmsReconciliation,
@@ -16,6 +17,7 @@ impl RealtimeTopic {
         match self {
             Self::Conversation => "conversation",
             Self::LoadBoard => "load_board",
+            Self::ExecutionTracking => "execution_tracking",
             Self::AdminDashboard => "admin_dashboard",
             Self::AdminTmsOperations => "admin_tms_operations",
             Self::AdminTmsReconciliation => "admin_tms_reconciliation",
@@ -29,6 +31,8 @@ impl RealtimeTopic {
 pub enum RealtimeEventKind {
     SessionInvalidated,
     LoadLegBooked,
+    LegExecutionUpdated,
+    LegLocationUpdated,
     OfferReviewed,
     MessageSent,
     ConversationRead,

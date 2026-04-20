@@ -30,6 +30,11 @@ pub fn DashboardPage() -> impl IntoView {
             "/admin/stloads/reconciliation",
             "Mismatch cleanup and audit log",
         ),
+        (
+            "My Profile",
+            "/profile",
+            "Self-serve account, company, and password workspace",
+        ),
     ];
 
     view! {

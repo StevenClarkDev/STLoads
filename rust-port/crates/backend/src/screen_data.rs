@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use db::dispatch::{
+    count_dispatch_desk_legs_filtered, list_dispatch_desk_legs_filtered,
     list_load_board_legs_filtered, list_load_board_legs_for_carrier_filtered,
     list_load_board_legs_for_owner_filtered, load_board_metrics, load_board_metrics_for_carrier,
     load_board_metrics_for_owner, load_board_tab_counts, load_board_tab_counts_for_carrier,
@@ -14,7 +15,7 @@ use db::marketplace::{
     list_recent_conversation_workspace_records_for_user,
 };
 use db::tms::{
-    count_handoffs_by_status, list_recent_handoffs_filtered,
+    count_handoffs_by_status, count_unresolved_sync_errors_by_class, list_recent_handoffs_filtered,
     list_recent_reconciliation_logs_filtered, list_unresolved_sync_error_breakdown,
     list_unresolved_sync_errors, published_mismatch_counts,
 };
@@ -23,11 +24,11 @@ use domain::dispatch::LegacyLoadLegStatusCode;
 use domain::marketplace::OfferStatus;
 use domain::tms::reconciliation_action_descriptors;
 use shared::{
-    ChatConversationItem, ChatMessageItem, ChatOfferItem, ChatWorkspaceScreen, ErrorBreakdownRow,
-    HandoffRow, LoadBoardMetric, LoadBoardRow, LoadBoardScreen, LoadBoardTab, MismatchCard,
-    Pagination, ReconciliationLogRow, StatusCard, StloadsOperationsScreen,
-    StloadsReconciliationScreen, SyncIssueRow, SyncIssueSummary, sample_stloads_operations_screen,
-    sample_stloads_reconciliation_screen,
+    ChatConversationItem, ChatMessageItem, ChatOfferItem, ChatWorkspaceScreen, DispatchDeskLink,
+    DispatchDeskRow, DispatchDeskScreen, ErrorBreakdownRow, HandoffRow, LoadBoardMetric,
+    LoadBoardRow, LoadBoardScreen, LoadBoardTab, MismatchCard, Pagination, ReconciliationLogRow,
+    StatusCard, StloadsOperationsScreen, StloadsReconciliationScreen, SyncIssueRow,
+    SyncIssueSummary, sample_stloads_operations_screen, sample_stloads_reconciliation_screen,
 };
 use tracing::warn;
 
@@ -82,6 +83,14 @@ const LOAD_BOARD_TAB_ORDER: &[(&str, &str)] = &[
     ("all", "All Loads"),
     ("recommended", "Recommended"),
     ("booked", "Booked"),
+];
+
+const DISPATCH_DESK_ORDER: &[(&str, &str)] = &[
+    ("quote", "Quote Desk"),
+    ("tender", "Tender Desk"),
+    ("facility", "Facility Desk"),
+    ("closeout", "Closeout Desk"),
+    ("collections", "Collections Desk"),
 ];
 
 pub async fn load_board_screen(
@@ -195,6 +204,73 @@ pub async fn chat_workspace_screen(
                 state,
                 vec![format!(
                     "The Rust chat workspace could not be loaded for this session: {}",
+                    error
+                )],
+            )
+        }
+    }
+}
+
+pub async fn dispatch_desk_screen(
+    state: &AppState,
+    viewer: Option<&ResolvedSession>,
+    desk_key: Option<String>,
+) -> DispatchDeskScreen {
+    let active_desk = normalize_dispatch_desk_key(desk_key.as_deref());
+    let Some(viewer) = viewer else {
+        return empty_dispatch_desk_screen(
+            state,
+            &active_desk,
+            "Secure Dispatch Desk",
+            "Dispatch desk access requires a Rust session.",
+            vec![
+                "Sign in before opening quote, tender, facility, closeout, or collections boards from the Rust port.".into(),
+                "This route intentionally avoids sample dispatch desk data during staged cutover.".into(),
+            ],
+        );
+    };
+
+    if !can_access_dispatch_desk(viewer) {
+        let workspace = viewer_role_workspace(viewer);
+        return empty_dispatch_desk_screen(
+            state,
+            &active_desk,
+            desk_title(&active_desk),
+            &workspace,
+            vec![
+                "The authenticated account does not have dispatch-desk access in the Rust slice."
+                    .into(),
+            ],
+        );
+    }
+
+    let Some(pool) = state.pool.as_ref() else {
+        let workspace = viewer_role_workspace(viewer);
+        return empty_dispatch_desk_screen(
+            state,
+            &active_desk,
+            desk_title(&active_desk),
+            &workspace,
+            vec![format!(
+                "Dispatch desk data is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            )],
+        );
+    };
+
+    match build_dispatch_desk_screen(state, pool, viewer, &active_desk).await {
+        Ok(screen) => screen,
+        Err(error) => {
+            let workspace = viewer_role_workspace(viewer);
+            warn!(error = %error, "failed to build auth-scoped dispatch desk screen");
+            empty_dispatch_desk_screen(
+                state,
+                &active_desk,
+                desk_title(&active_desk),
+                &workspace,
+                vec![format!(
+                    "The Rust dispatch desk could not be loaded for this session: {}",
                     error
                 )],
             )
@@ -345,6 +421,7 @@ async fn build_load_board_screen(
             );
 
             LoadBoardRow {
+                load_id: row.load_id.max(0) as u64,
                 leg_id: row.leg_id.max(0) as u64,
                 leg_code: row.leg_code.clone().unwrap_or_else(|| {
                     format!(
@@ -642,6 +719,67 @@ async fn build_chat_workspace_screen(
         notes,
     })
 }
+
+async fn build_dispatch_desk_screen(
+    state: &AppState,
+    pool: &db::DbPool,
+    viewer: &ResolvedSession,
+    desk_key: &str,
+) -> Result<DispatchDeskScreen, sqlx::Error> {
+    let status_ids = dispatch_desk_statuses(desk_key);
+    let owner_scope = match viewer.user.primary_role() {
+        Some(UserRole::Admin) => None,
+        _ => Some(viewer.user.id),
+    };
+    let rows = list_dispatch_desk_legs_filtered(pool, owner_scope, status_ids, 20).await?;
+    let total = count_dispatch_desk_legs_filtered(pool, owner_scope, status_ids).await?;
+
+    let sync_error_count = if desk_key == "collections" {
+        count_unresolved_sync_errors_by_class(pool, "delivered_still_open").await?
+    } else {
+        0
+    };
+
+    let status_cards = build_dispatch_desk_status_cards(desk_key, &rows, sync_error_count);
+    let mut notes = vec![
+        "This Rust dispatch desk intentionally mirrors the PHP desk split by operational phase instead of flattening everything into one board.".into(),
+        "Admins see the full desk scope; non-admin sessions only see loads owned by the authenticated account, matching the Laravel controller behavior.".into(),
+    ];
+
+    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
+        notes.push(format!(
+            "IBM deployment note: PUBLIC_BASE_URL is set to {} so desk links, websocket refreshes, and follow-up actions stay proxy-safe.",
+            public_base_url
+        ));
+    }
+
+    Ok(DispatchDeskScreen {
+        desk_key: desk_key.to_string(),
+        title: desk_title(desk_key).into(),
+        subtitle: desk_subtitle(desk_key).into(),
+        desks: DISPATCH_DESK_ORDER
+            .iter()
+            .map(|(key, label)| DispatchDeskLink {
+                key: (*key).to_string(),
+                label: (*label).to_string(),
+                href: format!("/desk/{}", key),
+                is_active: *key == desk_key,
+            })
+            .collect(),
+        quick_links: dispatch_desk_quick_links(desk_key),
+        status_cards,
+        rows: rows
+            .into_iter()
+            .map(|row| map_dispatch_desk_row(desk_key, row))
+            .collect(),
+        notes,
+        pagination: Pagination {
+            page: 1,
+            per_page: 20,
+            total: total.max(0) as u64,
+        },
+    })
+}
 async fn build_stloads_operations_screen(
     pool: &db::DbPool,
     status_filter: Option<String>,
@@ -907,6 +1045,45 @@ fn empty_load_board_screen(
     }
 }
 
+fn empty_dispatch_desk_screen(
+    state: &AppState,
+    desk_key: &str,
+    title: &str,
+    subtitle: &str,
+    mut notes: Vec<String>,
+) -> DispatchDeskScreen {
+    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
+        notes.push(format!(
+            "IBM deployment note: PUBLIC_BASE_URL is set to {} for proxy-safe dispatch-desk routing during staged cutover.",
+            public_base_url
+        ));
+    }
+
+    DispatchDeskScreen {
+        desk_key: desk_key.to_string(),
+        title: title.to_string(),
+        subtitle: subtitle.to_string(),
+        desks: DISPATCH_DESK_ORDER
+            .iter()
+            .map(|(key, label)| DispatchDeskLink {
+                key: (*key).to_string(),
+                label: (*label).to_string(),
+                href: format!("/desk/{}", key),
+                is_active: *key == desk_key,
+            })
+            .collect(),
+        quick_links: dispatch_desk_quick_links(desk_key),
+        status_cards: Vec::new(),
+        rows: Vec::new(),
+        notes,
+        pagination: Pagination {
+            page: 1,
+            per_page: 20,
+            total: 0,
+        },
+    }
+}
+
 fn empty_chat_workspace_screen(state: &AppState, mut notes: Vec<String>) -> ChatWorkspaceScreen {
     if let Some(public_base_url) = state.config.public_base_url.as_ref() {
         notes.push(format!(
@@ -941,6 +1118,17 @@ fn can_access_load_board(viewer: &ResolvedSession) -> bool {
     )
 }
 
+fn can_access_dispatch_desk(viewer: &ResolvedSession) -> bool {
+    has_any_permission(
+        viewer,
+        &[
+            "manage_dispatch_desk",
+            "manage_loads",
+            "access_admin_portal",
+        ],
+    )
+}
+
 fn can_access_chat_workspace(viewer: &ResolvedSession) -> bool {
     has_any_permission(viewer, &["manage_marketplace"])
 }
@@ -951,6 +1139,646 @@ fn has_any_permission(viewer: &ResolvedSession, permission_keys: &[&str]) -> boo
             .iter()
             .any(|expected| permission == expected)
     })
+}
+
+fn normalize_dispatch_desk_key(value: Option<&str>) -> String {
+    match value.unwrap_or("quote").trim() {
+        "tender" => "tender".into(),
+        "facility" => "facility".into(),
+        "closeout" => "closeout".into(),
+        "collections" => "collections".into(),
+        _ => "quote".into(),
+    }
+}
+
+fn dispatch_desk_statuses(desk_key: &str) -> &'static [i16] {
+    match desk_key {
+        "tender" => &[1, 4],
+        "facility" => &[4, 5, 6],
+        "closeout" => &[9, 10],
+        "collections" => &[10, 11],
+        _ => &[1],
+    }
+}
+
+fn desk_title(desk_key: &str) -> &'static str {
+    match desk_key {
+        "tender" => "Tender Desk",
+        "facility" => "Facility Desk",
+        "closeout" => "Closeout Desk",
+        "collections" => "Collections Desk",
+        _ => "Quote Desk",
+    }
+}
+
+fn desk_subtitle(desk_key: &str) -> &'static str {
+    match desk_key {
+        "tender" => {
+            "Loads at tender or booking stage, with duplicate-risk visibility for STLOADS board exposure."
+        }
+        "facility" => {
+            "Loads at pickup and facility-readiness stage, with STLOADS and readiness signals side by side."
+        }
+        "closeout" => {
+            "Delivered or completed loads that still need withdraw, close, or archive follow-up on STLOADS."
+        }
+        "collections" => {
+            "Finance-stage loads that still need STLOADS archive cleanup or sync-error review."
+        }
+        _ => "Quote-stage loads that are still being priced and reviewed for board eligibility.",
+    }
+}
+
+fn build_dispatch_desk_status_cards(
+    desk_key: &str,
+    rows: &[db::dispatch::DispatchDeskLegRecord],
+    sync_error_count: i64,
+) -> Vec<StatusCard> {
+    match desk_key {
+        "tender" => vec![
+            StatusCard {
+                key: "published".into(),
+                label: "Board-Exposed".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| row.handoff_status.as_deref() == Some("published"))
+                    .count() as u64,
+                tone: "success".into(),
+                note: Some("Tender-stage loads already visible to carriers on STLOADS.".into()),
+                is_active: false,
+            },
+            StatusCard {
+                key: "push_failed".into(),
+                label: "Push Failed".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| row.handoff_status.as_deref() == Some("push_failed"))
+                    .count() as u64,
+                tone: "danger".into(),
+                note: Some("Publish attempts that need ops attention before the board can be trusted.".into()),
+                is_active: false,
+            },
+            StatusCard {
+                key: "withdrawn".into(),
+                label: "Withdrawn".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| row.handoff_status.as_deref() == Some("withdrawn"))
+                    .count() as u64,
+                tone: "secondary".into(),
+                note: Some("Tender records already pulled off STLOADS.".into()),
+                is_active: false,
+            },
+        ],
+        "facility" => vec![
+            StatusCard {
+                key: "published".into(),
+                label: "Published to Board".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| row.handoff_status.as_deref() == Some("published"))
+                    .count() as u64,
+                tone: "success".into(),
+                note: Some("Facility-stage legs that still have an active board representation.".into()),
+                is_active: false,
+            },
+            StatusCard {
+                key: "no_handoff".into(),
+                label: "No STLOADS Handoff".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| row.handoff_status.is_none())
+                    .count() as u64,
+                tone: "warning".into(),
+                note: Some("Pickup-stage legs still operating without an STLOADS handoff.".into()),
+                is_active: false,
+            },
+        ],
+        "closeout" => vec![
+            StatusCard {
+                key: "still_live".into(),
+                label: "Still Live on STLOADS".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| {
+                        matches!(
+                            row.handoff_status.as_deref(),
+                            Some("published" | "queued" | "push_in_progress")
+                        )
+                    })
+                    .count() as u64,
+                tone: "danger".into(),
+                note: Some("Delivered or completed loads that still need withdraw or close follow-up.".into()),
+                is_active: false,
+            },
+            StatusCard {
+                key: "withdrawn".into(),
+                label: "Withdrawn".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| row.handoff_status.as_deref() == Some("withdrawn"))
+                    .count() as u64,
+                tone: "secondary".into(),
+                note: Some("Closeout records already pulled from STLOADS and waiting on archive decisions.".into()),
+                is_active: false,
+            },
+            StatusCard {
+                key: "closed".into(),
+                label: "Closed / Archived".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| row.handoff_status.as_deref() == Some("closed"))
+                    .count() as u64,
+                tone: "dark".into(),
+                note: Some("Closeout records already archived downstream.".into()),
+                is_active: false,
+            },
+        ],
+        "collections" => vec![
+            StatusCard {
+                key: "needs_archive".into(),
+                label: "Needs STLOADS Archive".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| {
+                        row.handoff_status.is_some()
+                            && !matches!(
+                                row.handoff_status.as_deref(),
+                                Some("closed" | "withdrawn")
+                            )
+                    })
+                    .count() as u64,
+                tone: "warning".into(),
+                note: Some("Finance-stage loads that still look active on STLOADS.".into()),
+                is_active: false,
+            },
+            StatusCard {
+                key: "sync_errors".into(),
+                label: "Delivered-Still-Open Errors".into(),
+                value: sync_error_count.max(0) as u64,
+                tone: "danger".into(),
+                note: Some("Unresolved STLOADS sync errors with delivered loads still open.".into()),
+                is_active: false,
+            },
+            StatusCard {
+                key: "closed".into(),
+                label: "Closed / Archived".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| row.handoff_status.as_deref() == Some("closed"))
+                    .count() as u64,
+                tone: "dark".into(),
+                note: Some("Finance-stage handoffs already archived.".into()),
+                is_active: false,
+            },
+        ],
+        _ => vec![
+            StatusCard {
+                key: "eligible".into(),
+                label: "Eligible for STLOADS".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| row.handoff_status.is_none())
+                    .count() as u64,
+                tone: "primary".into(),
+                note: Some("Quote-stage loads with no board handoff yet.".into()),
+                is_active: false,
+            },
+            StatusCard {
+                key: "published".into(),
+                label: "Published to Board".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| row.handoff_status.as_deref() == Some("published"))
+                    .count() as u64,
+                tone: "success".into(),
+                note: Some("Quote-stage loads already visible on STLOADS.".into()),
+                is_active: false,
+            },
+            StatusCard {
+                key: "queued".into(),
+                label: "Queued for Push".into(),
+                value: rows
+                    .iter()
+                    .filter(|row| row.handoff_status.as_deref() == Some("queued"))
+                    .count() as u64,
+                tone: "info".into(),
+                note: Some("Quote-stage loads waiting for the next board push cycle.".into()),
+                is_active: false,
+            },
+        ],
+    }
+}
+
+fn map_dispatch_desk_row(
+    desk_key: &str,
+    row: db::dispatch::DispatchDeskLegRecord,
+) -> DispatchDeskRow {
+    let (focus_label, focus_tone, focus_note) = match desk_key {
+        "tender" => {
+            if row.handoff_status.as_deref() == Some("published") && row.booked_carrier_id.is_some()
+            {
+                (
+                    "Carrier Assigned".into(),
+                    "warning".into(),
+                    Some("Load is booked with a carrier but still published on STLOADS.".into()),
+                )
+            } else {
+                ("-".into(), "secondary".into(), None)
+            }
+        }
+        "facility" => match row.handoff_status.as_deref() {
+            Some("published") if matches!(row.status_id, 5 | 6) => (
+                "Pickup Active".into(),
+                "success".into(),
+                Some("Pickup has started or the carrier is already at facility.".into()),
+            ),
+            Some("published") => (
+                "Awaiting Pickup".into(),
+                "warning".into(),
+                Some("Published to STLOADS, but pickup is not yet active.".into()),
+            ),
+            None => ("-".into(), "secondary".into(), None),
+            Some(other) => (title_case_legacy_label(other), "secondary".into(), None),
+        },
+        "closeout" => match row.handoff_status.as_deref() {
+            Some("published" | "queued" | "push_in_progress") => (
+                "Needs Withdraw / Close".into(),
+                "danger".into(),
+                Some(
+                    "Delivery is done internally but the board representation is still live."
+                        .into(),
+                ),
+            ),
+            Some("withdrawn") => (
+                "Needs Archive".into(),
+                "warning".into(),
+                Some("Already withdrawn from STLOADS and ready for closeout cleanup.".into()),
+            ),
+            Some("closed") => ("Archived".into(), "dark".into(), None),
+            _ => ("-".into(), "secondary".into(), None),
+        },
+        "collections" => match row.handoff_status.as_deref() {
+            None => ("No handoff".into(), "secondary".into(), None),
+            Some("closed") => ("Archived".into(), "dark".into(), None),
+            Some("withdrawn") => (
+                "Withdrawn - Ready to Close".into(),
+                "secondary".into(),
+                Some("Collections can close the downstream STLOADS trail.".into()),
+            ),
+            Some(_) => (
+                "Still Active - Archive Required".into(),
+                "danger".into(),
+                Some("Finance is complete, but STLOADS still looks active.".into()),
+            ),
+        },
+        _ => match row.handoff_status.as_deref() {
+            None => ("Eligible".into(), "primary".into(), None),
+            Some("published") => ("On Board".into(), "success".into(), None),
+            Some(other) => (title_case_legacy_label(other), "secondary".into(), None),
+        },
+    };
+    let (archive_guidance_label, archive_guidance_tone, archive_guidance_note) =
+        dispatch_desk_archive_guidance(
+            desk_key,
+            row.escrow_status.as_deref(),
+            row.handoff_status.as_deref(),
+        );
+    let (primary_action_key, primary_action_label, primary_action_enabled) =
+        dispatch_desk_primary_action(
+            desk_key,
+            row.handoff_status.as_deref(),
+            row.booked_carrier_id.is_some(),
+            row.handoff_id,
+        );
+    let (finance_action_key, finance_action_label, finance_action_enabled) =
+        dispatch_desk_finance_action(
+            desk_key,
+            row.status_id,
+            row.booked_carrier_id.is_some(),
+            row.escrow_status.as_deref(),
+            row.handoff_status.as_deref(),
+        );
+    let payment_label = match desk_key {
+        "closeout" | "collections" => Some(payment_label(
+            row.escrow_status.as_deref(),
+            row.booked_carrier_id.is_some() || row.status_id >= 8,
+        )),
+        _ => None,
+    };
+    let (secondary_action_label, secondary_action_href) = dispatch_desk_secondary_action(
+        desk_key,
+        row.leg_id,
+        row.load_id,
+        row.status_id,
+        row.escrow_status.as_deref(),
+        row.handoff_status.as_deref(),
+    );
+
+    DispatchDeskRow {
+        load_id: row.load_id.max(0) as u64,
+        leg_id: row.leg_id.max(0) as u64,
+        handoff_id: row.handoff_id.map(|value| value.max(0) as u64),
+        load_number: row.load_number,
+        title: row.load_title,
+        equipment_label: row.equipment_name,
+        weight_label: row.weight.map(|value| format!("{:.0}", value)),
+        carrier_label: row.booked_carrier_name,
+        payment_label,
+        leg_status_label: load_leg_status_label(row.status_id),
+        leg_status_tone: load_leg_status_tone(row.status_id).into(),
+        stloads_label: row
+            .handoff_status
+            .as_ref()
+            .map(|value| title_case_legacy_label(value)),
+        stloads_tone: row
+            .handoff_status
+            .as_deref()
+            .map(|value| handoff_status_tone(value).to_string()),
+        focus_label,
+        focus_tone,
+        focus_note,
+        archive_guidance_label,
+        archive_guidance_tone,
+        archive_guidance_note,
+        latest_activity_note: row.latest_activity_note,
+        load_href: Some(format!("/loads/{}", row.load_id.max(0) as u64)),
+        primary_action_key,
+        primary_action_label,
+        primary_action_enabled,
+        finance_action_key,
+        finance_action_label,
+        finance_action_enabled,
+        secondary_action_label,
+        secondary_action_href,
+    }
+}
+
+fn dispatch_desk_archive_guidance(
+    desk_key: &str,
+    escrow_status: Option<&str>,
+    handoff_status: Option<&str>,
+) -> (Option<String>, Option<String>, Option<String>) {
+    match desk_key {
+        "closeout" => match handoff_status {
+            Some("published" | "queued" | "push_in_progress") => (
+                Some("Still Live On STLOADS".into()),
+                Some("danger".into()),
+                Some(
+                    "Withdraw or close the board listing before the load can be considered fully archived."
+                        .into(),
+                ),
+            ),
+            Some("withdrawn") if matches!(escrow_status, Some("released" | "paid_out")) => (
+                Some("Ready To Archive".into()),
+                Some("success".into()),
+                Some(
+                    "Finance is complete and the handoff is withdrawn, so downstream closeout can finish cleanly."
+                        .into(),
+                ),
+            ),
+            Some("withdrawn") => (
+                Some("Archive After Finance".into()),
+                Some("warning".into()),
+                Some(
+                    "The STLOADS listing is withdrawn, but escrow still needs a final finance step before archive is complete."
+                        .into(),
+                ),
+            ),
+            Some("closed") => (
+                Some("Archived".into()),
+                Some("dark".into()),
+                Some("Closeout archive is already complete on the Rust side.".into()),
+            ),
+            None => (
+                Some("No Handoff".into()),
+                Some("secondary".into()),
+                Some("No downstream STLOADS archive step is required for this row.".into()),
+            ),
+            Some(other) => (
+                Some(title_case_legacy_label(other)),
+                Some("secondary".into()),
+                None,
+            ),
+        },
+        "collections" => match handoff_status {
+            None => (
+                Some("No Handoff".into()),
+                Some("secondary".into()),
+                Some("Collections can close locally because no STLOADS publish trail exists.".into()),
+            ),
+            Some("closed") => (
+                Some("Archived".into()),
+                Some("dark".into()),
+                Some("Finance and archive cleanup are both complete.".into()),
+            ),
+            Some("withdrawn") if matches!(escrow_status, Some("released" | "paid_out")) => (
+                Some("Ready To Close".into()),
+                Some("success".into()),
+                Some(
+                    "Escrow is already finished and the withdrawn handoff can be closed for final archive."
+                        .into(),
+                ),
+            ),
+            Some("withdrawn") => (
+                Some("Release Then Close".into()),
+                Some("warning".into()),
+                Some(
+                    "Collections still needs the payout step before the withdrawn handoff should be closed."
+                        .into(),
+                ),
+            ),
+            Some(_) => (
+                Some("Archive Required".into()),
+                Some("danger".into()),
+                Some(
+                    "The board posting still looks active while collections is finishing finance follow-up."
+                        .into(),
+                ),
+            ),
+        },
+        _ => (None, None, None),
+    }
+}
+
+fn dispatch_desk_primary_action(
+    desk_key: &str,
+    handoff_status: Option<&str>,
+    has_booked_carrier: bool,
+    handoff_id: Option<i64>,
+) -> (Option<String>, Option<String>, bool) {
+    let has_handoff = handoff_id.is_some();
+    match desk_key {
+        "tender" => match handoff_status {
+            Some("push_failed" | "requeue_required") if has_handoff => {
+                (Some("requeue".into()), Some("Requeue".into()), true)
+            }
+            Some("published") if has_handoff && has_booked_carrier => {
+                (Some("withdraw".into()), Some("Withdraw".into()), true)
+            }
+            _ => (None, None, false),
+        },
+        "closeout" => match handoff_status {
+            Some("published" | "queued" | "push_in_progress") if has_handoff => {
+                (Some("withdraw".into()), Some("Withdraw".into()), true)
+            }
+            Some("withdrawn") if has_handoff => (Some("close".into()), Some("Close".into()), true),
+            _ => (None, None, false),
+        },
+        "collections" => match handoff_status {
+            Some("withdrawn") if has_handoff => (Some("close".into()), Some("Close".into()), true),
+            Some("published" | "queued" | "push_in_progress") if has_handoff => {
+                (Some("close".into()), Some("Force Close".into()), true)
+            }
+            _ => (None, None, false),
+        },
+        _ => (None, None, false),
+    }
+}
+
+fn dispatch_desk_finance_action(
+    desk_key: &str,
+    status_id: i16,
+    has_booked_carrier: bool,
+    escrow_status: Option<&str>,
+    handoff_status: Option<&str>,
+) -> (Option<String>, Option<String>, bool) {
+    if !matches!(desk_key, "closeout" | "collections") || !has_booked_carrier {
+        return (None, None, false);
+    }
+
+    match desk_key {
+        "closeout" => {
+            if status_id >= 10 && !matches!(escrow_status, Some("released" | "paid_out")) {
+                return match escrow_status {
+                    Some("funded") => (Some("release".into()), Some("Release Escrow".into()), true),
+                    Some("pending" | "hold") => {
+                        (Some("hold".into()), Some("Keep On Hold".into()), true)
+                    }
+                    _ => (Some("fund".into()), Some("Fund Escrow".into()), true),
+                };
+            }
+
+            if matches!(handoff_status, Some("withdrawn"))
+                && matches!(escrow_status, Some("released" | "paid_out"))
+            {
+                return (Some("release".into()), Some("Review Release".into()), false);
+            }
+
+            (None, None, false)
+        }
+        "collections" => match escrow_status {
+            Some("released" | "paid_out") => (None, None, false),
+            Some("funded") => (Some("release".into()), Some("Release Escrow".into()), true),
+            Some("pending" | "hold") => (Some("hold".into()), Some("Keep On Hold".into()), true),
+            _ => (Some("fund".into()), Some("Fund Escrow".into()), true),
+        },
+        _ => (None, None, false),
+    }
+}
+
+fn dispatch_desk_secondary_action(
+    desk_key: &str,
+    leg_id: i64,
+    load_id: i64,
+    status_id: i16,
+    escrow_status: Option<&str>,
+    handoff_status: Option<&str>,
+) -> (Option<String>, Option<String>) {
+    match desk_key {
+        "closeout" => {
+            if status_id >= 10 && !matches!(escrow_status, Some("released" | "paid_out")) {
+                return (
+                    Some("Open Payments".into()),
+                    Some(format!(
+                        "/admin/payments?leg_id={}&action=release&source=dispatch-closeout&load_id={}",
+                        leg_id.max(0),
+                        load_id.max(0)
+                    )),
+                );
+            }
+
+            if matches!(
+                handoff_status,
+                Some("published" | "queued" | "push_in_progress" | "withdrawn")
+            ) {
+                return (
+                    Some("Open Reconciliation".into()),
+                    Some(format!(
+                        "/admin/stloads/reconciliation?action={}",
+                        if matches!(handoff_status, Some("withdrawn")) {
+                            "auto_archive"
+                        } else {
+                            "mismatch_detected"
+                        }
+                    )),
+                );
+            }
+
+            (None, None)
+        }
+        "collections" => {
+            if !matches!(escrow_status, Some("released" | "paid_out")) {
+                return (
+                    Some("Open Payments".into()),
+                    Some(format!(
+                        "/admin/payments?leg_id={}&action={}&source=dispatch-collections&load_id={}",
+                        leg_id.max(0),
+                        if matches!(escrow_status, Some("funded")) {
+                            "release"
+                        } else {
+                            "fund"
+                        },
+                        load_id.max(0)
+                    )),
+                );
+            }
+
+            if !matches!(handoff_status, None | Some("closed")) {
+                return (
+                    Some("Open STLOADS Ops".into()),
+                    Some("/admin/stloads/operations".into()),
+                );
+            }
+
+            (None, None)
+        }
+        _ => (None, None),
+    }
+}
+
+fn dispatch_desk_quick_links(desk_key: &str) -> Vec<DispatchDeskLink> {
+    match desk_key {
+        "closeout" => vec![
+            DispatchDeskLink {
+                key: "reconciliation".into(),
+                label: "Reconciliation".into(),
+                href: "/admin/stloads/reconciliation".into(),
+                is_active: false,
+            },
+            DispatchDeskLink {
+                key: "stloads_operations".into(),
+                label: "STLOADS Operations".into(),
+                href: "/admin/stloads/operations".into(),
+                is_active: false,
+            },
+        ],
+        "collections" => vec![
+            DispatchDeskLink {
+                key: "payments".into(),
+                label: "Payments Console".into(),
+                href: "/admin/payments".into(),
+                is_active: false,
+            },
+            DispatchDeskLink {
+                key: "reconciliation".into(),
+                label: "Reconciliation".into(),
+                href: "/admin/stloads/reconciliation".into(),
+                is_active: false,
+            },
+        ],
+        _ => Vec::new(),
+    }
 }
 
 fn viewer_role_workspace(viewer: &ResolvedSession) -> String {

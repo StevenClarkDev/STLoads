@@ -21,6 +21,20 @@ pub fn UserFrame(children: Children) -> impl IntoView {
 
     let show_create_load_link =
         Signal::derive(move || session::has_permission(&auth, "manage_loads"));
+    let show_dispatch_desk_link = Signal::derive(move || {
+        session::has_permission(&auth, "manage_dispatch_desk")
+            || session::has_permission(&auth, "manage_loads")
+            || session::has_permission(&auth, "access_admin_portal")
+    });
+
+    let show_onboarding_link = Signal::derive(move || {
+        auth.session
+            .get()
+            .user
+            .as_ref()
+            .map(|user| user.dashboard_href == "/auth/onboarding")
+            .unwrap_or(false)
+    });
 
     view! {
         <main class="user-frame">
@@ -71,8 +85,26 @@ pub fn UserFrame(children: Children) -> impl IntoView {
                             </>
                         })
                     }}
+                    {move || {
+                        show_dispatch_desk_link.get().then(|| view! {
+                            <>
+                                " | "
+                                <A href="/desk/quote">"Dispatch Desk"</A>
+                            </>
+                        })
+                    }}
+                    " | "
+                    <A href="/profile">"Profile"</A>
                     " | "
                     <A href="/chat">"Chat"</A>
+                    {move || {
+                        show_onboarding_link.get().then(|| view! {
+                            <>
+                                " | "
+                                <A href="/auth/onboarding">"Onboarding"</A>
+                            </>
+                        })
+                    }}
                     " | "
                     <A href="/auth/login">"Auth"</A>
                     {move || {

@@ -1,0 +1,43 @@
+FROM registry.access.redhat.com/ubi9/ubi:latest AS builder
+WORKDIR /app
+
+RUN dnf install -y \
+        ca-certificates \
+        gcc \
+        gcc-c++ \
+        git \
+        make \
+        openssl-devel \
+        perl-core \
+        pkgconf-pkg-config \
+        tar \
+    && dnf clean all
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:${PATH}
+
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+RUN rustup target add wasm32-unknown-unknown
+RUN cargo install trunk --locked
+
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates ./crates
+
+WORKDIR /app/crates/frontend-leptos
+RUN trunk build --release
+
+FROM nginx:1.27-alpine AS runtime
+RUN apk add --no-cache gettext
+COPY nginx.frontend.conf.template /etc/nginx/templates/default.conf.template
+COPY runtime-config.js.template /app/templates/runtime-config.js.template
+COPY frontend-entrypoint.sh /frontend-entrypoint.sh
+COPY --from=builder /app/crates/frontend-leptos/dist /usr/share/nginx/html
+
+ENV BACKEND_UPSTREAM=https://stloads-rust-backend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud \
+    BACKEND_API_BASE_URL= \
+    GOOGLE_MAPS_API_KEY= \
+    FRONTEND_PUBLIC_URL=
+
+EXPOSE 8080
+CMD ["/bin/sh", "/frontend-entrypoint.sh"]

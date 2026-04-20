@@ -11,8 +11,9 @@ use domain::master_data::{
 };
 use serde::Serialize;
 use shared::{
-    ApiResponse, LocationUpsertRequest, MasterDataCityOption, MasterDataMutationResponse,
-    MasterDataOption, MasterDataRow, MasterDataScreen, MasterDataSection, MasterDataSummaryCard,
+    ApiResponse, CityUpsertRequest, CountryUpsertRequest, LocationUpsertRequest,
+    MasterDataCityOption, MasterDataDeleteRequest, MasterDataMutationResponse, MasterDataOption,
+    MasterDataRow, MasterDataScreen, MasterDataSection, MasterDataSummaryCard,
     SimpleCatalogUpsertRequest,
 };
 use tracing::warn;
@@ -33,10 +34,21 @@ pub fn router() -> Router<AppState> {
         .route("/catalog", get(catalog))
         .route("/load-creation", get(load_creation_catalog))
         .route("/screen", get(screen))
+        .route("/countries", post(upsert_country_handler))
+        .route("/cities", post(upsert_city_handler))
         .route("/load-types", post(upsert_load_type_handler))
         .route("/equipments", post(upsert_equipment_handler))
         .route("/commodity-types", post(upsert_commodity_type_handler))
         .route("/locations", post(upsert_location_handler))
+        .route("/countries/delete", post(delete_country_handler))
+        .route("/cities/delete", post(delete_city_handler))
+        .route("/load-types/delete", post(delete_load_type_handler))
+        .route("/equipments/delete", post(delete_equipment_handler))
+        .route(
+            "/commodity-types/delete",
+            post(delete_commodity_type_handler),
+        )
+        .route("/locations/delete", post(delete_location_handler))
 }
 
 async fn index() -> Json<ApiResponse<MasterDataOverview>> {
@@ -124,6 +136,104 @@ async fn upsert_load_type_handler(
                 ),
             })))
         }
+    }
+}
+
+async fn upsert_country_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CountryUpsertRequest>,
+) -> Result<Json<ApiResponse<MasterDataMutationResponse>>, StatusCode> {
+    let session = require_master_data_access(&state, &headers).await?;
+    let name = match validate_name(&payload.name) {
+        Ok(name) => name,
+        Err(message) => {
+            return Ok(Json(ApiResponse::ok(failed_mutation(
+                "countries",
+                payload.id,
+                message,
+            ))));
+        }
+    };
+    let iso_code = payload
+        .iso_code
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_uppercase);
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(failed_mutation(
+            "countries",
+            payload.id,
+            unavailable_message(&state, "country saves"),
+        ))));
+    };
+
+    match db::master_data::upsert_country(
+        pool,
+        payload.id.map(|value| value as i64),
+        &name,
+        iso_code.as_deref(),
+    )
+    .await
+    {
+        Ok(row) => Ok(Json(ApiResponse::ok(MasterDataMutationResponse {
+            success: true,
+            kind: "countries".into(),
+            row_id: Some(row.id.max(0) as u64),
+            message: success_message(&session, payload.id.is_some(), "country", &row.name),
+        }))),
+        Err(error) => Ok(Json(ApiResponse::ok(failed_mutation(
+            "countries",
+            payload.id,
+            format!("Country save failed: {}", humanize_db_error(&error)),
+        )))),
+    }
+}
+
+async fn upsert_city_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CityUpsertRequest>,
+) -> Result<Json<ApiResponse<MasterDataMutationResponse>>, StatusCode> {
+    let session = require_master_data_access(&state, &headers).await?;
+    let name = match validate_name(&payload.name) {
+        Ok(name) => name,
+        Err(message) => {
+            return Ok(Json(ApiResponse::ok(failed_mutation(
+                "cities", payload.id, message,
+            ))));
+        }
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(failed_mutation(
+            "cities",
+            payload.id,
+            unavailable_message(&state, "city saves"),
+        ))));
+    };
+
+    match db::master_data::upsert_city(
+        pool,
+        payload.id.map(|value| value as i64),
+        &name,
+        payload.country_id as i64,
+    )
+    .await
+    {
+        Ok(row) => Ok(Json(ApiResponse::ok(MasterDataMutationResponse {
+            success: true,
+            kind: "cities".into(),
+            row_id: Some(row.id.max(0) as u64),
+            message: success_message(&session, payload.id.is_some(), "city", &row.name),
+        }))),
+        Err(error) => Ok(Json(ApiResponse::ok(failed_mutation(
+            "cities",
+            payload.id,
+            format!("City save failed: {}", humanize_db_error(&error)),
+        )))),
     }
 }
 
@@ -277,6 +387,147 @@ async fn upsert_location_handler(
                 message: format!("Location save failed: {}", humanize_db_error(&error)),
             })))
         }
+    }
+}
+
+async fn delete_country_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MasterDataDeleteRequest>,
+) -> Result<Json<ApiResponse<MasterDataMutationResponse>>, StatusCode> {
+    delete_hard_row(&state, &headers, "countries", "country", payload.id).await
+}
+
+async fn delete_city_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MasterDataDeleteRequest>,
+) -> Result<Json<ApiResponse<MasterDataMutationResponse>>, StatusCode> {
+    delete_hard_row(&state, &headers, "cities", "city", payload.id).await
+}
+
+async fn delete_load_type_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MasterDataDeleteRequest>,
+) -> Result<Json<ApiResponse<MasterDataMutationResponse>>, StatusCode> {
+    delete_soft_row(&state, &headers, "load_types", "load type", payload.id).await
+}
+
+async fn delete_equipment_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MasterDataDeleteRequest>,
+) -> Result<Json<ApiResponse<MasterDataMutationResponse>>, StatusCode> {
+    delete_soft_row(&state, &headers, "equipments", "equipment", payload.id).await
+}
+
+async fn delete_commodity_type_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MasterDataDeleteRequest>,
+) -> Result<Json<ApiResponse<MasterDataMutationResponse>>, StatusCode> {
+    delete_soft_row(
+        &state,
+        &headers,
+        "commodity_types",
+        "commodity type",
+        payload.id,
+    )
+    .await
+}
+
+async fn delete_location_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MasterDataDeleteRequest>,
+) -> Result<Json<ApiResponse<MasterDataMutationResponse>>, StatusCode> {
+    delete_soft_row(&state, &headers, "locations", "location", payload.id).await
+}
+
+async fn delete_soft_row(
+    state: &AppState,
+    headers: &HeaderMap,
+    kind: &str,
+    label: &str,
+    id: u64,
+) -> Result<Json<ApiResponse<MasterDataMutationResponse>>, StatusCode> {
+    let session = require_master_data_access(state, headers).await?;
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(failed_mutation(
+            kind,
+            Some(id),
+            unavailable_message(state, "master-data deletes"),
+        ))));
+    };
+
+    match db::master_data::soft_delete_simple_catalog(pool, kind, id as i64).await {
+        Ok(affected) if affected > 0 => Ok(Json(ApiResponse::ok(MasterDataMutationResponse {
+            success: true,
+            kind: kind.into(),
+            row_id: Some(id),
+            message: format!(
+                "{} archived {} #{} from the Rust admin portal.",
+                session.user.name, label, id
+            ),
+        }))),
+        Ok(_) => Ok(Json(ApiResponse::ok(failed_mutation(
+            kind,
+            Some(id),
+            format!("No active {} was found for id #{}.", label, id),
+        )))),
+        Err(error) => Ok(Json(ApiResponse::ok(failed_mutation(
+            kind,
+            Some(id),
+            format!("{} delete failed: {}", label, humanize_db_error(&error)),
+        )))),
+    }
+}
+
+async fn delete_hard_row(
+    state: &AppState,
+    headers: &HeaderMap,
+    kind: &str,
+    label: &str,
+    id: u64,
+) -> Result<Json<ApiResponse<MasterDataMutationResponse>>, StatusCode> {
+    let session = require_master_data_access(state, headers).await?;
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(failed_mutation(
+            kind,
+            Some(id),
+            unavailable_message(state, "master-data deletes"),
+        ))));
+    };
+
+    let result = match kind {
+        "countries" => db::master_data::delete_country(pool, id as i64).await,
+        "cities" => db::master_data::delete_city(pool, id as i64).await,
+        _ => Err(sqlx::Error::Protocol(
+            format!("unsupported hard-delete kind: {}", kind).into(),
+        )),
+    };
+
+    match result {
+        Ok(affected) if affected > 0 => Ok(Json(ApiResponse::ok(MasterDataMutationResponse {
+            success: true,
+            kind: kind.into(),
+            row_id: Some(id),
+            message: format!(
+                "{} deleted {} #{} from the Rust admin portal.",
+                session.user.name, label, id
+            ),
+        }))),
+        Ok(_) => Ok(Json(ApiResponse::ok(failed_mutation(
+            kind,
+            Some(id),
+            format!("No {} was found for id #{}.", label, id),
+        )))),
+        Err(error) => Ok(Json(ApiResponse::ok(failed_mutation(
+            kind,
+            Some(id),
+            format!("{} delete failed: {}", label, humanize_db_error(&error)),
+        )))),
     }
 }
 
@@ -460,7 +711,7 @@ async fn build_master_data_screen(state: &AppState) -> MasterDataScreen {
                         secondary_label: row.iso_code.clone(),
                         status_label: "Active".into(),
                         detail: usage_detail(descriptor),
-                        editable: false,
+                        editable: true,
                         country_id: None,
                         city_id: None,
                     })
@@ -481,7 +732,7 @@ async fn build_master_data_screen(state: &AppState) -> MasterDataScreen {
                         secondary_label: country_name_map.get(&row.country_id).cloned(),
                         status_label: "Active".into(),
                         detail: usage_detail(descriptor),
-                        editable: false,
+                        editable: true,
                         country_id: Some(row.country_id.max(0) as u64),
                         city_id: None,
                     })
@@ -660,8 +911,8 @@ async fn build_master_data_screen(state: &AppState) -> MasterDataScreen {
         .collect::<Vec<_>>();
 
     let mut notes = vec![
-        "This master-data route is now DB-backed and writable for locations, load types, equipments, and commodity types in the Rust admin portal.".into(),
-        "Countries, cities, and status masters remain read-first for now so we can keep the load-builder dependency graph stable while porting forms.".into(),
+        "This master-data route is now DB-backed and writable for countries, cities, locations, load types, equipments, and commodity types in the Rust admin portal.".into(),
+        "Load and offer statuses remain read-first because they drive canonical workflow state machines.".into(),
     ];
 
     if let Some(public_base_url) = state.config.public_base_url.as_ref() {
@@ -753,6 +1004,19 @@ fn validate_name(name: &str) -> Result<String, String> {
         Err("Enter a name before saving this master-data record.".into())
     } else {
         Ok(trimmed.to_string())
+    }
+}
+
+fn failed_mutation(
+    kind: &str,
+    row_id: Option<u64>,
+    message: impl Into<String>,
+) -> MasterDataMutationResponse {
+    MasterDataMutationResponse {
+        success: false,
+        kind: kind.into(),
+        row_id,
+        message: message.into(),
     }
 }
 

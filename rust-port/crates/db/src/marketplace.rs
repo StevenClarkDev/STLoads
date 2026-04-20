@@ -107,7 +107,7 @@ pub async fn list_offers_for_leg(
     load_leg_id: i64,
 ) -> Result<Vec<OfferRecord>, sqlx::Error> {
     sqlx::query_as::<_, OfferRecord>(
-        "SELECT id, load_leg_id, carrier_id, conversation_id, amount, status_id, created_at, updated_at
+        "SELECT id, load_leg_id, carrier_id, conversation_id, amount::double precision AS amount, status_id, created_at, updated_at
          FROM offers
          WHERE load_leg_id = $1
          ORDER BY id DESC",
@@ -122,7 +122,7 @@ pub async fn list_pending_offers_for_leg(
     load_leg_id: i64,
 ) -> Result<Vec<OfferRecord>, sqlx::Error> {
     sqlx::query_as::<_, OfferRecord>(
-        "SELECT id, load_leg_id, carrier_id, conversation_id, amount, status_id, created_at, updated_at
+        "SELECT id, load_leg_id, carrier_id, conversation_id, amount::double precision AS amount, status_id, created_at, updated_at
          FROM offers
          WHERE load_leg_id = $1 AND status_id = 1
          ORDER BY id DESC",
@@ -279,7 +279,7 @@ pub async fn find_offer_by_id(
     offer_id: i64,
 ) -> Result<Option<OfferRecord>, sqlx::Error> {
     sqlx::query_as::<_, OfferRecord>(
-        "SELECT id, load_leg_id, carrier_id, conversation_id, amount, status_id, created_at, updated_at
+        "SELECT id, load_leg_id, carrier_id, conversation_id, amount::double precision AS amount, status_id, created_at, updated_at
          FROM offers
          WHERE id = $1
          LIMIT 1",
@@ -501,7 +501,7 @@ pub async fn review_offer(
     let mut tx = pool.begin().await?;
 
     let Some(offer) = sqlx::query_as::<_, OfferRecord>(
-        "SELECT id, load_leg_id, carrier_id, conversation_id, amount, status_id, created_at, updated_at
+        "SELECT id, load_leg_id, carrier_id, conversation_id, amount::double precision AS amount, status_id, created_at, updated_at
          FROM offers
          WHERE id = $1
          LIMIT 1",
@@ -576,7 +576,7 @@ pub async fn review_offer(
     .await?;
 
     let updated = sqlx::query_as::<_, OfferRecord>(
-        "SELECT id, load_leg_id, carrier_id, conversation_id, amount, status_id, created_at, updated_at
+        "SELECT id, load_leg_id, carrier_id, conversation_id, amount::double precision AS amount, status_id, created_at, updated_at
          FROM offers
          WHERE id = $1
          LIMIT 1",

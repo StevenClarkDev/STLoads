@@ -12,6 +12,7 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
             || session::has_permission(&auth, "manage_tms_operations")
             || session::has_permission(&auth, "manage_payments")
             || session::has_permission(&auth, "manage_master_data")
+            || session::has_permission(&auth, "manage_roles")
     });
     let can_manage_tms = Signal::derive(move || {
         session::has_permission(&auth, "access_admin_portal")
@@ -24,6 +25,18 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
     let can_manage_master_data = Signal::derive(move || {
         session::has_permission(&auth, "access_admin_portal")
             || session::has_permission(&auth, "manage_master_data")
+    });
+    let can_manage_users = Signal::derive(move || {
+        session::has_permission(&auth, "access_admin_portal")
+            || session::has_permission(&auth, "manage_users")
+    });
+    let can_manage_loads = Signal::derive(move || {
+        session::has_permission(&auth, "access_admin_portal")
+            || session::has_permission(&auth, "manage_loads")
+    });
+    let can_manage_roles = Signal::derive(move || {
+        session::has_permission(&auth, "access_admin_portal")
+            || session::has_permission(&auth, "manage_roles")
     });
 
     view! {
@@ -49,6 +62,38 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
                     {move || can_manage_master_data.get().then(|| view! {
                         <>
                             <A href="/admin/master-data">"Master Data"</A>
+                            " | "
+                        </>
+                    })}
+                    {move || can_manage_users.get().then(|| view! {
+                        <>
+                            <A href="/admin/account-lifecycle">"Lifecycle QA"</A>
+                            " | "
+                            <A href="/admin/users">"Users"</A>
+                            " | "
+                            <A href="/admin/change-password">"Change Password"</A>
+                            " | "
+                            <A href="/admin/users/role/carrier">"Carriers"</A>
+                            " | "
+                            <A href="/admin/users/role/shipper">"Shippers"</A>
+                            " | "
+                            <A href="/admin/users/role/broker">"Brokers"</A>
+                            " | "
+                            <A href="/admin/users/role/freight_forwarder">"Freight Forwarders"</A>
+                            " | "
+                            <A href="/admin/onboarding-reviews">"Onboarding Reviews"</A>
+                            " | "
+                        </>
+                    })}
+                    {move || can_manage_loads.get().then(|| view! {
+                        <>
+                            <A href="/admin/loads">"Loads"</A>
+                            " | "
+                        </>
+                    })}
+                    {move || can_manage_roles.get().then(|| view! {
+                        <>
+                            <A href="/admin/roles">"Roles & Permissions"</A>
                             " | "
                         </>
                     })}

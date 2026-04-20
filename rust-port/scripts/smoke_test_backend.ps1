@@ -11,6 +11,8 @@ param(
     [long]$OfferId = 9501,
     [long]$SeededHandoffId = 9601,
     [long]$SeededSyncErrorId = 9701,
+    [double]$ExecutionPingLat = 40.68920,
+    [double]$ExecutionPingLng = -74.17450,
     [string]$StripeWebhookSecret = '',
     [string]$TmsSharedSecret = ''
 )
@@ -101,7 +103,7 @@ function Login-StloadsUser {
     $data = Assert-Envelope -Response $response -Context "Login ($Label)"
 
     if (-not $data.success) {
-        throw "Login failed for $Label: $($data.message)"
+        throw "Login failed for ${Label}: $($data.message)"
     }
 
     if ([string]::IsNullOrWhiteSpace($data.token)) {
@@ -119,6 +121,58 @@ function Assert-Flag {
 
     if (-not $Condition) {
         throw $Message
+    }
+}
+
+function Invoke-ExecutionAction {
+    param(
+        [Parameter(Mandatory = $true)][string]$BearerToken,
+        [Parameter(Mandatory = $true)][long]$LegId,
+        [Parameter(Mandatory = $true)][string]$ActionKey,
+        [Parameter(Mandatory = $true)][string]$ExpectedStatusLabel
+    )
+
+    $response = Assert-Envelope -Response (Invoke-StloadsApi -Method Post -Path "/execution/legs/$LegId/actions" -BearerToken $BearerToken -Body @{
+        action_key = $ActionKey
+        note = "Smoke test $ActionKey step."
+    }) -Context "Execution action $ActionKey"
+
+    Assert-Flag -Condition ($response.success) -Message "Execution action $ActionKey failed: $($response.message)"
+    Assert-Flag -Condition ($response.status_label -eq $ExpectedStatusLabel) -Message "Execution action $ActionKey returned unexpected status '$($response.status_label)' instead of '$ExpectedStatusLabel'."
+    Write-Host $response.message
+}
+
+function Upload-ExecutionDocument {
+    param(
+        [Parameter(Mandatory = $true)][string]$BearerToken,
+        [Parameter(Mandatory = $true)][long]$LegId,
+        [Parameter(Mandatory = $true)][string]$DocumentType,
+        [Parameter(Mandatory = $true)][string]$DocumentName,
+        [Parameter(Mandatory = $true)][string]$FileName,
+        [Parameter(Mandatory = $true)][string]$Content
+    )
+
+    Add-Type -AssemblyName System.Net.Http | Out-Null
+    $client = [System.Net.Http.HttpClient]::new()
+    try {
+        $client.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $BearerToken)
+
+        $multipart = [System.Net.Http.MultipartFormDataContent]::new()
+        $multipart.Add([System.Net.Http.StringContent]::new($DocumentName), 'document_name')
+        $multipart.Add([System.Net.Http.StringContent]::new($DocumentType), 'document_type')
+
+        $fileBytes = [System.Text.Encoding]::UTF8.GetBytes($Content)
+        $fileContent = [System.Net.Http.ByteArrayContent]::new($fileBytes)
+        $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::new('text/plain')
+        $multipart.Add($fileContent, 'file', $FileName)
+
+        $response = $client.PostAsync("$BaseUrl/execution/legs/$LegId/documents/upload", $multipart).GetAwaiter().GetResult()
+        $response.EnsureSuccessStatusCode() | Out-Null
+        $json = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        return ($json | ConvertFrom-Json)
+    }
+    finally {
+        $client.Dispose()
     }
 }
 
@@ -156,6 +210,33 @@ $bookLeg = Assert-Envelope -Response (Invoke-StloadsApi -Method Post -Path "/dis
 }) -Context 'Book load leg'
 Assert-Flag -Condition ($bookLeg.success) -Message "Carrier booking failed: $($bookLeg.message)"
 Write-Host $bookLeg.message
+
+Write-Step 'Running the execution lifecycle before payout'
+$executionScreen = Assert-Envelope -Response (Invoke-StloadsApi -Method Get -Path "/execution/legs/$BookingLegId" -BearerToken $carrierToken) -Context 'Execution leg screen'
+Assert-Flag -Condition ($executionScreen.can_manage_execution) -Message 'Carrier cannot manage the seeded execution leg.'
+Write-Host ("Execution screen loaded for {0} with initial status {1}." -f $executionScreen.leg_code, $executionScreen.status_label)
+
+Invoke-ExecutionAction -BearerToken $carrierToken -LegId $BookingLegId -ActionKey 'start_pickup' -ExpectedStatusLabel 'Pickup Started'
+$firstPing = Assert-Envelope -Response (Invoke-StloadsApi -Method Post -Path "/execution/legs/$BookingLegId/location" -BearerToken $carrierToken -Body @{
+    lat = $ExecutionPingLat
+    lng = $ExecutionPingLng
+    recorded_at = (Get-Date).ToUniversalTime().ToString('o')
+}) -Context 'Execution location ping #1'
+Assert-Flag -Condition ($firstPing.success) -Message "Execution location ping #1 failed: $($firstPing.message)"
+
+Invoke-ExecutionAction -BearerToken $carrierToken -LegId $BookingLegId -ActionKey 'arrive_pickup' -ExpectedStatusLabel 'At Pickup'
+Invoke-ExecutionAction -BearerToken $carrierToken -LegId $BookingLegId -ActionKey 'depart_pickup' -ExpectedStatusLabel 'In Transit'
+$secondPing = Assert-Envelope -Response (Invoke-StloadsApi -Method Post -Path "/execution/legs/$BookingLegId/location" -BearerToken $carrierToken -Body @{
+    lat = ($ExecutionPingLat + 0.015)
+    lng = ($ExecutionPingLng + 0.015)
+    recorded_at = (Get-Date).ToUniversalTime().AddMinutes(20).ToString('o')
+}) -Context 'Execution location ping #2'
+Assert-Flag -Condition ($secondPing.success) -Message "Execution location ping #2 failed: $($secondPing.message)"
+Invoke-ExecutionAction -BearerToken $carrierToken -LegId $BookingLegId -ActionKey 'arrive_delivery' -ExpectedStatusLabel 'At Delivery'
+$uploadPod = Assert-Envelope -Response (Upload-ExecutionDocument -BearerToken $carrierToken -LegId $BookingLegId -DocumentType 'delivery_pod' -DocumentName 'Smoke Delivery POD' -FileName 'smoke-delivery-pod.txt' -Content 'Smoke POD generated by hosted backend QA script.') -Context 'Execution POD upload'
+Assert-Flag -Condition ($uploadPod.success) -Message "Execution POD upload failed: $($uploadPod.message)"
+Invoke-ExecutionAction -BearerToken $carrierToken -LegId $BookingLegId -ActionKey 'complete_delivery' -ExpectedStatusLabel 'Delivered'
+Write-Host 'Execution pickup-to-delivery path completed.'
 
 Write-Step 'Funding, holding, and releasing escrow through the payments routes'
 $fundEscrow = Assert-Envelope -Response (Invoke-StloadsApi -Method Post -Path "/payments/legs/$BookingLegId/fund" -BearerToken $adminToken -Body @{
@@ -255,7 +336,7 @@ $close = Assert-Envelope -Response (Invoke-StloadsApi -Method Post -Path '/tms/c
 Assert-Flag -Condition ($close.success) -Message "TMS close failed: $($close.message)"
 Write-Host 'Seeded handoff withdraw/close flow completed.'
 
-Write-Step 'Pushing a new handoff and reconciling it through webhook + requeue flows'
+Write-Step 'Pushing a new handoff and reconciling it through webhook plus requeue flows'
 $pushPayload = [ordered]@{
     tms_load_id = $newTmsLoadId
     tenant_id = 'demo-tenant'
@@ -364,4 +445,3 @@ $summary = [ordered]@{
     result = 'ok'
 }
 $summary | ConvertTo-Json -Depth 5
-

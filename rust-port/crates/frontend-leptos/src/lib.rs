@@ -1,7 +1,11 @@
 pub mod api;
+pub mod device_location;
+pub mod document_upload;
+pub mod google_places;
 pub mod layouts;
 pub mod pages;
 pub mod realtime;
+pub mod runtime_config;
 pub mod session;
 
 use leptos::prelude::*;
@@ -12,9 +16,12 @@ use leptos_router::{
 
 use layouts::{AdminFrame, AuthFrame, UserFrame};
 use pages::{
-    AdminDashboardPage, ChatWorkspacePage, DashboardPage, EscrowOperationsPage, LoadBoardPage,
-    LoadBuilderPage, LoginPage, MasterDataPage, NotFoundPage, StloadsOperationsPage,
-    StloadsReconciliationPage,
+    AccountLifecyclePage, AdminChangePasswordPage, AdminDashboardPage, AdminLoadsPage,
+    AdminRolesPage, AdminUsersByRolePage, AdminUsersPage, ChatWorkspacePage, DashboardPage,
+    DispatchDeskPage, EscrowOperationsPage, ExecutionLegPage, ForgotPasswordPage, LoadBoardPage,
+    LoadBuilderPage, LoadProfilePage, LoginPage, MasterDataPage, NotFoundPage, OnboardingPage,
+    OnboardingReviewPage, ProfilePage, RegisterPage, ResetPasswordPage, StloadsOperationsPage,
+    StloadsReconciliationPage, VerifyOtpPage,
 };
 use session::AuthProvider;
 
@@ -49,6 +56,30 @@ pub fn App() -> impl IntoView {
                         }
                     />
                     <Route
+                        path=path!("loads/:load_id/edit")
+                        view=|| view! {
+                            <UserFrame>
+                                <LoadBuilderPage />
+                            </UserFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("loads/:load_id")
+                        view=|| view! {
+                            <UserFrame>
+                                <LoadProfilePage />
+                            </UserFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("execution/legs/:leg_id")
+                        view=|| view! {
+                            <UserFrame>
+                                <ExecutionLegPage />
+                            </UserFrame>
+                        }
+                    />
+                    <Route
                         path=path!("chat")
                         view=|| view! {
                             <UserFrame>
@@ -57,10 +88,66 @@ pub fn App() -> impl IntoView {
                         }
                     />
                     <Route
+                        path=path!("profile")
+                        view=|| view! {
+                            <UserFrame>
+                                <ProfilePage />
+                            </UserFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("desk/:desk_key")
+                        view=|| view! {
+                            <UserFrame>
+                                <DispatchDeskPage />
+                            </UserFrame>
+                        }
+                    />
+                    <Route
                         path=path!("auth/login")
                         view=|| view! {
                             <AuthFrame>
                                 <LoginPage />
+                            </AuthFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("auth/register")
+                        view=|| view! {
+                            <AuthFrame>
+                                <RegisterPage />
+                            </AuthFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("auth/verify-otp")
+                        view=|| view! {
+                            <AuthFrame>
+                                <VerifyOtpPage />
+                            </AuthFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("auth/forgot-password")
+                        view=|| view! {
+                            <AuthFrame>
+                                <ForgotPasswordPage />
+                            </AuthFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("auth/reset-password")
+                        view=|| view! {
+                            <AuthFrame>
+                                <ResetPasswordPage />
+                            </AuthFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("auth/onboarding")
+                        view=|| view! {
+                            <AuthFrame>
+                                <OnboardingPage />
                             </AuthFrame>
                         }
                     />
@@ -85,6 +172,70 @@ pub fn App() -> impl IntoView {
                         view=|| view! {
                             <AdminFrame>
                                 <MasterDataPage />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/onboarding-reviews")
+                        view=|| view! {
+                            <AdminFrame>
+                                <OnboardingReviewPage />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/account-lifecycle")
+                        view=|| view! {
+                            <AdminFrame>
+                                <AccountLifecyclePage />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/users")
+                        view=|| view! {
+                            <AdminFrame>
+                                <AdminUsersPage />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/users/role/:role_key")
+                        view=|| view! {
+                            <AdminFrame>
+                                <AdminUsersByRolePage />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/change-password")
+                        view=|| view! {
+                            <AdminFrame>
+                                <AdminChangePasswordPage />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/loads")
+                        view=|| view! {
+                            <AdminFrame>
+                                <AdminLoadsPage />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/loads/:load_id")
+                        view=|| view! {
+                            <AdminFrame>
+                                <LoadProfilePage admin_mode=true />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/roles")
+                        view=|| view! {
+                            <AdminFrame>
+                                <AdminRolesPage />
                             </AdminFrame>
                         }
                     />

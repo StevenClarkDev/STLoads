@@ -1,15 +1,33 @@
-FROM rust:stable-bookworm AS builder
+FROM registry.access.redhat.com/ubi9/ubi:latest AS builder
 WORKDIR /app
+
+RUN dnf install -y \
+        ca-certificates \
+        gcc \
+        gcc-c++ \
+        git \
+        make \
+        openssl-devel \
+        perl-core \
+        pkgconf-pkg-config \
+        tar \
+    && dnf clean all
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:${PATH}
+
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
 
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates ./crates
 
 RUN cargo build --locked --release -p backend
 
-FROM debian:bookworm-slim AS runtime
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tzdata \
-    && rm -rf /var/lib/apt/lists/* \
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest AS runtime
+RUN microdnf install -y ca-certificates tzdata shadow-utils \
+    && microdnf clean all \
+    && update-ca-trust \
     && useradd --create-home --uid 10001 appuser
 
 WORKDIR /app

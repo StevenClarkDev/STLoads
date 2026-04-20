@@ -1,6 +1,6 @@
 use futures_util::future::AbortHandle;
 use leptos::{prelude::*, tachys::view::any_view::IntoAny, task::spawn_local};
-use leptos_router::components::A;
+use leptos_router::{components::A, hooks::use_query_map};
 use shared::{
     EscrowFundRequest, EscrowHoldRequest, EscrowReleaseRequest, RealtimeEventKind, RealtimeTopic,
     StripeWebhookRequest,
@@ -46,6 +46,7 @@ fn parse_optional_i64(value: &str) -> Result<Option<i64>, String> {
 #[component]
 pub fn EscrowOperationsPage() -> impl IntoView {
     let auth = use_auth();
+    let query = use_query_map();
     let overview = RwSignal::new(None::<PaymentsOverview>);
     let statuses = RwSignal::new(Vec::<EscrowStatusDescriptorLite>::new());
     let webhooks = RwSignal::new(Vec::<StripeWebhookEventDescriptorLite>::new());
@@ -68,10 +69,74 @@ pub fn EscrowOperationsPage() -> impl IntoView {
     let stripe_account_id = RwSignal::new(String::new());
     let payouts_enabled = RwSignal::new(String::new());
     let kyc_status = RwSignal::new(String::new());
+    let applied_prefill = RwSignal::new(None::<String>);
+
+    let prefill_context = Memo::new(
+        move |_| -> (Option<String>, String, String, Option<String>) {
+            query.with(|params| {
+                let leg_id = params.get("leg_id");
+                let action = params.get("action");
+                let source = params.get("source");
+                let load_id = params.get("load_id");
+                (
+                    leg_id,
+                    action.unwrap_or_default(),
+                    source.unwrap_or_default(),
+                    load_id,
+                )
+            })
+        },
+    );
 
     let can_view = Signal::derive(move || {
         session::has_permission(&auth, "access_admin_portal")
             || session::has_permission(&auth, "manage_payments")
+    });
+
+    Effect::new(move |_| {
+        let (prefill_leg_id, prefill_action, prefill_source, prefill_load_id) =
+            prefill_context.get();
+        let prefill_key = format!(
+            "{}|{}|{}|{}",
+            prefill_leg_id.clone().unwrap_or_default(),
+            prefill_action,
+            prefill_source,
+            prefill_load_id.clone().unwrap_or_default()
+        );
+
+        if prefill_key == "|||" || applied_prefill.get() == Some(prefill_key.clone()) {
+            return;
+        }
+
+        if let Some(leg_id_value) = prefill_leg_id.filter(|value| !value.trim().is_empty()) {
+            leg_id.set(leg_id_value);
+        }
+
+        if !prefill_action.trim().is_empty() && note.get().trim().is_empty() {
+            let source_label = match prefill_source.as_str() {
+                "admin-load-profile" => "admin load profile",
+                "admin-loads" => "admin loads",
+                "dispatch-closeout" => "dispatch closeout desk",
+                "dispatch-collections" => "dispatch collections desk",
+                other if !other.is_empty() => other,
+                _ => "admin shortcut",
+            };
+            let action_label = match prefill_action.as_str() {
+                "fund" => "fund escrow",
+                "hold" => "place escrow on hold",
+                "release" => "release escrow",
+                other => other,
+            };
+            let load_fragment = prefill_load_id
+                .map(|value| format!(" for load #{}", value))
+                .unwrap_or_default();
+            note.set(format!(
+                "Loaded from {}{} to {}.",
+                source_label, load_fragment, action_label
+            ));
+        }
+
+        applied_prefill.set(Some(prefill_key));
     });
 
     Effect::new(move |_| {
@@ -394,6 +459,46 @@ pub fn EscrowOperationsPage() -> impl IntoView {
                                 <span style=tone_style(if ws_connected.get() { "success" } else { "info" })>{move || if ws_connected.get() { "Realtime connected" } else { "Realtime reconnecting" }}</span>
                             </div>
                         </section>
+
+                        {move || {
+                            let (prefill_leg_id, prefill_action, prefill_source, prefill_load_id) =
+                                prefill_context.get();
+                            let has_prefill = prefill_leg_id
+                                .as_deref()
+                                .map(|value| !value.trim().is_empty())
+                                .unwrap_or(false)
+                                || !prefill_action.trim().is_empty();
+
+                            has_prefill.then(|| {
+                                let source_label = match prefill_source.as_str() {
+                                    "admin-load-profile" => "the admin load profile",
+                                    "admin-loads" => "the admin loads board",
+                                    other if !other.is_empty() => other,
+                                    _ => "an admin shortcut",
+                                };
+                                let action_label = if prefill_action == "release" {
+                                    "release"
+                                } else if prefill_action.trim().is_empty() {
+                                    "follow up on"
+                                } else {
+                                    prefill_action.as_str()
+                                };
+                                let load_fragment = prefill_load_id
+                                    .map(|value| format!(" for load #{}", value))
+                                    .unwrap_or_default();
+                                view! {
+                                    <section style="padding:0.85rem 1rem;border:1px solid #dcfce7;border-radius:0.9rem;background:#f0fdf4;color:#166534;">
+                                        {format!(
+                                            "This console was opened from {}{} to {} leg #{}.",
+                                            source_label,
+                                            load_fragment,
+                                            action_label,
+                                            prefill_leg_id.unwrap_or_else(|| "unknown".into())
+                                        )}
+                                    </section>
+                                }
+                            })
+                        }}
 
                         {move || action_message.get().map(|message| view! { <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">{message}</section> })}
                         {move || error_message.get().map(|message| view! { <section style="padding:0.85rem 1rem;border:1px solid #fecaca;border-radius:0.9rem;background:#fff1f2;color:#be123c;">{message}</section> })}

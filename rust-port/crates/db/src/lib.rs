@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod dispatch;
+pub mod email_outbox;
 pub mod inventory;
 pub mod marketplace;
 pub mod master_data;

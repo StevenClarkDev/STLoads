@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>STLoads Rust Portal</title>
+    <meta
+        name="description"
+        content="Rust and Leptos staging portal for STLoads on IBM Code Engine."
+    />
+    <script src="/runtime-config.js"></script>
+    
+<script type="module">
+import init, * as bindings from '/frontend-leptos-e7b0bb886fbc1e23.js';
+const wasm = await init({ module_or_path: '/frontend-leptos-e7b0bb886fbc1e23_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            min-height: 100%;
+            background: #f5f7fb;
+            color: #111827;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        }
+    </style>
+<link rel="modulepreload" href="/frontend-leptos-e7b0bb886fbc1e23.js" crossorigin="anonymous" integrity="sha384-UV7tFj0t2sKmB5qyEBbnahdQcFT0NIdcchDR3gJbv4e2Tg/VKi/+GJLCiZTPX2tb"><link rel="modulepreload" href="/snippets/frontend-leptos-dd6516379af35b0e/inline1.js" crossorigin="anonymous" integrity="sha384-EsKG3lKLI9CbZW+yZrQSQqUv3jDcoeFrymYqY5xr/cq3JpqMXnxvBxjQJgUPOjy8"><link rel="modulepreload" href="/snippets/frontend-leptos-dd6516379af35b0e/inline0.js" crossorigin="anonymous" integrity="sha384-jNi3cSxZIumgQgPNlGIvaWysfAy8NFVu19086QsBWbdfgRqy2I1UIdf8rG0brobR"><link rel="modulepreload" href="/snippets/frontend-leptos-dd6516379af35b0e/inline2.js" crossorigin="anonymous" integrity="sha384-pDRxztTIVJnjlPpTOWCyXra7i8XlnD3oWA8xW7FUCbNnHUE8eLdAEWTsTF7fEMB5"><link rel="preload" href="/frontend-leptos-e7b0bb886fbc1e23_bg.wasm" crossorigin="anonymous" integrity="sha384-lBUVIAdqMF47ZpZ5N+qJ7aYuxWiryJRHIE0uH3RNv8ROPZo0TLDxFz9s8v5tnEpb" as="fetch" type="application/wasm"></head>
+<body></body>
+</html>

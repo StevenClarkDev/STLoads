@@ -1,17 +1,36 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use shared::{
-    ApiResponse, AuthSessionState, BookLoadLegRequest, BookLoadLegResponse, ChatSendMessageRequest,
-    ChatSendMessageResponse, ChatWorkspaceScreen, ConversationReadResponse, CreateLoadRequest,
-    CreateLoadResponse, EscrowFundRequest, EscrowHoldRequest, EscrowLifecycleResponse,
-    EscrowReleaseRequest, LoadBoardScreen, LoadBuilderScreen, LocationUpsertRequest, LoginRequest,
-    LoginResponse, LogoutResponse, MasterDataMutationResponse, MasterDataScreen,
-    OfferReviewRequest, OfferReviewResponse, RealtimeTopic, ResolveSyncErrorRequest,
-    ResolveSyncErrorResponse, SimpleCatalogUpsertRequest, StloadsOperationsScreen,
-    StloadsReconciliationScreen, StripeWebhookRequest, StripeWebhookResponse, TmsCloseRequest,
+    AdminCreateUserRequest, AdminCreateUserResponse, AdminDeleteUserResponse, AdminLoadListScreen,
+    AdminOnboardingReviewScreen, AdminReviewLoadRequest, AdminReviewLoadResponse,
+    AdminRolePermissionScreen, AdminUpdateRolePermissionsRequest,
+    AdminUpdateRolePermissionsResponse, AdminUpdateUserProfileRequest,
+    AdminUpdateUserProfileResponse, AdminUpdateUserRequest, AdminUpdateUserResponse,
+    AdminUserDirectoryScreen, AdminUserProfileScreen, ApiResponse, AuthOnboardingScreen,
+    AuthSessionState, BookLoadLegRequest, BookLoadLegResponse, ChangePasswordRequest,
+    ChangePasswordResponse, ChatSendMessageRequest, ChatSendMessageResponse, ChatWorkspaceScreen,
+    CityUpsertRequest, ConversationReadResponse, CountryUpsertRequest, CreateLoadRequest,
+    CreateLoadResponse, DeleteKycDocumentResponse, DispatchDeskFollowUpRequest,
+    DispatchDeskFollowUpResponse, DispatchDeskScreen, EscrowFundRequest, EscrowHoldRequest,
+    EscrowLifecycleResponse, EscrowReleaseRequest, ExecutionLegActionRequest,
+    ExecutionLegActionResponse, ExecutionLegScreen, ExecutionLocationPingRequest,
+    ExecutionLocationPingResponse, ForgotPasswordRequest, ForgotPasswordResponse, LoadBoardScreen,
+    LoadBuilderScreen, LoadProfileScreen, LocationUpsertRequest, LoginRequest, LoginResponse,
+    LogoutResponse, MasterDataDeleteRequest, MasterDataMutationResponse, MasterDataScreen,
+    OfferReviewRequest, OfferReviewResponse, RealtimeTopic, RegisterRequest, RegisterResponse,
+    ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest, ResetPasswordResponse,
+    ResolveSyncErrorRequest, ResolveSyncErrorResponse, ReviewOnboardingRequest,
+    ReviewOnboardingResponse, SelfProfileScreen, SimpleCatalogUpsertRequest,
+    StloadsOperationsScreen, StloadsReconciliationScreen, StripeWebhookRequest,
+    StripeWebhookResponse, SubmitOnboardingRequest, SubmitOnboardingResponse, TmsCloseRequest,
     TmsHandoffPayload, TmsHandoffResponse, TmsRequeueRequest, TmsStatusWebhookRequest,
-    TmsWebhookResponse, TmsWithdrawRequest,
+    TmsWebhookResponse, TmsWithdrawRequest, UpdateSelfProfileRequest, UpdateSelfProfileResponse,
+    UpsertKycDocumentRequest, UpsertKycDocumentResponse, UpsertLoadDocumentRequest,
+    UpsertLoadDocumentResponse, VerifyKycDocumentRequest, VerifyKycDocumentResponse,
+    VerifyLoadDocumentRequest, VerifyLoadDocumentResponse, VerifyOtpRequest, VerifyOtpResponse,
 };
 
+#[cfg(target_arch = "wasm32")]
+use crate::runtime_config;
 #[derive(Debug, Clone, Deserialize)]
 pub struct AdminOverview {
     pub screen_routes: Vec<String>,
@@ -65,12 +84,103 @@ pub async fn logout() -> Result<LogoutResponse, String> {
     Ok(response)
 }
 
+pub async fn register(payload: &RegisterRequest) -> Result<RegisterResponse, String> {
+    post_api("/auth/register", payload).await
+}
+
+pub async fn verify_otp(payload: &VerifyOtpRequest) -> Result<VerifyOtpResponse, String> {
+    let response: VerifyOtpResponse = post_api("/auth/verify-otp", payload).await?;
+    if response.success {
+        if let Some(token) = response.token.as_deref() {
+            store_auth_token(token);
+        }
+    }
+    Ok(response)
+}
+
+pub async fn resend_otp(payload: &ResendOtpRequest) -> Result<ResendOtpResponse, String> {
+    post_api("/auth/otp/resend", payload).await
+}
+
+pub async fn forgot_password(
+    payload: &ForgotPasswordRequest,
+) -> Result<ForgotPasswordResponse, String> {
+    post_api("/auth/forgot-password", payload).await
+}
+
+pub async fn reset_password(
+    payload: &ResetPasswordRequest,
+) -> Result<ResetPasswordResponse, String> {
+    post_api("/auth/reset-password", payload).await
+}
+
+pub async fn fetch_onboarding_screen() -> Result<AuthOnboardingScreen, String> {
+    get_api("/auth/onboarding-screen").await
+}
+
+pub async fn submit_onboarding(
+    payload: &SubmitOnboardingRequest,
+) -> Result<SubmitOnboardingResponse, String> {
+    post_api("/auth/onboarding", payload).await
+}
+
+pub async fn fetch_self_profile_screen() -> Result<SelfProfileScreen, String> {
+    get_api("/auth/profile-screen").await
+}
+
+pub async fn update_self_profile(
+    payload: &UpdateSelfProfileRequest,
+) -> Result<UpdateSelfProfileResponse, String> {
+    post_api("/auth/profile", payload).await
+}
+
+pub async fn change_password(
+    payload: &ChangePasswordRequest,
+) -> Result<ChangePasswordResponse, String> {
+    post_api("/auth/change-password", payload).await
+}
+
+pub async fn update_profile_kyc_document(
+    document_id: u64,
+    payload: &UpsertKycDocumentRequest,
+) -> Result<UpsertKycDocumentResponse, String> {
+    let path = format!("/auth/profile/documents/{}", document_id);
+    post_api(&path, payload).await
+}
+
+pub async fn verify_profile_kyc_document(
+    document_id: u64,
+    payload: &VerifyKycDocumentRequest,
+) -> Result<VerifyKycDocumentResponse, String> {
+    let path = format!("/auth/profile/documents/{}/verify-blockchain", document_id);
+    post_api(&path, payload).await
+}
+
+pub async fn delete_profile_kyc_document(
+    document_id: u64,
+) -> Result<DeleteKycDocumentResponse, String> {
+    let path = format!("/auth/profile/documents/{}/delete", document_id);
+    post_api(&path, &serde_json::json!({})).await
+}
+
 pub async fn fetch_admin_overview() -> Result<AdminOverview, String> {
     get_api("/admin").await
 }
 
 pub async fn fetch_master_data_screen() -> Result<MasterDataScreen, String> {
     get_api("/master-data/screen").await
+}
+
+pub async fn upsert_country(
+    payload: &CountryUpsertRequest,
+) -> Result<MasterDataMutationResponse, String> {
+    post_api("/master-data/countries", payload).await
+}
+
+pub async fn upsert_city(
+    payload: &CityUpsertRequest,
+) -> Result<MasterDataMutationResponse, String> {
+    post_api("/master-data/cities", payload).await
 }
 
 pub async fn upsert_load_type(
@@ -97,17 +207,107 @@ pub async fn upsert_location(
     post_api("/master-data/locations", payload).await
 }
 
-pub async fn fetch_load_builder_screen() -> Result<LoadBuilderScreen, String> {
-    get_api("/dispatch/load-builder").await
+pub async fn delete_country(
+    payload: &MasterDataDeleteRequest,
+) -> Result<MasterDataMutationResponse, String> {
+    post_api("/master-data/countries/delete", payload).await
+}
+
+pub async fn delete_city(
+    payload: &MasterDataDeleteRequest,
+) -> Result<MasterDataMutationResponse, String> {
+    post_api("/master-data/cities/delete", payload).await
+}
+
+pub async fn delete_load_type(
+    payload: &MasterDataDeleteRequest,
+) -> Result<MasterDataMutationResponse, String> {
+    post_api("/master-data/load-types/delete", payload).await
+}
+
+pub async fn delete_equipment(
+    payload: &MasterDataDeleteRequest,
+) -> Result<MasterDataMutationResponse, String> {
+    post_api("/master-data/equipments/delete", payload).await
+}
+
+pub async fn delete_commodity_type(
+    payload: &MasterDataDeleteRequest,
+) -> Result<MasterDataMutationResponse, String> {
+    post_api("/master-data/commodity-types/delete", payload).await
+}
+
+pub async fn delete_location(
+    payload: &MasterDataDeleteRequest,
+) -> Result<MasterDataMutationResponse, String> {
+    post_api("/master-data/locations/delete", payload).await
+}
+
+pub async fn fetch_load_builder_screen(load_id: Option<u64>) -> Result<LoadBuilderScreen, String> {
+    let path = match load_id {
+        Some(load_id) => format!("/dispatch/loads/{}/builder", load_id),
+        None => "/dispatch/load-builder".to_string(),
+    };
+    get_api(&path).await
 }
 
 pub async fn create_load(payload: &CreateLoadRequest) -> Result<CreateLoadResponse, String> {
     post_api("/dispatch/loads", payload).await
 }
 
+pub async fn update_load(
+    load_id: u64,
+    payload: &CreateLoadRequest,
+) -> Result<CreateLoadResponse, String> {
+    let path = format!("/dispatch/loads/{}/update", load_id);
+    post_api(&path, payload).await
+}
+
 pub async fn fetch_load_board_screen(tab: &str) -> Result<LoadBoardScreen, String> {
     let path = format!("/dispatch/load-board?tab={}", tab);
     get_api(&path).await
+}
+
+pub async fn fetch_dispatch_desk_screen(desk_key: &str) -> Result<DispatchDeskScreen, String> {
+    let path = format!("/dispatch/desk/{}", desk_key);
+    get_api(&path).await
+}
+
+pub async fn add_dispatch_desk_follow_up(
+    leg_id: u64,
+    payload: &DispatchDeskFollowUpRequest,
+) -> Result<DispatchDeskFollowUpResponse, String> {
+    let path = format!("/dispatch/desk/legs/{}/follow-up", leg_id);
+    post_api(&path, payload).await
+}
+
+pub async fn fetch_load_profile_screen(load_id: u64) -> Result<LoadProfileScreen, String> {
+    let path = format!("/dispatch/loads/{}", load_id);
+    get_api(&path).await
+}
+
+pub async fn create_load_document(
+    load_id: u64,
+    payload: &UpsertLoadDocumentRequest,
+) -> Result<UpsertLoadDocumentResponse, String> {
+    let path = format!("/dispatch/loads/{}/documents", load_id);
+    post_api(&path, payload).await
+}
+
+pub async fn update_load_document(
+    document_id: u64,
+    payload: &UpsertLoadDocumentRequest,
+) -> Result<UpsertLoadDocumentResponse, String> {
+    let path = format!("/dispatch/documents/{}", document_id);
+    post_api(&path, payload).await
+}
+
+pub async fn verify_load_document(
+    document_id: u64,
+    payload: &VerifyLoadDocumentRequest,
+) -> Result<VerifyLoadDocumentResponse, String> {
+    let path = format!("/dispatch/documents/{}/verify-blockchain", document_id);
+    post_api(&path, payload).await
 }
 
 pub async fn book_load_leg(
@@ -183,6 +383,78 @@ pub async fn resolve_sync_error(
     post_api(&path, payload).await
 }
 
+pub async fn fetch_admin_onboarding_reviews() -> Result<AdminOnboardingReviewScreen, String> {
+    get_api("/admin/onboarding-reviews").await
+}
+
+pub async fn fetch_admin_user_directory() -> Result<AdminUserDirectoryScreen, String> {
+    get_api("/admin/users").await
+}
+
+pub async fn fetch_admin_load_list_screen(tab: &str) -> Result<AdminLoadListScreen, String> {
+    let path = format!("/admin/loads?tab={}", tab);
+    get_api(&path).await
+}
+
+pub async fn review_admin_load(
+    load_id: u64,
+    payload: &AdminReviewLoadRequest,
+) -> Result<AdminReviewLoadResponse, String> {
+    let path = format!("/admin/loads/{}/review", load_id);
+    post_api(&path, payload).await
+}
+
+pub async fn fetch_admin_user_profile(user_id: u64) -> Result<AdminUserProfileScreen, String> {
+    let path = format!("/admin/users/{}/profile", user_id);
+    get_api(&path).await
+}
+
+pub async fn create_admin_user(
+    payload: &AdminCreateUserRequest,
+) -> Result<AdminCreateUserResponse, String> {
+    post_api("/admin/users", payload).await
+}
+
+pub async fn fetch_admin_role_permissions() -> Result<AdminRolePermissionScreen, String> {
+    get_api("/admin/roles/permissions").await
+}
+
+pub async fn review_onboarding_user(
+    user_id: u64,
+    payload: &ReviewOnboardingRequest,
+) -> Result<ReviewOnboardingResponse, String> {
+    let path = format!("/admin/users/{}/review", user_id);
+    post_api(&path, payload).await
+}
+
+pub async fn update_admin_user_account(
+    user_id: u64,
+    payload: &AdminUpdateUserRequest,
+) -> Result<AdminUpdateUserResponse, String> {
+    let path = format!("/admin/users/{}/account", user_id);
+    post_api(&path, payload).await
+}
+
+pub async fn update_admin_user_profile(
+    user_id: u64,
+    payload: &AdminUpdateUserProfileRequest,
+) -> Result<AdminUpdateUserProfileResponse, String> {
+    let path = format!("/admin/users/{}/profile", user_id);
+    post_api(&path, payload).await
+}
+
+pub async fn delete_admin_user(user_id: u64) -> Result<AdminDeleteUserResponse, String> {
+    let path = format!("/admin/users/{}/delete", user_id);
+    post_api(&path, &serde_json::json!({})).await
+}
+
+pub async fn update_admin_role_permissions(
+    role_key: &str,
+    payload: &AdminUpdateRolePermissionsRequest,
+) -> Result<AdminUpdateRolePermissionsResponse, String> {
+    let path = format!("/admin/roles/{}/permissions", role_key);
+    post_api(&path, payload).await
+}
 pub async fn fetch_payments_overview() -> Result<PaymentsOverview, String> {
     get_api("/payments").await
 }
@@ -248,6 +520,44 @@ pub async fn withdraw_tms_handoff(
 
 pub async fn close_tms_handoff(payload: &TmsCloseRequest) -> Result<TmsHandoffResponse, String> {
     post_api("/tms/close", payload).await
+}
+
+pub async fn run_dispatch_desk_handoff_action(
+    handoff_id: u64,
+    action_key: &str,
+) -> Result<TmsHandoffResponse, String> {
+    match action_key {
+        "requeue" => {
+            requeue_tms_handoff(&TmsRequeueRequest {
+                handoff_id: handoff_id as i64,
+                pushed_by: Some("rust_dispatch_desk".into()),
+                source_module: Some("dispatch_desk".into()),
+            })
+            .await
+        }
+        "withdraw" => {
+            withdraw_tms_handoff(&TmsWithdrawRequest {
+                handoff_id: handoff_id as i64,
+                reason: Some("Rust dispatch desk action".into()),
+                pushed_by: Some("rust_dispatch_desk".into()),
+                source_module: Some("dispatch_desk".into()),
+            })
+            .await
+        }
+        "close" => {
+            close_tms_handoff(&TmsCloseRequest {
+                handoff_id: handoff_id as i64,
+                reason: Some("Rust dispatch desk action".into()),
+                pushed_by: Some("rust_dispatch_desk".into()),
+                source_module: Some("dispatch_desk".into()),
+            })
+            .await
+        }
+        _ => Err(format!(
+            "Unsupported dispatch desk action '{}'.",
+            action_key
+        )),
+    }
 }
 
 pub async fn apply_tms_status_webhook(
@@ -322,7 +632,7 @@ where
     fetch_post::<T, B>(&url, body).await
 }
 
-fn api_url(path: &str) -> String {
+pub fn api_href(path: &str) -> String {
     let normalized_path = if path.starts_with('/') {
         path.to_string()
     } else {
@@ -337,8 +647,16 @@ fn api_url(path: &str) -> String {
     }
 }
 
+fn api_url(path: &str) -> String {
+    api_href(path)
+}
+
 #[cfg(target_arch = "wasm32")]
 fn configured_api_base() -> String {
+    if let Some(base) = runtime_config::backend_api_base_url() {
+        return base;
+    }
+
     if let Some(base) = option_env!("BACKEND_API_BASE_URL") {
         let trimmed = base.trim().trim_end_matches('/');
         if !trimmed.is_empty() {
@@ -513,4 +831,25 @@ where
         .map_err(|error| format!("Failed to decode POST {}: {}", url, error))?;
 
     Ok(envelope.data)
+}
+
+pub async fn fetch_execution_leg_screen(leg_id: u64) -> Result<ExecutionLegScreen, String> {
+    let path = format!("/execution/legs/{}", leg_id);
+    get_api(&path).await
+}
+
+pub async fn run_execution_leg_action(
+    leg_id: u64,
+    payload: &ExecutionLegActionRequest,
+) -> Result<ExecutionLegActionResponse, String> {
+    let path = format!("/execution/legs/{}/actions", leg_id);
+    post_api(&path, payload).await
+}
+
+pub async fn send_execution_location_ping(
+    leg_id: u64,
+    payload: &ExecutionLocationPingRequest,
+) -> Result<ExecutionLocationPingResponse, String> {
+    let path = format!("/execution/legs/{}/location", leg_id);
+    post_api(&path, payload).await
 }

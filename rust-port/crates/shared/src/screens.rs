@@ -115,6 +115,7 @@ pub struct LoadBoardMetric {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadBoardRow {
+    pub load_id: u64,
     pub leg_id: u64,
     pub leg_code: String,
     pub origin_label: String,
@@ -150,21 +151,247 @@ pub struct LoadBoardScreen {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DispatchDeskLink {
+    pub key: String,
+    pub label: String,
+    pub href: String,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DispatchDeskRow {
+    pub load_id: u64,
+    pub leg_id: u64,
+    pub handoff_id: Option<u64>,
+    pub load_number: Option<String>,
+    pub title: String,
+    pub equipment_label: Option<String>,
+    pub weight_label: Option<String>,
+    pub carrier_label: Option<String>,
+    pub payment_label: Option<String>,
+    pub leg_status_label: String,
+    pub leg_status_tone: String,
+    pub stloads_label: Option<String>,
+    pub stloads_tone: Option<String>,
+    pub focus_label: String,
+    pub focus_tone: String,
+    pub focus_note: Option<String>,
+    pub archive_guidance_label: Option<String>,
+    pub archive_guidance_tone: Option<String>,
+    pub archive_guidance_note: Option<String>,
+    pub latest_activity_note: Option<String>,
+    pub load_href: Option<String>,
+    pub primary_action_key: Option<String>,
+    pub primary_action_label: Option<String>,
+    pub primary_action_enabled: bool,
+    pub finance_action_key: Option<String>,
+    pub finance_action_label: Option<String>,
+    pub finance_action_enabled: bool,
+    pub secondary_action_label: Option<String>,
+    pub secondary_action_href: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DispatchDeskScreen {
+    pub desk_key: String,
+    pub title: String,
+    pub subtitle: String,
+    pub desks: Vec<DispatchDeskLink>,
+    pub quick_links: Vec<DispatchDeskLink>,
+    pub status_cards: Vec<StatusCard>,
+    pub rows: Vec<DispatchDeskRow>,
+    pub notes: Vec<String>,
+    pub pagination: Pagination,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminLoadTab {
+    pub key: String,
+    pub label: String,
+    pub count: u64,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminLoadRow {
+    pub load_id: u64,
+    pub leg_id: u64,
+    pub status_code: i16,
+    pub leg_code: String,
+    pub owner_label: String,
+    pub carrier_label: Option<String>,
+    pub origin_label: String,
+    pub destination_label: String,
+    pub pickup_date_label: String,
+    pub delivery_date_label: String,
+    pub status_label: String,
+    pub status_tone: String,
+    pub bid_status_label: String,
+    pub amount_label: String,
+    pub payment_label: Option<String>,
+    pub finance_action_key: Option<String>,
+    pub finance_action_label: Option<String>,
+    pub finance_action_enabled: bool,
+    pub finance_note: Option<String>,
+    pub can_review: bool,
+    pub primary_action_label: Option<String>,
+    pub load_href: String,
+    pub track_href: Option<String>,
+    pub payments_href: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminLoadListScreen {
+    pub title: String,
+    pub subtitle: String,
+    pub active_tab: String,
+    pub tabs: Vec<AdminLoadTab>,
+    pub rows: Vec<AdminLoadRow>,
+    pub notes: Vec<String>,
+    pub pagination: Pagination,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadBuilderOption {
     pub id: u64,
     pub label: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadBuilderLegDraft {
+    pub pickup_location_address: String,
+    pub pickup_city: Option<String>,
+    pub pickup_country: Option<String>,
+    pub pickup_place_id: Option<String>,
+    pub pickup_latitude: Option<f64>,
+    pub pickup_longitude: Option<f64>,
+    pub delivery_location_address: String,
+    pub delivery_city: Option<String>,
+    pub delivery_country: Option<String>,
+    pub delivery_place_id: Option<String>,
+    pub delivery_latitude: Option<f64>,
+    pub delivery_longitude: Option<f64>,
+    pub pickup_date: String,
+    pub delivery_date: String,
+    pub bid_status: String,
+    pub price: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadBuilderDraft {
+    pub load_id: u64,
+    pub load_number: Option<String>,
+    pub title: String,
+    pub load_type_id: Option<u64>,
+    pub equipment_id: Option<u64>,
+    pub commodity_type_id: Option<u64>,
+    pub weight_unit: Option<String>,
+    pub weight: Option<f64>,
+    pub special_instructions: Option<String>,
+    pub is_hazardous: bool,
+    pub is_temperature_controlled: bool,
+    pub legs: Vec<LoadBuilderLegDraft>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadBuilderScreen {
     pub title: String,
     pub subtitle: String,
+    pub mode: String,
+    pub submit_label: String,
+    pub load_id: Option<u64>,
+    pub draft: Option<LoadBuilderDraft>,
     pub load_type_options: Vec<LoadBuilderOption>,
     pub equipment_options: Vec<LoadBuilderOption>,
     pub commodity_type_options: Vec<LoadBuilderOption>,
     pub location_options: Vec<LoadBuilderOption>,
     pub weight_units: Vec<String>,
     pub bid_status_options: Vec<String>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadProfileField {
+    pub label: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadProfileLegRow {
+    pub leg_id: u64,
+    pub status_code: i16,
+    pub leg_code: String,
+    pub route_label: String,
+    pub pickup_date_label: String,
+    pub delivery_date_label: String,
+    pub status_label: String,
+    pub status_tone: String,
+    pub bid_status_label: String,
+    pub amount_label: String,
+    pub carrier_label: Option<String>,
+    pub payment_label: Option<String>,
+    pub finance_action_key: Option<String>,
+    pub finance_action_label: Option<String>,
+    pub finance_action_enabled: bool,
+    pub payments_href: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadDocumentRow {
+    pub id: u64,
+    pub document_name: String,
+    pub document_type_key: String,
+    pub document_type_label: String,
+    pub file_label: String,
+    pub source_path: String,
+    pub download_path: Option<String>,
+    pub original_name: Option<String>,
+    pub mime_type: Option<String>,
+    pub file_size_bytes: Option<u64>,
+    pub uploaded_by_label: Option<String>,
+    pub can_view_file: bool,
+    pub blockchain_label: Option<String>,
+    pub blockchain_tone: Option<String>,
+    pub blockchain_hash_preview: Option<String>,
+    pub can_edit: bool,
+    pub can_verify_blockchain: bool,
+    pub uploaded_at_label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadHistoryRow {
+    pub id: u64,
+    pub status_label: String,
+    pub status_tone: String,
+    pub remarks_label: String,
+    pub actor_label: String,
+    pub created_at_label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadHandoffSummary {
+    pub handoff_id: u64,
+    pub status_label: String,
+    pub status_tone: String,
+    pub tms_load_id: String,
+    pub board_rate_label: String,
+    pub tms_status_label: Option<String>,
+    pub tms_status_at_label: Option<String>,
+    pub published_at_label: Option<String>,
+    pub pushed_by_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadProfileScreen {
+    pub title: String,
+    pub subtitle: String,
+    pub load_id: u64,
+    pub load_number: Option<String>,
+    pub can_manage_documents: bool,
+    pub info_fields: Vec<LoadProfileField>,
+    pub legs: Vec<LoadProfileLegRow>,
+    pub documents: Vec<LoadDocumentRow>,
+    pub history: Vec<LoadHistoryRow>,
+    pub stloads_handoff: Option<LoadHandoffSummary>,
     pub notes: Vec<String>,
 }
 
@@ -311,9 +538,9 @@ pub fn sample_load_board_screen() -> LoadBoardScreen {
             LoadBoardMetric { label: "Funding Watch".into(), value: "6 legs".into(), note: "Booked legs awaiting escrow funding or release.".into() },
         ],
         rows: vec![
-            LoadBoardRow { leg_id: 240171, leg_code: "LD-24017-1".into(), origin_label: "Dallas, TX".into(), destination_label: "Joliet, IL".into(), pickup_date_label: "Apr 8, 2026".into(), delivery_date_label: "Apr 10, 2026".into(), status_label: "Booked".into(), status_tone: "primary".into(), stloads_label: Some("Published".into()), stloads_tone: Some("success".into()), stloads_alert: None, remarks_label: None, carrier_label: Some("Atlas Freight".into()), booked_carrier_id: Some(412), bid_status_label: "Fixed".into(), amount_label: "$2,450".into(), payment_label: "Escrow pending".into(), recommended_score: Some(96), primary_action_label: "Fund escrow".into() },
-            LoadBoardRow { leg_id: 240122, leg_code: "LD-24012-2".into(), origin_label: "Ontario, CA".into(), destination_label: "Reno, NV".into(), pickup_date_label: "Apr 7, 2026".into(), delivery_date_label: "Apr 7, 2026".into(), status_label: "Published".into(), status_tone: "success".into(), stloads_label: Some("Requeue Required".into()), stloads_tone: Some("danger".into()), stloads_alert: Some("Rate drift after TMS update".into()), remarks_label: None, carrier_label: None, booked_carrier_id: None, bid_status_label: "Open".into(), amount_label: "$1,260".into(), payment_label: "Not funded".into(), recommended_score: Some(88), primary_action_label: "View offers".into() },
-            LoadBoardRow { leg_id: 239981, leg_code: "LD-23998-1".into(), origin_label: "Houston, TX".into(), destination_label: "Memphis, TN".into(), pickup_date_label: "Apr 6, 2026".into(), delivery_date_label: "Apr 7, 2026".into(), status_label: "In Transit".into(), status_tone: "info".into(), stloads_label: Some("Published".into()), stloads_tone: Some("success".into()), stloads_alert: Some("Delivered upstream but still live on board".into()), remarks_label: Some("POD expected by end of shift.".into()), carrier_label: Some("Roadwise Logistics".into()), booked_carrier_id: Some(513), bid_status_label: "Fixed".into(), amount_label: "$3,180".into(), payment_label: "Funded".into(), recommended_score: None, primary_action_label: "Track leg".into() },
+            LoadBoardRow { load_id: 24017, leg_id: 240171, leg_code: "LD-24017-1".into(), origin_label: "Dallas, TX".into(), destination_label: "Joliet, IL".into(), pickup_date_label: "Apr 8, 2026".into(), delivery_date_label: "Apr 10, 2026".into(), status_label: "Booked".into(), status_tone: "primary".into(), stloads_label: Some("Published".into()), stloads_tone: Some("success".into()), stloads_alert: None, remarks_label: None, carrier_label: Some("Atlas Freight".into()), booked_carrier_id: Some(412), bid_status_label: "Fixed".into(), amount_label: "$2,450".into(), payment_label: "Escrow pending".into(), recommended_score: Some(96), primary_action_label: "Fund escrow".into() },
+            LoadBoardRow { load_id: 24012, leg_id: 240122, leg_code: "LD-24012-2".into(), origin_label: "Ontario, CA".into(), destination_label: "Reno, NV".into(), pickup_date_label: "Apr 7, 2026".into(), delivery_date_label: "Apr 7, 2026".into(), status_label: "Published".into(), status_tone: "success".into(), stloads_label: Some("Requeue Required".into()), stloads_tone: Some("danger".into()), stloads_alert: Some("Rate drift after TMS update".into()), remarks_label: None, carrier_label: None, booked_carrier_id: None, bid_status_label: "Open".into(), amount_label: "$1,260".into(), payment_label: "Not funded".into(), recommended_score: Some(88), primary_action_label: "View offers".into() },
+            LoadBoardRow { load_id: 23998, leg_id: 239981, leg_code: "LD-23998-1".into(), origin_label: "Houston, TX".into(), destination_label: "Memphis, TN".into(), pickup_date_label: "Apr 6, 2026".into(), delivery_date_label: "Apr 7, 2026".into(), status_label: "In Transit".into(), status_tone: "info".into(), stloads_label: Some("Published".into()), stloads_tone: Some("success".into()), stloads_alert: Some("Delivered upstream but still live on board".into()), remarks_label: Some("POD expected by end of shift.".into()), carrier_label: Some("Roadwise Logistics".into()), booked_carrier_id: Some(513), bid_status_label: "Fixed".into(), amount_label: "$3,180".into(), payment_label: "Funded".into(), recommended_score: None, primary_action_label: "Track leg".into() },
         ],
         recommendation_notes: vec![
             "Recommended loads are scored from preferred equipment, geography, and availability-day overlap.".into(),

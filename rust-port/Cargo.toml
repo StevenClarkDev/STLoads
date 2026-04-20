@@ -15,15 +15,21 @@ version = "0.1.0"
 
 [workspace.dependencies]
 anyhow = "1.0"
-axum = { version = "0.8", features = ["macros", "ws"] }
+aws-config = "1.8"
+aws-credential-types = "1.2"
+aws-sdk-s3 = "1.79"
+axum = { version = "0.8", features = ["macros", "ws", "multipart"] }
 bcrypt = "0.16"
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
-leptos = { version = "0.8", features = ["ssr"] }
-leptos_router = { version = "0.8", features = ["ssr"] }
+hmac = "0.12"
+leptos = "0.8"
+leptos_router = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "pool", "rustls-tls", "smtp-transport"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
 # SQLx is now compiled for PostgreSQL to match the IBM deployment target.
 # The remaining work is migrating raw SQL, migrations, and tests off MySQL-shaped syntax.
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "macros"] }
@@ -32,6 +38,4 @@ tokio = { version = "1.0", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "compression-full", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-uuid = { version = "1.0", features = ["serde", "v4"] }
-
-
+uuid = { version = "1.0", features = ["serde", "v4", "js"] }

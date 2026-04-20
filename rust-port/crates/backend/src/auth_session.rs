@@ -2,7 +2,8 @@ use axum::http::{HeaderMap, header};
 use chrono::Utc;
 use db::auth::{
     UserRecord, delete_personal_access_token_by_token, find_personal_access_token_exact,
-    find_user_by_id, insert_personal_access_token, touch_personal_access_token,
+    find_user_by_id, insert_personal_access_token, list_permission_names_for_role,
+    touch_personal_access_token,
 };
 use domain::auth::{
     AccountStatus, Permission, ROLE_PERMISSION_CONTRACTS, UserRole, role_descriptors,
@@ -59,7 +60,7 @@ pub async fn resolve_session_from_token(
     };
 
     let _ = touch_personal_access_token(pool, token_record.id).await;
-    let session = build_session_state(&user);
+    let session = build_session_state(state, &user).await;
 
     let _ = token_record;
 
@@ -72,7 +73,8 @@ pub async fn issue_session_token(state: &AppState, user: &UserRecord) -> Result<
     };
 
     let token = uuid::Uuid::new_v4().to_string();
-    let abilities = serde_json::to_string(&permission_keys_for_user(user)).ok();
+    let permissions = permission_keys_for_user(state, user).await;
+    let abilities = serde_json::to_string(&permissions).ok();
     let expires_at = Some(Utc::now().naive_utc() + chrono::Duration::days(14));
 
     insert_personal_access_token(
@@ -99,8 +101,8 @@ pub async fn revoke_session_token(state: &AppState, token: &str) -> Result<u64, 
         .map_err(|error| format!("token delete failed: {}", error))
 }
 
-pub fn build_session_state(user: &UserRecord) -> AuthSessionState {
-    let permissions = permission_keys_for_user(user);
+pub async fn build_session_state(state: &AppState, user: &UserRecord) -> AuthSessionState {
+    let permissions = permission_keys_for_user(state, user).await;
     let notes = match user.account_status() {
         Some(AccountStatus::Approved) => {
             vec!["Authenticated through the Rust session layer.".into()]
@@ -123,7 +125,7 @@ pub fn build_session_state(user: &UserRecord) -> AuthSessionState {
             role_key: role_key(user.primary_role()),
             role_label: role_label(user.primary_role()),
             account_status_label: account_status_label(user.account_status()),
-            dashboard_href: dashboard_href(user.primary_role()).to_string(),
+            dashboard_href: dashboard_href(user.primary_role(), user.account_status()).to_string(),
         }),
         permissions,
         notes,
@@ -149,10 +151,20 @@ pub fn bearer_token_from_headers(headers: &HeaderMap) -> Option<String> {
         .map(|value| value.to_string())
 }
 
-pub fn permission_keys_for_user(user: &UserRecord) -> Vec<String> {
+pub async fn permission_keys_for_user(state: &AppState, user: &UserRecord) -> Vec<String> {
     let Some(role) = user.primary_role() else {
         return Vec::new();
     };
+
+    if let Some(pool) = state.pool.as_ref() {
+        if let Ok(dynamic_permissions) =
+            list_permission_names_for_role(pool, i64::from(role.legacy_id())).await
+        {
+            if !dynamic_permissions.is_empty() {
+                return dynamic_permissions;
+            }
+        }
+    }
 
     ROLE_PERMISSION_CONTRACTS
         .iter()
@@ -183,7 +195,14 @@ pub fn role_label(role: Option<UserRole>) -> String {
         .unwrap_or_else(|| "Unknown".into())
 }
 
-pub fn dashboard_href(role: Option<UserRole>) -> &'static str {
+pub fn dashboard_href(role: Option<UserRole>, status: Option<AccountStatus>) -> &'static str {
+    if matches!(
+        status,
+        Some(AccountStatus::EmailVerifiedPendingOnboarding | AccountStatus::RevisionRequested)
+    ) {
+        return "/auth/onboarding";
+    }
+
     role_descriptors()
         .iter()
         .find(|descriptor| Some(descriptor.role) == role)

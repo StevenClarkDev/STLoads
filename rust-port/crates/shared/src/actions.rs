@@ -16,8 +16,20 @@ pub struct BookLoadLegResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateLoadLegRequest {
-    pub pickup_location_id: u64,
-    pub delivery_location_id: u64,
+    pub pickup_location_id: Option<u64>,
+    pub pickup_location_address: Option<String>,
+    pub pickup_city: Option<String>,
+    pub pickup_country: Option<String>,
+    pub pickup_place_id: Option<String>,
+    pub pickup_latitude: Option<f64>,
+    pub pickup_longitude: Option<f64>,
+    pub delivery_location_id: Option<u64>,
+    pub delivery_location_address: Option<String>,
+    pub delivery_city: Option<String>,
+    pub delivery_country: Option<String>,
+    pub delivery_place_id: Option<String>,
+    pub delivery_latitude: Option<f64>,
+    pub delivery_longitude: Option<f64>,
     pub pickup_date: String,
     pub delivery_date: String,
     pub bid_status: String,
@@ -46,6 +58,67 @@ pub struct CreateLoadResponse {
     pub leg_count: u64,
     pub message: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertLoadDocumentRequest {
+    pub document_name: String,
+    pub document_type: String,
+    pub file_path: String,
+    pub original_name: Option<String>,
+    pub mime_type: Option<String>,
+    pub file_size: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertLoadDocumentResponse {
+    pub success: bool,
+    pub load_id: i64,
+    pub document_id: Option<i64>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifyLoadDocumentRequest {
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifyLoadDocumentResponse {
+    pub success: bool,
+    pub load_id: i64,
+    pub document_id: i64,
+    pub hash: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DispatchDeskFollowUpRequest {
+    pub desk_key: String,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DispatchDeskFollowUpResponse {
+    pub success: bool,
+    pub leg_id: i64,
+    pub load_id: i64,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminReviewLoadRequest {
+    pub decision: String,
+    pub remarks: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminReviewLoadResponse {
+    pub success: bool,
+    pub load_id: i64,
+    pub status_label: String,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OfferReviewDecision {
@@ -128,6 +201,9 @@ pub struct EscrowLifecycleResponse {
     pub success: bool,
     pub leg_id: i64,
     pub escrow_id: Option<i64>,
+    pub payment_intent_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub transfer_id: Option<String>,
     pub status_label: String,
     pub message: String,
 }

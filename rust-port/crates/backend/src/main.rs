@@ -3,10 +3,14 @@ use tracing::info;
 mod app;
 mod auth_session;
 mod config;
+mod document_storage;
+mod email;
 mod realtime_bus;
 mod routes;
 mod screen_data;
 mod state;
+mod stripe;
+mod tms_scheduler;
 
 #[tokio::main]
 async fn main() {

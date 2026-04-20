@@ -1,7 +1,15 @@
 use db::{
-    DbPool, connect, migrate,
+    DbPool, connect,
+    email_outbox::{
+        EnqueueEmailParams, claim_due_emails, count_pending_emails, enqueue_email,
+        mark_email_delivered, mark_email_retry,
+    },
+    master_data, migrate,
     payments::{EscrowTransitionParams, apply_escrow_transition, find_escrow_for_leg},
-    tms::{apply_status_webhook, find_handoff_by_id, push_handoff},
+    tms::{
+        apply_status_webhook, find_handoff_by_id, process_retryable_handoffs, push_handoff,
+        run_reconciliation_scan,
+    },
 };
 use domain::payments::EscrowStatus;
 use serial_test::serial;
@@ -41,11 +49,17 @@ async fn reset_database(pool: &DbPool) -> Result<(), sqlx::Error> {
             stloads_external_refs,
             stloads_handoff_events,
             stloads_handoffs,
+            email_outbox,
             escrows,
             load_history,
             load_legs,
             loads,
             locations,
+            cities,
+            countries,
+            load_types,
+            equipments,
+            commodity_types,
             load_status_master,
             users
          RESTART IDENTITY CASCADE",
@@ -400,6 +414,171 @@ async fn tms_rate_update_marks_requeue_required_and_updates_leg_price()
     .fetch_one(&pool)
     .await?;
     assert_eq!(reconcile_action, "rate_update");
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn email_outbox_records_retry_and_delivery_state() -> Result<(), Box<dyn std::error::Error>> {
+    let Some(pool) = prepare_pool().await? else {
+        return Ok(());
+    };
+
+    let record = enqueue_email(
+        &pool,
+        EnqueueEmailParams {
+            template_name: "integration_notice",
+            to_email: "ops@example.test",
+            to_name: Some("Ops User"),
+            subject: "Integration notice",
+            html_body: "<p>Hello from test</p>",
+            max_attempts: 3,
+        },
+    )
+    .await?;
+
+    assert_eq!(record.status, "processing");
+    assert_eq!(record.attempts, 1);
+
+    mark_email_retry(&pool, record.id, "temporary SMTP timeout").await?;
+    let pending = count_pending_emails(&pool).await?;
+    assert_eq!(pending, 1);
+
+    let claimed = claim_due_emails(&pool, 10).await?;
+    assert_eq!(claimed.len(), 1);
+    assert_eq!(claimed[0].id, record.id);
+    assert_eq!(claimed[0].attempts, 2);
+
+    mark_email_delivered(&pool, record.id, "sent").await?;
+    let pending_after_delivery = count_pending_emails(&pool).await?;
+    assert_eq!(pending_after_delivery, 0);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn master_data_crud_covers_location_dependencies() -> Result<(), Box<dyn std::error::Error>> {
+    let Some(pool) = prepare_pool().await? else {
+        return Ok(());
+    };
+
+    let country = master_data::upsert_country(&pool, None, "Testland", Some("TL")).await?;
+    assert_eq!(country.iso_code.as_deref(), Some("TL"));
+
+    let city = master_data::upsert_city(&pool, None, "Test City", country.id).await?;
+    assert_eq!(city.country_id, country.id);
+
+    let location =
+        master_data::upsert_location(&pool, None, "Test Dock", Some(city.id), Some(country.id))
+            .await?;
+    assert_eq!(location.city_id, Some(city.id));
+
+    let load_type = master_data::upsert_load_type(&pool, None, "Integration Freight").await?;
+    let equipment = master_data::upsert_equipment(&pool, None, "Integration Trailer").await?;
+    let commodity =
+        master_data::upsert_commodity_type(&pool, None, "Integration Commodity").await?;
+
+    assert_eq!(
+        master_data::soft_delete_simple_catalog(&pool, "load_types", load_type.id).await?,
+        1
+    );
+    assert_eq!(
+        master_data::soft_delete_simple_catalog(&pool, "equipments", equipment.id).await?,
+        1
+    );
+    assert_eq!(
+        master_data::soft_delete_simple_catalog(&pool, "commodity_types", commodity.id).await?,
+        1
+    );
+    assert_eq!(
+        master_data::soft_delete_simple_catalog(&pool, "locations", location.id).await?,
+        1
+    );
+
+    assert_eq!(master_data::delete_city(&pool, city.id).await?, 1);
+    assert_eq!(master_data::delete_country(&pool, country.id).await?, 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn tms_reconciliation_scan_archives_and_flags_drift() -> Result<(), Box<dyn std::error::Error>>
+{
+    let Some(pool) = prepare_pool().await? else {
+        return Ok(());
+    };
+
+    let terminal_payload = sample_tms_payload("TMS-SCAN-ARCHIVE-1001");
+    let terminal = push_handoff(&pool, &terminal_payload).await?;
+    sqlx::query(
+        "UPDATE stloads_handoffs
+         SET tms_status = 'invoiced',
+             tms_status_at = CURRENT_TIMESTAMP,
+             last_webhook_at = CURRENT_TIMESTAMP
+         WHERE id = $1",
+    )
+    .bind(terminal.handoff.id)
+    .execute(&pool)
+    .await?;
+
+    let stale_payload = sample_tms_payload("TMS-SCAN-STALE-1001");
+    let stale = push_handoff(&pool, &stale_payload).await?;
+    sqlx::query(
+        "UPDATE stloads_handoffs
+         SET published_at = CURRENT_TIMESTAMP - INTERVAL '40 days',
+             last_webhook_at = NULL
+         WHERE id = $1",
+    )
+    .bind(stale.handoff.id)
+    .execute(&pool)
+    .await?;
+
+    let summary = run_reconciliation_scan(&pool, 30).await?;
+    assert_eq!(summary.auto_archived, 1);
+    assert_eq!(summary.stale_handoffs, 1);
+
+    let archived = find_handoff_by_id(&pool, terminal.handoff.id)
+        .await?
+        .expect("terminal handoff should remain");
+    assert_eq!(archived.status, "closed");
+
+    let stale_errors: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM stloads_sync_errors WHERE handoff_id = $1 AND error_class = 'stale_handoff' AND resolved = FALSE",
+    )
+    .bind(stale.handoff.id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(stale_errors, 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn tms_retry_worker_publishes_queued_handoff() -> Result<(), Box<dyn std::error::Error>> {
+    let Some(pool) = prepare_pool().await? else {
+        return Ok(());
+    };
+
+    let payload = sample_tms_payload("TMS-RETRY-QUEUE-1001");
+    db::tms::queue_handoff(&pool, &payload).await?;
+
+    let summary = process_retryable_handoffs(&pool, 10, 5).await?;
+    assert_eq!(summary.scanned, 1);
+    assert_eq!(summary.published, 1);
+    assert_eq!(summary.failed, 0);
+
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM stloads_handoffs WHERE tms_load_id = $1 AND tenant_id = $2 LIMIT 1",
+    )
+    .bind(payload.tms_load_id)
+    .bind(payload.tenant_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(status, "published");
 
     Ok(())
 }

@@ -91,6 +91,8 @@ pub struct LoadDocumentRecord {
     pub document_name: String,
     pub document_type: String,
     pub file_path: String,
+    pub storage_provider: String,
+    pub uploaded_by_user_id: Option<i64>,
     pub original_name: Option<String>,
     pub mime_type: Option<String>,
     pub file_size: Option<i64>,
@@ -132,6 +134,50 @@ pub struct LoadLegRecord {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct LoadProfileLegRecord {
+    pub id: i64,
+    pub load_id: i64,
+    pub leg_no: i32,
+    pub leg_code: Option<String>,
+    pub pickup_location_name: Option<String>,
+    pub delivery_location_name: Option<String>,
+    pub pickup_date: Option<NaiveDateTime>,
+    pub delivery_date: Option<NaiveDateTime>,
+    pub bid_status: Option<String>,
+    pub price: Option<f64>,
+    pub status_id: i16,
+    pub booked_carrier_id: Option<i64>,
+    pub booked_carrier_name: Option<String>,
+    pub booked_amount: Option<f64>,
+    pub escrow_id: Option<i64>,
+    pub escrow_status: Option<String>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct LoadBuilderLegRecord {
+    pub id: i64,
+    pub load_id: i64,
+    pub leg_no: i32,
+    pub leg_code: Option<String>,
+    pub pickup_location_name: Option<String>,
+    pub pickup_city_name: Option<String>,
+    pub pickup_country_name: Option<String>,
+    pub delivery_location_name: Option<String>,
+    pub delivery_city_name: Option<String>,
+    pub delivery_country_name: Option<String>,
+    pub pickup_date: Option<NaiveDateTime>,
+    pub delivery_date: Option<NaiveDateTime>,
+    pub bid_status: Option<String>,
+    pub price: Option<f64>,
+    pub status_id: i16,
+    pub booked_carrier_id: Option<i64>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 impl LoadLegRecord {
@@ -246,6 +292,58 @@ pub struct LoadBoardMetricsRecord {
     pub funding_watch_total: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct DispatchDeskLegRecord {
+    pub leg_id: i64,
+    pub load_id: i64,
+    pub handoff_id: Option<i64>,
+    pub load_number: Option<String>,
+    pub load_title: String,
+    pub equipment_name: Option<String>,
+    pub weight: Option<f64>,
+    pub status_id: i16,
+    pub booked_carrier_id: Option<i64>,
+    pub booked_carrier_name: Option<String>,
+    pub booked_amount: Option<f64>,
+    pub escrow_status: Option<String>,
+    pub handoff_status: Option<String>,
+    pub latest_activity_note: Option<String>,
+    pub created_at: NaiveDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct AdminLoadLegRecord {
+    pub leg_id: i64,
+    pub load_id: i64,
+    pub leg_code: Option<String>,
+    pub load_number: Option<String>,
+    pub owner_name: Option<String>,
+    pub carrier_name: Option<String>,
+    pub pickup_location_name: Option<String>,
+    pub delivery_location_name: Option<String>,
+    pub pickup_date: Option<NaiveDateTime>,
+    pub delivery_date: Option<NaiveDateTime>,
+    pub bid_status: Option<String>,
+    pub price: Option<f64>,
+    pub status_id: i16,
+    pub booked_amount: Option<f64>,
+    pub escrow_id: Option<i64>,
+    pub escrow_status: Option<String>,
+    pub created_at: NaiveDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct LoadIdAndStatusRecord {
+    pub load_id: i64,
+    pub status_id: i16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct LoadStatusScopeRecord {
+    pub load_id: i64,
+    pub owner_user_id: Option<i64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateLoadParams {
     pub title: String,
@@ -277,9 +375,28 @@ pub struct CreatedLoadRecord {
     pub leg_count: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct LoadDocumentScopeRecord {
+    pub document_id: i64,
+    pub load_id: i64,
+    pub load_owner_user_id: Option<i64>,
+    pub uploaded_by_user_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertLoadDocumentParams {
+    pub document_name: String,
+    pub document_type: String,
+    pub file_path: String,
+    pub storage_provider: String,
+    pub original_name: Option<String>,
+    pub mime_type: Option<String>,
+    pub file_size: Option<i64>,
+}
+
 pub async fn list_recent_loads(pool: &DbPool, limit: i64) -> Result<Vec<LoadRecord>, sqlx::Error> {
     sqlx::query_as::<_, LoadRecord>(
-        "SELECT id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight,
+        "SELECT id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight::double precision AS weight,
                 special_instructions, is_hazardous, is_temperature_controlled, status, leg_count, created_at, updated_at, deleted_at
          FROM loads
          WHERE deleted_at IS NULL
@@ -291,12 +408,76 @@ pub async fn list_recent_loads(pool: &DbPool, limit: i64) -> Result<Vec<LoadReco
     .await
 }
 
+pub async fn list_admin_load_legs_filtered(
+    pool: &DbPool,
+    status_ids: Option<&[i16]>,
+    limit: i64,
+) -> Result<Vec<AdminLoadLegRecord>, sqlx::Error> {
+    sqlx::query_as::<_, AdminLoadLegRecord>(
+        r#"
+        SELECT
+            ll.id AS leg_id,
+            ll.load_id,
+            ll.leg_code,
+            l.load_number,
+            owner.name AS owner_name,
+            carrier.name AS carrier_name,
+            pickup.name AS pickup_location_name,
+            delivery.name AS delivery_location_name,
+            ll.pickup_date,
+            ll.delivery_date,
+            ll.bid_status,
+            ll.price::double precision AS price,
+            ll.status_id,
+            ll.booked_amount::double precision AS booked_amount,
+            escrow.id AS escrow_id,
+            escrow.status AS escrow_status,
+            ll.created_at
+        FROM load_legs ll
+        INNER JOIN loads l ON l.id = ll.load_id AND l.deleted_at IS NULL
+        LEFT JOIN users owner ON owner.id = l.user_id
+        LEFT JOIN users carrier ON carrier.id = ll.booked_carrier_id
+        LEFT JOIN locations pickup ON pickup.id = ll.pickup_location_id
+        LEFT JOIN locations delivery ON delivery.id = ll.delivery_location_id
+        LEFT JOIN escrows escrow ON escrow.leg_id = ll.id
+        WHERE ll.deleted_at IS NULL
+          AND ($1::smallint[] IS NULL OR ll.status_id = ANY($1))
+        ORDER BY ll.created_at DESC, ll.id DESC
+        LIMIT $2
+        "#,
+    )
+    .bind(status_ids)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn count_admin_load_legs_filtered(
+    pool: &DbPool,
+    status_ids: Option<&[i16]>,
+) -> Result<i64, sqlx::Error> {
+    let (total,): (i64,) = sqlx::query_as(
+        r#"
+        SELECT COUNT(*)
+        FROM load_legs ll
+        INNER JOIN loads l ON l.id = ll.load_id AND l.deleted_at IS NULL
+        WHERE ll.deleted_at IS NULL
+          AND ($1::smallint[] IS NULL OR ll.status_id = ANY($1))
+        "#,
+    )
+    .bind(status_ids)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(total)
+}
+
 pub async fn list_loads_for_user(
     pool: &DbPool,
     user_id: i64,
 ) -> Result<Vec<LoadRecord>, sqlx::Error> {
     sqlx::query_as::<_, LoadRecord>(
-        "SELECT id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight,
+        "SELECT id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight::double precision AS weight,
                 special_instructions, is_hazardous, is_temperature_controlled, status, leg_count, created_at, updated_at, deleted_at
          FROM loads
          WHERE deleted_at IS NULL AND user_id = $1
@@ -312,7 +493,7 @@ pub async fn find_load_by_id(
     load_id: i64,
 ) -> Result<Option<LoadRecord>, sqlx::Error> {
     sqlx::query_as::<_, LoadRecord>(
-        "SELECT id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight,
+        "SELECT id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight::double precision AS weight,
                 special_instructions, is_hazardous, is_temperature_controlled, status, leg_count, created_at, updated_at, deleted_at
          FROM loads
          WHERE deleted_at IS NULL AND id = $1
@@ -329,11 +510,67 @@ pub async fn list_load_legs_for_load(
 ) -> Result<Vec<LoadLegRecord>, sqlx::Error> {
     sqlx::query_as::<_, LoadLegRecord>(
         "SELECT id, load_id, leg_no, leg_code, pickup_location_id, delivery_location_id, pickup_date, delivery_date,
-                bid_status, price, status_id, booked_carrier_id, booked_at, booked_amount, accepted_offer_id,
+                bid_status, price::double precision AS price, status_id, booked_carrier_id, booked_at, booked_amount::double precision AS booked_amount, accepted_offer_id,
                 created_at, updated_at, deleted_at
          FROM load_legs
          WHERE deleted_at IS NULL AND load_id = $1
          ORDER BY leg_no, id",
+    )
+    .bind(load_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn list_load_profile_legs_for_load(
+    pool: &DbPool,
+    load_id: i64,
+) -> Result<Vec<LoadProfileLegRecord>, sqlx::Error> {
+    sqlx::query_as::<_, LoadProfileLegRecord>(
+        "SELECT ll.id, ll.load_id, ll.leg_no, ll.leg_code,
+                pickup.name AS pickup_location_name,
+                delivery.name AS delivery_location_name,
+                ll.pickup_date, ll.delivery_date, ll.bid_status, ll.price::double precision AS price,
+                ll.status_id, ll.booked_carrier_id,
+                carrier.name AS booked_carrier_name,
+                ll.booked_amount::double precision AS booked_amount,
+                escrow.id AS escrow_id,
+                escrow.status AS escrow_status,
+                ll.created_at, ll.updated_at
+         FROM load_legs ll
+         LEFT JOIN locations pickup ON pickup.id = ll.pickup_location_id
+         LEFT JOIN locations delivery ON delivery.id = ll.delivery_location_id
+         LEFT JOIN users carrier ON carrier.id = ll.booked_carrier_id
+         LEFT JOIN escrows escrow ON escrow.load_leg_id = ll.id
+         WHERE ll.deleted_at IS NULL AND ll.load_id = $1
+         ORDER BY ll.leg_no, ll.id",
+    )
+    .bind(load_id)
+    .fetch_all(pool)
+    .await
+}
+pub async fn list_load_builder_legs_for_load(
+    pool: &DbPool,
+    load_id: i64,
+) -> Result<Vec<LoadBuilderLegRecord>, sqlx::Error> {
+    sqlx::query_as::<_, LoadBuilderLegRecord>(
+        "SELECT ll.id, ll.load_id, ll.leg_no, ll.leg_code,
+                pickup.name AS pickup_location_name,
+                pickup_city.name AS pickup_city_name,
+                pickup_country.name AS pickup_country_name,
+                delivery.name AS delivery_location_name,
+                delivery_city.name AS delivery_city_name,
+                delivery_country.name AS delivery_country_name,
+                ll.pickup_date, ll.delivery_date, ll.bid_status, ll.price::double precision AS price,
+                ll.status_id, ll.booked_carrier_id, ll.created_at, ll.updated_at
+         FROM load_legs ll
+         LEFT JOIN locations pickup ON pickup.id = ll.pickup_location_id
+         LEFT JOIN cities pickup_city ON pickup_city.id = pickup.city_id
+         LEFT JOIN countries pickup_country ON pickup_country.id = pickup.country_id
+         LEFT JOIN locations delivery ON delivery.id = ll.delivery_location_id
+         LEFT JOIN cities delivery_city ON delivery_city.id = delivery.city_id
+         LEFT JOIN countries delivery_country ON delivery_country.id = delivery.country_id
+         WHERE ll.deleted_at IS NULL AND ll.load_id = $1
+         ORDER BY ll.leg_no, ll.id",
     )
     .bind(load_id)
     .fetch_all(pool)
@@ -345,8 +582,9 @@ pub async fn list_load_documents_for_load(
     load_id: i64,
 ) -> Result<Vec<LoadDocumentRecord>, sqlx::Error> {
     sqlx::query_as::<_, LoadDocumentRecord>(
-        "SELECT id, load_id, document_name, document_type, file_path, original_name, mime_type, file_size,
-                hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp, created_at, updated_at
+        "SELECT id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
+                original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
+                mock_blockchain_timestamp, created_at, updated_at
          FROM load_documents
          WHERE load_id = $1
          ORDER BY id DESC",
@@ -356,6 +594,280 @@ pub async fn list_load_documents_for_load(
     .await
 }
 
+pub async fn find_load_document_by_id(
+    pool: &DbPool,
+    document_id: i64,
+) -> Result<Option<LoadDocumentRecord>, sqlx::Error> {
+    sqlx::query_as::<_, LoadDocumentRecord>(
+        "SELECT id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
+                original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
+                mock_blockchain_timestamp, created_at, updated_at
+         FROM load_documents
+         WHERE id = $1
+         LIMIT 1",
+    )
+    .bind(document_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn find_load_document_scope(
+    pool: &DbPool,
+    document_id: i64,
+) -> Result<Option<LoadDocumentScopeRecord>, sqlx::Error> {
+    sqlx::query_as::<_, LoadDocumentScopeRecord>(
+        r#"
+        SELECT
+            document.id AS document_id,
+            document.load_id,
+            load.user_id AS load_owner_user_id,
+            document.uploaded_by_user_id
+        FROM load_documents document
+        INNER JOIN loads load ON load.id = document.load_id AND load.deleted_at IS NULL
+        WHERE document.id = $1
+        LIMIT 1
+        "#,
+    )
+    .bind(document_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn create_load_document(
+    pool: &DbPool,
+    load_id: i64,
+    params: &UpsertLoadDocumentParams,
+    actor_user_id: Option<i64>,
+) -> Result<Option<LoadDocumentRecord>, sqlx::Error> {
+    #[derive(FromRow)]
+    struct LoadStatusRow {
+        id: i64,
+        status: i16,
+    }
+
+    let mut tx = pool.begin().await?;
+    let Some(load_row) = sqlx::query_as::<_, LoadStatusRow>(
+        "SELECT id, status FROM loads WHERE deleted_at IS NULL AND id = $1 LIMIT 1",
+    )
+    .bind(load_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    let created = sqlx::query_as::<_, LoadDocumentRecord>(
+        "INSERT INTO load_documents (
+            load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
+            original_name, mime_type, file_size, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
+             original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
+             mock_blockchain_timestamp, created_at, updated_at",
+    )
+    .bind(load_id)
+    .bind(&params.document_name)
+    .bind(&params.document_type)
+    .bind(&params.file_path)
+    .bind(&params.storage_provider)
+    .bind(actor_user_id)
+    .bind(params.original_name.as_deref())
+    .bind(params.mime_type.as_deref())
+    .bind(params.file_size)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(load_row.id)
+    .bind(actor_user_id)
+    .bind(load_row.status)
+    .bind(format!(
+        "Rust load profile added document {}",
+        params.document_name
+    ))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(Some(created))
+}
+
+pub async fn update_load_document(
+    pool: &DbPool,
+    document_id: i64,
+    params: &UpsertLoadDocumentParams,
+    actor_user_id: Option<i64>,
+) -> Result<Option<LoadDocumentRecord>, sqlx::Error> {
+    #[derive(FromRow)]
+    struct DocumentLoadRow {
+        load_id: i64,
+        status: i16,
+    }
+
+    let mut tx = pool.begin().await?;
+    let Some(load_row) = sqlx::query_as::<_, DocumentLoadRow>(
+        "SELECT document.load_id, load.status
+         FROM load_documents document
+         INNER JOIN loads load ON load.id = document.load_id AND load.deleted_at IS NULL
+         WHERE document.id = $1
+         LIMIT 1",
+    )
+    .bind(document_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    sqlx::query(
+        "UPDATE load_documents
+         SET document_name = $1,
+             document_type = $2,
+             file_path = $3,
+             storage_provider = $4,
+             original_name = $5,
+             mime_type = $6,
+             file_size = $7,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $8",
+    )
+    .bind(&params.document_name)
+    .bind(&params.document_type)
+    .bind(&params.file_path)
+    .bind(&params.storage_provider)
+    .bind(params.original_name.as_deref())
+    .bind(params.mime_type.as_deref())
+    .bind(params.file_size)
+    .bind(document_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(load_row.load_id)
+    .bind(actor_user_id)
+    .bind(load_row.status)
+    .bind(format!(
+        "Rust load profile updated document {}",
+        params.document_name
+    ))
+    .execute(&mut *tx)
+    .await?;
+
+    let updated = sqlx::query_as::<_, LoadDocumentRecord>(
+        "SELECT id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
+                original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
+                mock_blockchain_timestamp, created_at, updated_at
+         FROM load_documents
+         WHERE id = $1
+         LIMIT 1",
+    )
+    .bind(document_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(updated)
+}
+
+pub async fn verify_load_document_blockchain(
+    pool: &DbPool,
+    document_id: i64,
+    actor_user_id: Option<i64>,
+    note: Option<&str>,
+) -> Result<Option<LoadDocumentRecord>, sqlx::Error> {
+    #[derive(FromRow)]
+    struct DocumentLoadRow {
+        load_id: i64,
+        status: i16,
+        document_name: String,
+    }
+
+    let mut tx = pool.begin().await?;
+    let Some(load_row) = sqlx::query_as::<_, DocumentLoadRow>(
+        "SELECT document.load_id, load.status, document.document_name
+         FROM load_documents document
+         INNER JOIN loads load ON load.id = document.load_id AND load.deleted_at IS NULL
+         WHERE document.id = $1
+         LIMIT 1",
+    )
+    .bind(document_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    let timestamp_token = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
+    let hash = format!("mocksha256-{}-{}", document_id, timestamp_token);
+    let tx_id = format!("mocktx-{}-{}", load_row.load_id, timestamp_token);
+
+    sqlx::query(
+        "UPDATE load_documents
+         SET document_type = 'blockchain',
+             hash = $1,
+             hash_algorithm = 'mock_sha256',
+             mock_blockchain_tx = $2,
+             mock_blockchain_timestamp = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3",
+    )
+    .bind(&hash)
+    .bind(&tx_id)
+    .bind(document_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let remark = note
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            format!(
+                "Rust blockchain verification for {}: {}",
+                load_row.document_name, value
+            )
+        })
+        .unwrap_or_else(|| {
+            format!(
+                "Rust blockchain verification completed for {}",
+                load_row.document_name
+            )
+        });
+
+    sqlx::query(
+        "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(load_row.load_id)
+    .bind(actor_user_id)
+    .bind(load_row.status)
+    .bind(remark)
+    .execute(&mut *tx)
+    .await?;
+
+    let updated = sqlx::query_as::<_, LoadDocumentRecord>(
+        "SELECT id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
+                original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
+                mock_blockchain_timestamp, created_at, updated_at
+         FROM load_documents
+         WHERE id = $1
+         LIMIT 1",
+    )
+    .bind(document_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(updated)
+}
 pub async fn list_load_history_for_load(
     pool: &DbPool,
     load_id: i64,
@@ -612,7 +1124,7 @@ pub async fn find_load_leg_by_id(
 ) -> Result<Option<LoadLegRecord>, sqlx::Error> {
     sqlx::query_as::<_, LoadLegRecord>(
         "SELECT id, load_id, leg_no, leg_code, pickup_location_id, delivery_location_id, pickup_date, delivery_date,
-                bid_status, price, status_id, booked_carrier_id, booked_at, booked_amount, accepted_offer_id,
+                bid_status, price::double precision AS price, status_id, booked_carrier_id, booked_at, booked_amount::double precision AS booked_amount, accepted_offer_id,
                 created_at, updated_at, deleted_at
          FROM load_legs
          WHERE deleted_at IS NULL AND id = $1
@@ -656,7 +1168,7 @@ pub async fn book_load_leg(
 
     let Some(leg) = sqlx::query_as::<_, LoadLegRecord>(
         "SELECT id, load_id, leg_no, leg_code, pickup_location_id, delivery_location_id, pickup_date, delivery_date,
-                bid_status, price, status_id, booked_carrier_id, booked_at, booked_amount, accepted_offer_id,
+                bid_status, price::double precision AS price, status_id, booked_carrier_id, booked_at, booked_amount::double precision AS booked_amount, accepted_offer_id,
                 created_at, updated_at, deleted_at
          FROM load_legs
          WHERE deleted_at IS NULL AND id = $1
@@ -699,7 +1211,7 @@ pub async fn book_load_leg(
 
     let updated = sqlx::query_as::<_, LoadLegRecord>(
         "SELECT id, load_id, leg_no, leg_code, pickup_location_id, delivery_location_id, pickup_date, delivery_date,
-                bid_status, price, status_id, booked_carrier_id, booked_at, booked_amount, accepted_offer_id,
+                bid_status, price::double precision AS price, status_id, booked_carrier_id, booked_at, booked_amount::double precision AS booked_amount, accepted_offer_id,
                 created_at, updated_at, deleted_at
          FROM load_legs
          WHERE deleted_at IS NULL AND id = $1
@@ -731,11 +1243,11 @@ fn load_board_select_sql() -> &'static str {
             ll.pickup_date,
             ll.delivery_date,
             ll.bid_status,
-            ll.price,
+            ll.price::double precision AS price,
             ll.status_id,
             ll.booked_carrier_id,
             carrier.name AS booked_carrier_name,
-            ll.booked_amount,
+            ll.booked_amount::double precision AS booked_amount,
             escrow.status AS escrow_status,
             handoff.status AS stloads_status,
             handoff.retry_count AS stloads_retry_count,
@@ -762,6 +1274,226 @@ fn load_board_select_sql() -> &'static str {
             LIMIT 1
         )
     "#
+}
+
+pub async fn list_dispatch_desk_legs_filtered(
+    pool: &DbPool,
+    owner_user_id: Option<i64>,
+    status_ids: &[i16],
+    limit: i64,
+) -> Result<Vec<DispatchDeskLegRecord>, sqlx::Error> {
+    sqlx::query_as::<_, DispatchDeskLegRecord>(
+        r#"
+        SELECT
+            ll.id AS leg_id,
+            ll.load_id,
+            handoff.id AS handoff_id,
+            l.load_number,
+            l.title AS load_title,
+            equipment.name AS equipment_name,
+            l.weight::double precision AS weight,
+            ll.status_id,
+            ll.booked_carrier_id,
+            carrier.name AS booked_carrier_name,
+            ll.booked_amount::double precision AS booked_amount,
+            escrow.status AS escrow_status,
+            handoff.status AS handoff_status,
+            (
+                SELECT history.remarks
+                FROM load_history history
+                WHERE history.load_id = l.id
+                  AND history.remarks IS NOT NULL
+                ORDER BY history.created_at DESC, history.id DESC
+                LIMIT 1
+            ) AS latest_activity_note,
+            ll.created_at
+        FROM load_legs ll
+        INNER JOIN loads l ON l.id = ll.load_id AND l.deleted_at IS NULL
+        LEFT JOIN equipments equipment ON equipment.id = l.equipment_id
+        LEFT JOIN users carrier ON carrier.id = ll.booked_carrier_id
+        LEFT JOIN escrows escrow ON escrow.leg_id = ll.id
+        LEFT JOIN stloads_handoffs handoff ON handoff.id = (
+            SELECT handoff_inner.id
+            FROM stloads_handoffs handoff_inner
+            WHERE handoff_inner.load_id = l.id
+            ORDER BY handoff_inner.id DESC
+            LIMIT 1
+        )
+        WHERE ll.deleted_at IS NULL
+            AND ll.status_id = ANY($1)
+            AND ($2::bigint IS NULL OR l.user_id = $2)
+        ORDER BY ll.created_at DESC
+        LIMIT $3
+        "#,
+    )
+    .bind(status_ids)
+    .bind(owner_user_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn find_load_id_and_status_for_leg(
+    pool: &DbPool,
+    leg_id: i64,
+) -> Result<Option<LoadIdAndStatusRecord>, sqlx::Error> {
+    sqlx::query_as::<_, LoadIdAndStatusRecord>(
+        "SELECT ll.load_id, ll.status_id
+         FROM load_legs ll
+         INNER JOIN loads l ON l.id = ll.load_id AND l.deleted_at IS NULL
+         WHERE ll.id = $1
+           AND ll.deleted_at IS NULL
+         LIMIT 1",
+    )
+    .bind(leg_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn find_load_status_scope(
+    pool: &DbPool,
+    load_id: i64,
+) -> Result<Option<LoadStatusScopeRecord>, sqlx::Error> {
+    sqlx::query_as::<_, LoadStatusScopeRecord>(
+        "SELECT id AS load_id, user_id AS owner_user_id
+         FROM loads
+         WHERE id = $1
+           AND deleted_at IS NULL
+         LIMIT 1",
+    )
+    .bind(load_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn review_load_status(
+    pool: &DbPool,
+    load_id: i64,
+    status_id: i16,
+    remarks: Option<&str>,
+    actor_user_id: Option<i64>,
+) -> Result<Option<LoadStatusScopeRecord>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let Some(scope) = sqlx::query_as::<_, LoadStatusScopeRecord>(
+        "SELECT id AS load_id, user_id AS owner_user_id
+         FROM loads
+         WHERE id = $1
+           AND deleted_at IS NULL
+         LIMIT 1",
+    )
+    .bind(load_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    sqlx::query(
+        "UPDATE load_legs
+         SET status_id = $1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE load_id = $2
+           AND deleted_at IS NULL",
+    )
+    .bind(status_id)
+    .bind(load_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE loads
+         SET status = $1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2",
+    )
+    .bind(status_id)
+    .bind(load_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(load_id)
+    .bind(actor_user_id)
+    .bind(status_id)
+    .bind(remarks.map(str::to_string))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(Some(scope))
+}
+
+pub async fn append_dispatch_desk_follow_up(
+    pool: &DbPool,
+    leg_id: i64,
+    actor_user_id: Option<i64>,
+    desk_key: &str,
+    note: &str,
+) -> Result<Option<LoadIdAndStatusRecord>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let Some(load_row) = sqlx::query_as::<_, LoadIdAndStatusRecord>(
+        "SELECT ll.load_id, ll.status_id
+         FROM load_legs ll
+         INNER JOIN loads l ON l.id = ll.load_id AND l.deleted_at IS NULL
+         WHERE ll.id = $1
+           AND ll.deleted_at IS NULL
+         LIMIT 1",
+    )
+    .bind(leg_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    sqlx::query(
+        "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(load_row.load_id)
+    .bind(actor_user_id)
+    .bind(load_row.status_id)
+    .bind(format!(
+        "Rust {} desk follow-up on leg {}: {}",
+        desk_key.trim(),
+        leg_id,
+        note.trim()
+    ))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(Some(load_row))
+}
+
+pub async fn count_dispatch_desk_legs_filtered(
+    pool: &DbPool,
+    owner_user_id: Option<i64>,
+    status_ids: &[i16],
+) -> Result<i64, sqlx::Error> {
+    let (total,): (i64,) = sqlx::query_as(
+        r#"
+        SELECT COUNT(*)
+        FROM load_legs ll
+        INNER JOIN loads l ON l.id = ll.load_id AND l.deleted_at IS NULL
+        WHERE ll.deleted_at IS NULL
+            AND ll.status_id = ANY($1)
+            AND ($2::bigint IS NULL OR l.user_id = $2)
+        "#,
+    )
+    .bind(status_ids)
+    .bind(owner_user_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(total)
 }
 
 pub async fn create_load_with_legs(
@@ -871,4 +1603,131 @@ pub async fn create_load_with_legs(
         load_number,
         leg_count: legs.len() as u64,
     })
+}
+pub async fn update_load_with_legs(
+    pool: &DbPool,
+    load_id: i64,
+    params: &CreateLoadParams,
+    legs: &[CreateLoadLegParams],
+    actor_user_id: Option<i64>,
+) -> Result<Option<CreatedLoadRecord>, sqlx::Error> {
+    #[derive(Debug, FromRow)]
+    struct ExistingLoadRow {
+        load_number: Option<String>,
+        status: i16,
+    }
+
+    let mut tx = pool.begin().await?;
+
+    let Some(existing_load) = sqlx::query_as::<_, ExistingLoadRow>(
+        "SELECT load_number, status
+         FROM loads
+         WHERE deleted_at IS NULL AND id = $1
+         LIMIT 1",
+    )
+    .bind(load_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    sqlx::query(
+        "UPDATE loads
+         SET title = $1,
+             user_id = $2,
+             load_type_id = $3,
+             equipment_id = $4,
+             commodity_type_id = $5,
+             weight_unit = $6,
+             weight = $7,
+             special_instructions = $8,
+             is_hazardous = $9,
+             is_temperature_controlled = $10,
+             leg_count = $11,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $12",
+    )
+    .bind(&params.title)
+    .bind(params.owner_user_id)
+    .bind(params.load_type_id)
+    .bind(params.equipment_id)
+    .bind(params.commodity_type_id)
+    .bind(&params.weight_unit)
+    .bind(params.weight)
+    .bind(&params.special_instructions)
+    .bind(params.is_hazardous)
+    .bind(params.is_temperature_controlled)
+    .bind(legs.len() as i32)
+    .bind(load_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE load_legs
+         SET deleted_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE load_id = $1 AND deleted_at IS NULL",
+    )
+    .bind(load_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let load_number = existing_load
+        .load_number
+        .unwrap_or_else(|| format!("RUST-LD-{:06}", load_id.max(0)));
+
+    for (index, leg) in legs.iter().enumerate() {
+        let leg_no = (index + 1) as i32;
+        let leg_code = format!("{}-{}", load_number, leg_no);
+
+        sqlx::query(
+            "INSERT INTO load_legs (
+                load_id,
+                leg_no,
+                leg_code,
+                pickup_location_id,
+                delivery_location_id,
+                pickup_date,
+                delivery_date,
+                bid_status,
+                price,
+                status_id,
+                created_at,
+                updated_at
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .bind(load_id)
+        .bind(leg_no)
+        .bind(&leg_code)
+        .bind(leg.pickup_location_id)
+        .bind(leg.delivery_location_id)
+        .bind(leg.pickup_date)
+        .bind(leg.delivery_date)
+        .bind(&leg.bid_status)
+        .bind(leg.price)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    sqlx::query(
+        "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(load_id)
+    .bind(actor_user_id)
+    .bind(existing_load.status)
+    .bind("Rust load builder updated load")
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(Some(CreatedLoadRecord {
+        load_id,
+        load_number,
+        leg_count: legs.len() as u64,
+    }))
 }

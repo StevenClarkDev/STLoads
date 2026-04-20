@@ -1,1 +1,5 @@
 target/
+.env.ibm.runtime
+.env.ibm.secret
+.cos-*
+.tmp-ibm-*/

@@ -196,12 +196,12 @@ pub async fn find_active_handoff_by_tms_load(
     sqlx::query_as::<_, StloadsHandoffRecord>(
         "SELECT id, tms_load_id, tenant_id, external_handoff_id, load_id, status, tms_status,
                 tms_status_at, party_type, freight_mode, equipment_type, commodity_description,
-                weight, weight_unit, piece_count, temperature_data, container_data, securement_data,
+                weight::double precision AS weight, weight_unit, piece_count, temperature_data, container_data, securement_data,
                 is_hazardous, pickup_city, pickup_state, pickup_zip, pickup_country, pickup_address,
                 pickup_window_start, pickup_window_end, pickup_instructions, pickup_appointment_ref,
                 dropoff_city, dropoff_state, dropoff_zip, dropoff_country, dropoff_address,
                 dropoff_window_start, dropoff_window_end, dropoff_instructions, dropoff_appointment_ref,
-                board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
+                board_rate::double precision AS board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
                 compliance_passed, compliance_summary, required_documents_status, readiness, pushed_by,
                 push_reason, source_module, queued_at, published_at, withdrawn_at, closed_at,
                 retry_count, last_push_result, payload_version, last_webhook_at, raw_payload,
@@ -224,12 +224,12 @@ pub async fn list_recent_handoffs(
     sqlx::query_as::<_, StloadsHandoffRecord>(
         "SELECT id, tms_load_id, tenant_id, external_handoff_id, load_id, status, tms_status,
                 tms_status_at, party_type, freight_mode, equipment_type, commodity_description,
-                weight, weight_unit, piece_count, temperature_data, container_data, securement_data,
+                weight::double precision AS weight, weight_unit, piece_count, temperature_data, container_data, securement_data,
                 is_hazardous, pickup_city, pickup_state, pickup_zip, pickup_country, pickup_address,
                 pickup_window_start, pickup_window_end, pickup_instructions, pickup_appointment_ref,
                 dropoff_city, dropoff_state, dropoff_zip, dropoff_country, dropoff_address,
                 dropoff_window_start, dropoff_window_end, dropoff_instructions, dropoff_appointment_ref,
-                board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
+                board_rate::double precision AS board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
                 compliance_passed, compliance_summary, required_documents_status, readiness, pushed_by,
                 push_reason, source_module, queued_at, published_at, withdrawn_at, closed_at,
                 retry_count, last_push_result, payload_version, last_webhook_at, raw_payload,
@@ -252,7 +252,7 @@ pub async fn list_recent_handoffs_filtered(
         sqlx::query_as::<_, StloadsHandoffListRecord>(
             "SELECT h.id, h.tms_load_id, h.load_id, l.load_number, h.status, h.tms_status, h.freight_mode,
                     h.equipment_type, h.pickup_city, h.pickup_state, h.dropoff_city, h.dropoff_state,
-                    h.board_rate, h.retry_count, h.created_at
+                    h.board_rate::double precision AS board_rate, h.retry_count, h.created_at
              FROM stloads_handoffs h
              LEFT JOIN loads l ON l.id = h.load_id
              WHERE h.status = $1
@@ -267,7 +267,7 @@ pub async fn list_recent_handoffs_filtered(
         sqlx::query_as::<_, StloadsHandoffListRecord>(
             "SELECT h.id, h.tms_load_id, h.load_id, l.load_number, h.status, h.tms_status, h.freight_mode,
                     h.equipment_type, h.pickup_city, h.pickup_state, h.dropoff_city, h.dropoff_state,
-                    h.board_rate, h.retry_count, h.created_at
+                    h.board_rate::double precision AS board_rate, h.retry_count, h.created_at
              FROM stloads_handoffs h
              LEFT JOIN loads l ON l.id = h.load_id
              ORDER BY h.created_at DESC, h.id DESC
@@ -318,6 +318,24 @@ pub async fn list_unresolved_sync_error_breakdown(
     )
     .fetch_all(pool)
     .await
+}
+
+pub async fn count_unresolved_sync_errors_by_class(
+    pool: &DbPool,
+    error_class: &str,
+) -> Result<i64, sqlx::Error> {
+    let (total,): (i64,) = sqlx::query_as(
+        r#"
+        SELECT COUNT(*)
+        FROM stloads_sync_errors
+        WHERE resolved = FALSE AND error_class = $1
+        "#,
+    )
+    .bind(error_class)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(total)
 }
 
 pub async fn published_mismatch_counts(
@@ -460,6 +478,49 @@ pub struct TmsWebhookMutationResult {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TmsRetryRunSummary {
+    pub scanned: usize,
+    pub published: usize,
+    pub failed: usize,
+    pub messages: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TmsReconciliationScanSummary {
+    pub auto_archived: usize,
+    pub cancelled_still_live: usize,
+    pub delivered_still_open: usize,
+    pub stale_handoffs: usize,
+}
+
+pub async fn find_latest_handoff_for_load(
+    pool: &DbPool,
+    load_id: i64,
+) -> Result<Option<StloadsHandoffRecord>, sqlx::Error> {
+    sqlx::query_as::<_, StloadsHandoffRecord>(
+        "SELECT id, tms_load_id, tenant_id, external_handoff_id, load_id, status, tms_status,
+                tms_status_at, party_type, freight_mode, equipment_type, commodity_description,
+                weight::double precision AS weight, weight_unit, piece_count, temperature_data, container_data, securement_data,
+                is_hazardous, pickup_city, pickup_state, pickup_zip, pickup_country, pickup_address,
+                pickup_window_start, pickup_window_end, pickup_instructions, pickup_appointment_ref,
+                dropoff_city, dropoff_state, dropoff_zip, dropoff_country, dropoff_address,
+                dropoff_window_start, dropoff_window_end, dropoff_instructions, dropoff_appointment_ref,
+                board_rate::double precision AS board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
+                compliance_passed, compliance_summary, required_documents_status, readiness, pushed_by,
+                push_reason, source_module, queued_at, published_at, withdrawn_at, closed_at,
+                retry_count, last_push_result, payload_version, last_webhook_at, raw_payload,
+                created_at, updated_at
+         FROM stloads_handoffs
+         WHERE load_id = $1
+         ORDER BY id DESC
+         LIMIT 1"
+    )
+    .bind(load_id)
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn find_handoff_by_id(
     pool: &DbPool,
     handoff_id: i64,
@@ -467,12 +528,12 @@ pub async fn find_handoff_by_id(
     sqlx::query_as::<_, StloadsHandoffRecord>(
         "SELECT id, tms_load_id, tenant_id, external_handoff_id, load_id, status, tms_status,
                 tms_status_at, party_type, freight_mode, equipment_type, commodity_description,
-                weight, weight_unit, piece_count, temperature_data, container_data, securement_data,
+                weight::double precision AS weight, weight_unit, piece_count, temperature_data, container_data, securement_data,
                 is_hazardous, pickup_city, pickup_state, pickup_zip, pickup_country, pickup_address,
                 pickup_window_start, pickup_window_end, pickup_instructions, pickup_appointment_ref,
                 dropoff_city, dropoff_state, dropoff_zip, dropoff_country, dropoff_address,
                 dropoff_window_start, dropoff_window_end, dropoff_instructions, dropoff_appointment_ref,
-                board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
+                board_rate::double precision AS board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
                 compliance_passed, compliance_summary, required_documents_status, readiness, pushed_by,
                 push_reason, source_module, queued_at, published_at, withdrawn_at, closed_at,
                 retry_count, last_push_result, payload_version, last_webhook_at, raw_payload,
@@ -797,6 +858,12 @@ pub async fn close_handoff(
 
     let mut tx = pool.begin().await?;
 
+    if existing_handoff.status == HandoffStatus::Published.as_legacy_label() {
+        if let Some(load_id) = existing_handoff.load_id {
+            soft_delete_load_projection(&mut tx, load_id).await?;
+        }
+    }
+
     sqlx::query(
         "UPDATE stloads_handoffs
          SET status = $1,
@@ -930,6 +997,12 @@ pub async fn apply_status_webhook(
             .detail
             .clone()
             .unwrap_or_else(|| "Finance-complete webhook closed the STLOADS handoff.".into());
+
+        if existing_handoff.status == HandoffStatus::Published.as_legacy_label() {
+            if let Some(load_id) = existing_handoff.load_id {
+                soft_delete_load_projection(&mut tx, load_id).await?;
+            }
+        }
     }
 
     sqlx::query(
@@ -998,6 +1071,249 @@ pub async fn apply_status_webhook(
     }))
 }
 
+pub async fn process_retryable_handoffs(
+    pool: &DbPool,
+    limit: i64,
+    max_attempts: i32,
+) -> Result<TmsRetryRunSummary, sqlx::Error> {
+    let handoff_ids = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT id
+        FROM stloads_handoffs
+        WHERE status IN ('queued', 'push_failed')
+          AND retry_count < $1
+        ORDER BY COALESCE(queued_at, updated_at, created_at) ASC, id ASC
+        LIMIT $2
+        "#,
+    )
+    .bind(max_attempts.max(1))
+    .bind(limit.max(1))
+    .fetch_all(pool)
+    .await?;
+
+    let mut summary = TmsRetryRunSummary {
+        scanned: handoff_ids.len(),
+        ..TmsRetryRunSummary::default()
+    };
+
+    for handoff_id in handoff_ids {
+        match requeue_handoff(
+            pool,
+            handoff_id,
+            Some("rust_tms_retry_worker"),
+            Some("rust_scheduler"),
+        )
+        .await
+        {
+            Ok(Some(result)) => {
+                summary.published += 1;
+                summary.messages.push(format!(
+                    "Published handoff #{} from retry worker.",
+                    result.handoff.id
+                ));
+            }
+            Ok(None) => {
+                summary.failed += 1;
+                summary.messages.push(format!(
+                    "Retry handoff #{} disappeared before processing.",
+                    handoff_id
+                ));
+            }
+            Err(error) => {
+                summary.failed += 1;
+                record_handoff_retry_failure(pool, handoff_id, &error.to_string()).await?;
+                summary
+                    .messages
+                    .push(format!("Retry handoff #{} failed: {}", handoff_id, error));
+            }
+        }
+    }
+
+    Ok(summary)
+}
+
+pub async fn run_reconciliation_scan(
+    pool: &DbPool,
+    stale_days: i64,
+) -> Result<TmsReconciliationScanSummary, sqlx::Error> {
+    let mut summary = TmsReconciliationScanSummary::default();
+
+    let archive_ids = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT id
+        FROM stloads_handoffs
+        WHERE status IN ('published', 'withdrawn')
+          AND tms_status IN ('invoiced', 'settled')
+        ORDER BY updated_at ASC, id ASC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for handoff_id in archive_ids {
+        if close_handoff(
+            pool,
+            handoff_id,
+            Some("Reconciliation scan: TMS reached a financial terminal status."),
+            Some("rust_tms_reconciliation_worker"),
+            Some("rust_scheduler"),
+        )
+        .await?
+        .is_some()
+        {
+            summary.auto_archived += 1;
+        }
+    }
+
+    let cancelled_ids = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT id
+        FROM stloads_handoffs
+        WHERE status = 'published'
+          AND tms_status = 'cancelled'
+        ORDER BY updated_at ASC, id ASC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for handoff_id in cancelled_ids {
+        if withdraw_handoff(
+            pool,
+            handoff_id,
+            Some("Reconciliation scan: TMS cancelled but STLOADS was still published."),
+            Some("rust_tms_reconciliation_worker"),
+            Some("rust_scheduler"),
+        )
+        .await?
+        .is_some()
+        {
+            summary.cancelled_still_live += 1;
+        }
+    }
+
+    summary.delivered_still_open = flag_delivered_still_open(pool).await?;
+    summary.stale_handoffs = flag_stale_handoffs(pool, stale_days).await?;
+
+    Ok(summary)
+}
+
+async fn record_handoff_retry_failure(
+    pool: &DbPool,
+    handoff_id: i64,
+    error: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE stloads_handoffs
+        SET status = 'push_failed',
+            retry_count = retry_count + 1,
+            last_push_result = $2,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+        "#,
+    )
+    .bind(handoff_id)
+    .bind(error.chars().take(2000).collect::<String>())
+    .execute(pool)
+    .await?;
+
+    create_sync_error(
+        pool,
+        Some(handoff_id),
+        "push_failed",
+        "error",
+        &format!("Retry failed for STLOADS handoff #{}", handoff_id),
+        Some(error),
+        Some("rust_scheduler"),
+        Some("rust_tms_retry_worker"),
+    )
+    .await
+}
+
+async fn flag_delivered_still_open(pool: &DbPool) -> Result<usize, sqlx::Error> {
+    let handoff_ids = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT h.id
+        FROM stloads_handoffs h
+        WHERE h.status = 'published'
+          AND h.load_id IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM load_legs leg
+              WHERE leg.load_id = h.load_id
+                AND leg.deleted_at IS NULL
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM load_legs leg
+              WHERE leg.load_id = h.load_id
+                AND leg.deleted_at IS NULL
+                AND leg.status_id < 10
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM stloads_sync_errors err
+              WHERE err.handoff_id = h.id
+                AND err.error_class = 'delivered_still_open'
+                AND err.resolved = FALSE
+          )
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for handoff_id in &handoff_ids {
+        create_sync_error(
+            pool,
+            Some(*handoff_id),
+            "delivered_still_open",
+            "warning",
+            &format!("Load delivered but STLOADS handoff #{} is still open.", handoff_id),
+            Some("All load legs are completed but the STLOADS handoff is still published. Consider closing or withdrawing."),
+            Some("rust_scheduler"),
+            Some("rust_tms_reconciliation_worker"),
+        )
+        .await?;
+    }
+
+    Ok(handoff_ids.len())
+}
+
+async fn flag_stale_handoffs(pool: &DbPool, stale_days: i64) -> Result<usize, sqlx::Error> {
+    let handoff_ids = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT h.id
+        FROM stloads_handoffs h
+        WHERE h.status = 'published'
+          AND h.published_at < CURRENT_TIMESTAMP - (($1::TEXT || ' days')::INTERVAL)
+          AND (h.last_webhook_at IS NULL OR h.last_webhook_at < CURRENT_TIMESTAMP - (($1::TEXT || ' days')::INTERVAL))
+          AND NOT EXISTS (
+              SELECT 1 FROM stloads_sync_errors err
+              WHERE err.handoff_id = h.id
+                AND err.error_class = 'stale_handoff'
+                AND err.resolved = FALSE
+          )
+        "#,
+    )
+    .bind(stale_days.max(1))
+    .fetch_all(pool)
+    .await?;
+
+    for handoff_id in &handoff_ids {
+        create_sync_error(
+            pool,
+            Some(*handoff_id),
+            "stale_handoff",
+            "warning",
+            &format!("Stale STLOADS handoff #{} has no recent TMS activity.", handoff_id),
+            Some("Published handoff has exceeded the stale webhook threshold. Investigate TMS status or close the handoff."),
+            Some("rust_scheduler"),
+            Some("rust_tms_reconciliation_worker"),
+        )
+        .await?;
+    }
+
+    Ok(handoff_ids.len())
+}
+
 async fn insert_handoff_row(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     payload: &shared::TmsHandoffPayload,
@@ -1022,7 +1338,7 @@ async fn insert_handoff_row(
             compliance_passed, compliance_summary, required_documents_status, readiness,
             pushed_by, push_reason, source_module, queued_at, retry_count, last_push_result,
             payload_version, raw_payload, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, 0, $49, $50, $51, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, 0, $48, $49, $50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id",
     )
     .bind(payload.tms_load_id.as_str())

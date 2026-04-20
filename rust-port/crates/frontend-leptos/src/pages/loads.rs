@@ -1,5 +1,6 @@
 use futures_util::future::AbortHandle;
 use leptos::{prelude::*, tachys::view::any_view::IntoAny, task::spawn_local};
+use leptos_router::components::A;
 
 use crate::{
     api, realtime,
@@ -98,6 +99,7 @@ pub fn LoadBoardPage() -> impl IntoView {
             vec![RealtimeTopic::LoadBoard],
             move |event| match event.kind {
                 RealtimeEventKind::LoadLegBooked
+                | RealtimeEventKind::LegExecutionUpdated
                 | RealtimeEventKind::OfferReviewed
                 | RealtimeEventKind::PaymentsOperationsUpdated
                 | RealtimeEventKind::TmsOperationsUpdated => {
@@ -184,6 +186,12 @@ pub fn LoadBoardPage() -> impl IntoView {
             .user
             .map(|user| user.role_key == "carrier")
             .unwrap_or(false)
+    });
+
+    let can_view_profile = Signal::derive(move || {
+        session::has_permission(&auth, "manage_loads")
+            || session::has_permission(&auth, "access_admin_portal")
+            || session::has_permission(&auth, "manage_dispatch_desk")
     });
 
     view! {
@@ -301,7 +309,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                                     .map(|value| {
                                         value.rows
                                             .into_iter()
-                                            .map(|row| render_row(row, pending_leg_id, book_leg, can_self_book.get()))
+                                            .map(|row| render_row(row, pending_leg_id, book_leg, can_self_book.get(), can_view_profile.get()))
                                             .collect_view()
                                             .into_any()
                                     })
@@ -339,8 +347,10 @@ fn render_row(
     pending_leg_id: RwSignal<Option<u64>>,
     book_leg: impl Fn(u64) + Copy + 'static,
     can_self_book: bool,
+    can_view_profile: bool,
 ) -> impl IntoView {
     let LoadBoardRow {
+        load_id,
         leg_id,
         leg_code,
         origin_label,
@@ -397,6 +407,9 @@ fn render_row(
             <td style="padding:0.9rem;">{payment_label}</td>
             <td style="padding:0.9rem;display:grid;gap:0.45rem;min-width:180px;">
                 <strong>{primary_action_label}</strong>
+                {can_view_profile.then(|| view! {
+                    <A href=format!("/loads/{}", load_id) attr:style="color:#1d4ed8;text-decoration:none;">"View profile"</A>
+                })}
                 {show_book_button.then(|| view! {
                     <button
                         type="button"
