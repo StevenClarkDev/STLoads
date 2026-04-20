@@ -2735,3 +2735,131 @@ fn format_profile_datetime(value: &chrono::NaiveDateTime) -> String {
 fn text_response(status: StatusCode, message: &str) -> Response {
     (status, message.to_string()).into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{fetch_password_reset_token, prepare_pool, test_state};
+    use serial_test::serial;
+    use shared::{ForgotPasswordRequest, LoginRequest, RegisterRequest};
+
+    #[tokio::test]
+    #[serial]
+    async fn registration_and_password_reset_routes_work_end_to_end()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let email = "route-auth@example.com".to_string();
+
+        let register_response = register(
+            State(state.clone()),
+            Json(RegisterRequest {
+                name: "Route Auth".into(),
+                email: email.clone(),
+                password: "Password123!".into(),
+                password_confirmation: "Password123!".into(),
+                role_key: "shipper".into(),
+                phone_no: Some("555-0101".into()),
+                address: Some("100 Auth Test Way".into()),
+            }),
+        )
+        .await
+        .0
+        .data;
+        assert!(register_response.success);
+        let registration_otp = register_response
+            .dev_otp
+            .clone()
+            .expect("development registration otp");
+
+        let verify_registration = verify_otp(
+            State(state.clone()),
+            Json(VerifyOtpRequest {
+                email: email.clone(),
+                otp: registration_otp,
+                purpose: OtpPurpose::Registration,
+            }),
+        )
+        .await
+        .0
+        .data;
+        assert!(verify_registration.success);
+        assert!(verify_registration.token.is_some());
+        assert_eq!(verify_registration.next_step, "/auth/onboarding");
+
+        let forgot_response = forgot_password(
+            State(state.clone()),
+            Json(ForgotPasswordRequest {
+                email: email.clone(),
+            }),
+        )
+        .await
+        .0
+        .data;
+        assert!(forgot_response.success);
+        let reset_otp = forgot_response
+            .dev_otp
+            .clone()
+            .expect("development reset otp");
+
+        let verify_reset = verify_otp(
+            State(state.clone()),
+            Json(VerifyOtpRequest {
+                email: email.clone(),
+                otp: reset_otp,
+                purpose: OtpPurpose::PasswordReset,
+            }),
+        )
+        .await
+        .0
+        .data;
+        assert!(verify_reset.success);
+        let reset_token = verify_reset
+            .reset_token
+            .clone()
+            .expect("development reset token");
+        assert_eq!(
+            fetch_password_reset_token(&pool, &email).await?,
+            Some(reset_token.clone())
+        );
+
+        let reset_response = reset_password(
+            State(state.clone()),
+            Json(ResetPasswordRequest {
+                email: email.clone(),
+                reset_token,
+                password: "Password456!".into(),
+                password_confirmation: "Password456!".into(),
+            }),
+        )
+        .await
+        .0
+        .data;
+        assert!(reset_response.success);
+
+        let login_response = login(
+            State(state),
+            Json(LoginRequest {
+                email,
+                password: "Password456!".into(),
+            }),
+        )
+        .await
+        .0
+        .data;
+        assert!(login_response.success);
+        assert!(login_response.token.is_some());
+        assert_eq!(
+            login_response
+                .session
+                .user
+                .as_ref()
+                .map(|user| user.account_status_label.as_str()),
+            Some("Email Verified")
+        );
+
+        Ok(())
+    }
+}

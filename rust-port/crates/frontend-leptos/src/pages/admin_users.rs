@@ -1,4 +1,5 @@
 use leptos::{ev::SubmitEvent, prelude::*, tachys::view::any_view::IntoAny, task::spawn_local};
+use leptos_router::components::A;
 
 use crate::{
     api, document_upload,
@@ -418,6 +419,132 @@ fn admin_user_card_attention(user: &AdminUserDirectoryUser) -> Option<String> {
     }
 }
 
+fn admin_account_action_plan(
+    role_key: &str,
+    status_key: &str,
+    company_name: Option<&str>,
+    phone_no: Option<&str>,
+    document_count: u64,
+) -> Vec<String> {
+    let mut items = Vec::new();
+
+    match status_key {
+        "pending_otp" => items.push(
+            "Resend the registration OTP and leave the account in place until the user clears verification."
+                .to_string(),
+        ),
+        "pending_review" => items.push(
+            "Review profile facts and KYC, then make a clear approve, revision, or reject decision from the Rust admin surface."
+                .to_string(),
+        ),
+        "revision_requested" => items.push(
+            "Compare the latest admin note against the updated profile before deciding whether the revision is now complete."
+                .to_string(),
+        ),
+        "rejected" => items.push(
+            "Treat this as a final denial state unless business ownership explicitly asks to reopen the account."
+                .to_string(),
+        ),
+        "approved" => items.push(
+            "This account is already live, so focus on accuracy, permissions, and any profile drift rather than lifecycle changes."
+                .to_string(),
+        ),
+        _ => items.push(
+            "This account is in a less common lifecycle state, so review status history before making another admin move."
+                .to_string(),
+        ),
+    }
+
+    if document_count == 0 {
+        items.push(
+            "KYC support files are still missing, so approval confidence is lower until documents arrive."
+                .to_string(),
+        );
+    }
+
+    if phone_no.unwrap_or("").trim().is_empty() {
+        items.push("Phone contact is missing from the account record.".to_string());
+    }
+
+    if role_key != "admin" && company_name.unwrap_or("").trim().is_empty() {
+        items.push(
+            "Company detail is still thin, so profile completeness needs another pass.".to_string(),
+        );
+    }
+
+    if role_key == "admin" {
+        items.push(
+            "Admin-role changes deserve extra caution because they affect portal access and permission scope immediately."
+                .to_string(),
+        );
+    }
+
+    items
+}
+
+fn admin_profile_action_plan(
+    role_key: &str,
+    status_key: &str,
+    readiness_items: &[String],
+    document_count: usize,
+    history_count: usize,
+) -> Vec<String> {
+    let mut items = Vec::new();
+
+    match status_key {
+        "pending_otp" => items.push(
+            "Keep this account in the verification lane and use resend-OTP support before expecting onboarding progress."
+                .to_string(),
+        ),
+        "pending_review" => items.push(
+            "This profile is ready for a human decision now, so use the review shortcuts after checking the gaps below."
+                .to_string(),
+        ),
+        "revision_requested" => items.push(
+            "Compare the revision note with the latest facts and documents before approving on the next pass."
+                .to_string(),
+        ),
+        "approved" => items.push(
+            "This account is already active, so the main admin work is keeping profile data and permissions aligned."
+                .to_string(),
+        ),
+        "rejected" => items.push(
+            "Leave this in the rejected lane unless there is a deliberate decision to reopen it."
+                .to_string(),
+        ),
+        _ => {}
+    }
+
+    if !readiness_items.is_empty() {
+        items.push(format!(
+            "{} readiness gap(s) are still visible from this profile.",
+            readiness_items.len()
+        ));
+    }
+
+    if document_count == 0 {
+        items.push(
+            "No KYC documents are attached yet, so the document lane is still empty.".to_string(),
+        );
+    }
+
+    if history_count == 0 {
+        items.push(
+            "History is still thin here, so future admin actions should leave clear remarks."
+                .to_string(),
+        );
+    }
+
+    if role_key == "admin" {
+        items.push(
+            "Because this is an admin profile, status and role changes have higher operational risk."
+                .to_string(),
+        );
+    }
+
+    items
+}
+
 fn profile_has_fact(facts: &[shared::AdminUserProfileFact], label: &str) -> bool {
     facts.iter().any(|fact| fact.label == label)
 }
@@ -523,6 +650,13 @@ fn render_user_card(
         "pending_review" | "revision_requested"
     );
     let can_resend_otp = user.status_key == "pending_otp";
+    let account_action_plan = admin_account_action_plan(
+        &user.role_key,
+        &user.status_key,
+        user.company_name.as_deref(),
+        user.phone_no.as_deref(),
+        user.document_count,
+    );
 
     let submit_account = move |ev: SubmitEvent| {
         ev.prevent_default();
@@ -705,6 +839,32 @@ fn render_user_card(
                 </div>
             </form>
 
+            <section style="display:grid;gap:0.55rem;padding-top:0.75rem;border-top:1px solid #e7e5e4;">
+                <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+                    <strong>"Account action plan"</strong>
+                    <span style=tone_style(admin_status_tone(&user.status_key))>{user.status_label.clone()}</span>
+                </div>
+                <small style="color:#64748b;">{admin_profile_next_step(&user.status_key)}</small>
+                <ul style="margin:0;padding-left:1.1rem;display:grid;gap:0.3rem;color:#475569;">
+                    {account_action_plan.into_iter().map(|item| view! { <li>{item}</li> }).collect_view()}
+                </ul>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    {matches!(user.status_key.as_str(), "pending_otp" | "pending_review" | "revision_requested" | "rejected").then(|| view! {
+                        <A href="/admin/account-lifecycle" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#eff6ff;color:#1d4ed8;text-decoration:none;">
+                            "Lifecycle workspace"
+                        </A>
+                    })}
+                    {can_run_review.then(|| view! {
+                        <A href="/admin/onboarding-reviews" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
+                            "Review queue"
+                        </A>
+                    })}
+                    <A href=format!("/admin/users/role/{}", user.role_key) attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#f8fafc;color:#0f172a;text-decoration:none;">
+                        "Role page"
+                    </A>
+                </div>
+            </section>
+
             {can_run_review.then(|| view! {
                 <section style="display:grid;gap:0.55rem;padding-top:0.75rem;border-top:1px solid #e7e5e4;">
                     <strong>"Review shortcuts"</strong>
@@ -772,6 +932,19 @@ fn render_user_card(
                 </section>
             })}
 
+            {move || {
+                if confirm_delete_user_id.get() == Some(user.user_id) {
+                    view! {
+                        <section style="display:grid;gap:0.45rem;padding:0.85rem 1rem;border:1px solid #fecaca;border-radius:0.9rem;background:#fff1f2;color:#9f1239;">
+                            <strong>"Delete warning"</strong>
+                            <small>"Deleting a user is destructive and should only happen when the account is truly disposable. If this is a lifecycle issue, prefer status changes, revision, or rejection instead."</small>
+                        </section>
+                    }.into_any()
+                } else {
+                    view! { <></> }.into_any()
+                }
+            }}
+
             {move || if active_edit_user_id.get() == Some(user.user_id) {
                 view! {
                     <form on:submit=save_details style="display:grid;gap:0.75rem;padding-top:0.75rem;border-top:1px solid #e7e5e4;">
@@ -822,6 +995,14 @@ fn render_profile_panel(
         "pending_review" | "revision_requested"
     );
     let can_resend_otp = profile.status_key == "pending_otp";
+    let action_plan = admin_profile_action_plan(
+        &profile.role_key,
+        &profile.status_key,
+        &readiness_items,
+        documents.len(),
+        profile.history.len(),
+    );
+    let history_count = profile.history.len();
 
     view! {
         <section style="padding:1rem;border:1px solid #cbd5e1;border-radius:1rem;background:#f8fafc;display:grid;gap:0.75rem;">
@@ -846,6 +1027,52 @@ fn render_profile_panel(
                     </ul>
                 </section>
             })}
+            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;">
+                <div style="padding:0.85rem 0.95rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#ffffff;display:grid;gap:0.2rem;">
+                    <strong>"Personal facts"</strong>
+                    <span style=tone_style(if personal_facts.is_empty() { "warning" } else { "success" })>{personal_facts.len().to_string()}</span>
+                    <small style="color:#64748b;">"Visible personal profile entries."</small>
+                </div>
+                <div style="padding:0.85rem 0.95rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#ffffff;display:grid;gap:0.2rem;">
+                    <strong>"Company facts"</strong>
+                    <span style=tone_style(if company_facts.is_empty() && profile.role_key != "admin" { "warning" } else { "success" })>{company_facts.len().to_string()}</span>
+                    <small style="color:#64748b;">"Business and compliance fields visible here."</small>
+                </div>
+                <div style="padding:0.85rem 0.95rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#ffffff;display:grid;gap:0.2rem;">
+                    <strong>"KYC docs"</strong>
+                    <span style=tone_style(if documents.is_empty() { "danger" } else { "success" })>{documents.len().to_string()}</span>
+                    <small style="color:#64748b;">"Protected documents available to admin review."</small>
+                </div>
+                <div style="padding:0.85rem 0.95rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#ffffff;display:grid;gap:0.2rem;">
+                    <strong>"History entries"</strong>
+                    <span style=tone_style(if history_count == 0 { "warning" } else { "dark" })>{history_count.to_string()}</span>
+                    <small style="color:#64748b;">"Recorded lifecycle and admin changes for this account."</small>
+                </div>
+            </section>
+            <section style="display:grid;gap:0.55rem;padding:0.85rem 1rem;border:1px solid #e7e5e4;border-radius:0.9rem;background:#ffffff;">
+                <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+                    <strong>"Admin action plan"</strong>
+                    <span style=tone_style(admin_status_tone(&profile.status_key))>{profile.role_label.clone()}</span>
+                </div>
+                <ul style="margin:0;padding-left:1.1rem;display:grid;gap:0.3rem;color:#475569;">
+                    {action_plan.into_iter().map(|item| view! { <li>{item}</li> }).collect_view()}
+                </ul>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    {matches!(profile.status_key.as_str(), "pending_otp" | "pending_review" | "revision_requested" | "rejected").then(|| view! {
+                        <A href="/admin/account-lifecycle" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#eff6ff;color:#1d4ed8;text-decoration:none;">
+                            "Lifecycle workspace"
+                        </A>
+                    })}
+                    {can_run_review.then(|| view! {
+                        <A href="/admin/onboarding-reviews" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
+                            "Review queue"
+                        </A>
+                    })}
+                    <A href=format!("/admin/users/role/{}", profile.role_key) attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#f8fafc;color:#0f172a;text-decoration:none;">
+                        "Role page"
+                    </A>
+                </div>
+            </section>
             {can_run_review.then(|| view! {
                 <section style="display:grid;gap:0.55rem;padding:0.85rem 1rem;border:1px solid #e7e5e4;border-radius:0.9rem;background:#ffffff;">
                     <strong>"Review account"</strong>

@@ -1261,3 +1261,111 @@ fn sanitize_header_file_name(value: &str) -> String {
 fn google_maps_url(lat: f64, lng: f64) -> String {
     format!("https://www.google.com/maps/search/?api=1&query={lat:.5},{lng:.5}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        auth_headers_for_user, insert_load_fixture, prepare_pool, read_leg_status, test_state,
+    };
+    use db::tracking::{CreateLegDocumentParams, create_leg_document};
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn execution_routes_enforce_pod_note_and_document_visibility()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let fixture = insert_load_fixture(&pool, 9).await?;
+        let carrier_headers = auth_headers_for_user(&state, &fixture.carrier_user).await?;
+        let owner_headers = auth_headers_for_user(&state, &fixture.owner_user).await?;
+
+        let missing_pod = run_leg_action(
+            State(state.clone()),
+            Path(fixture.leg_id),
+            carrier_headers.clone(),
+            Json(ExecutionLegActionRequest {
+                action_key: "complete_delivery".into(),
+                note: Some("Driver says delivery is complete.".into()),
+            }),
+        )
+        .await
+        .expect("execution action should return a structured response")
+        .0
+        .data;
+        assert!(!missing_pod.success);
+        assert!(missing_pod.message.contains("delivery POD"));
+
+        let saved = state
+            .document_storage
+            .save_execution_document(fixture.leg_id, "pod.pdf", b"pod-bytes")
+            .await?;
+        let document = create_leg_document(
+            &pool,
+            fixture.leg_id,
+            &CreateLegDocumentParams {
+                document_name: "Proof of Delivery".into(),
+                document_type: "delivery_pod".into(),
+                file_path: saved.file_path,
+                storage_provider: saved.storage_provider,
+                original_name: Some("pod.pdf".into()),
+                mime_type: Some("application/pdf".into()),
+                file_size: Some(8),
+            },
+            Some(fixture.carrier_user.id),
+        )
+        .await?
+        .expect("leg document created");
+
+        let owner_download =
+            download_leg_document_file(State(state.clone()), Path(document.id), owner_headers)
+                .await;
+        assert_eq!(owner_download.status(), StatusCode::FORBIDDEN);
+
+        let carrier_download = download_leg_document_file(
+            State(state.clone()),
+            Path(document.id),
+            carrier_headers.clone(),
+        )
+        .await;
+        assert_eq!(carrier_download.status(), StatusCode::OK);
+
+        let missing_note = run_leg_action(
+            State(state.clone()),
+            Path(fixture.leg_id),
+            carrier_headers.clone(),
+            Json(ExecutionLegActionRequest {
+                action_key: "complete_delivery".into(),
+                note: None,
+            }),
+        )
+        .await
+        .expect("execution action should return a structured response")
+        .0
+        .data;
+        assert!(!missing_note.success);
+        assert!(missing_note.message.contains("delivery completion note"));
+
+        let delivered = run_leg_action(
+            State(state),
+            Path(fixture.leg_id),
+            carrier_headers,
+            Json(ExecutionLegActionRequest {
+                action_key: "complete_delivery".into(),
+                note: Some("POD uploaded and consignee signed.".into()),
+            }),
+        )
+        .await
+        .expect("delivery completion should return a structured response")
+        .0
+        .data;
+        assert!(delivered.success);
+        assert_eq!(delivered.status_label, "Delivered");
+        assert_eq!(read_leg_status(&pool, fixture.leg_id).await?, 10);
+
+        Ok(())
+    }
+}

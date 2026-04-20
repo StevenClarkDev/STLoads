@@ -10,6 +10,8 @@ mod routes;
 mod screen_data;
 mod state;
 mod stripe;
+#[cfg(test)]
+mod test_support;
 mod tms_scheduler;
 
 #[tokio::main]

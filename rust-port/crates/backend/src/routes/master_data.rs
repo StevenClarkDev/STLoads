@@ -1107,3 +1107,314 @@ fn location_secondary_label(
         (None, None) => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        auth_headers_for_user, insert_user_with_role_status, prepare_pool, test_state,
+    };
+    use domain::auth::{AccountStatus, UserRole};
+    use serial_test::serial;
+    use shared::{
+        CityUpsertRequest, CountryUpsertRequest, LocationUpsertRequest, SimpleCatalogUpsertRequest,
+    };
+
+    #[tokio::test]
+    #[serial]
+    async fn master_data_screen_enforces_access_and_returns_db_sections()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let admin_user = insert_user_with_role_status(
+            &pool,
+            "Admin Master Data",
+            "admin-master-data@example.com",
+            UserRole::Admin,
+            AccountStatus::Approved,
+        )
+        .await?;
+        let shipper_user = insert_user_with_role_status(
+            &pool,
+            "Shipper Viewer",
+            "shipper-master-data@example.com",
+            UserRole::Shipper,
+            AccountStatus::Approved,
+        )
+        .await?;
+        let admin_headers = auth_headers_for_user(&state, &admin_user).await?;
+        let shipper_headers = auth_headers_for_user(&state, &shipper_user).await?;
+
+        let unauthenticated = screen(State(state.clone()), HeaderMap::new()).await;
+        assert_eq!(unauthenticated.unwrap_err(), StatusCode::UNAUTHORIZED);
+
+        let forbidden = screen(State(state.clone()), shipper_headers).await;
+        assert_eq!(forbidden.unwrap_err(), StatusCode::FORBIDDEN);
+
+        let screen_payload = screen(State(state), admin_headers)
+            .await
+            .expect("admin master-data screen should load")
+            .0
+            .data;
+
+        assert!(
+            screen_payload
+                .summary_cards
+                .iter()
+                .any(|card| card.label.contains("Writable catalogs"))
+        );
+        assert!(
+            screen_payload
+                .sections
+                .iter()
+                .any(|section| section.key == "countries")
+        );
+        assert!(
+            screen_payload
+                .sections
+                .iter()
+                .any(|section| section.key == "load_statuses")
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn master_data_route_handlers_cover_crud_and_archive_flows()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let admin_user = insert_user_with_role_status(
+            &pool,
+            "Admin Catalog Editor",
+            "admin-catalog-editor@example.com",
+            UserRole::Admin,
+            AccountStatus::Approved,
+        )
+        .await?;
+        let admin_headers = auth_headers_for_user(&state, &admin_user).await?;
+
+        let country_response = upsert_country_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(CountryUpsertRequest {
+                id: None,
+                name: "United States".into(),
+                iso_code: Some("us".into()),
+            }),
+        )
+        .await
+        .expect("country create should succeed")
+        .0
+        .data;
+        assert!(country_response.success);
+        let country_id = country_response.row_id.expect("country id");
+
+        let city_response = upsert_city_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(CityUpsertRequest {
+                id: None,
+                name: "Dallas".into(),
+                country_id,
+            }),
+        )
+        .await
+        .expect("city create should succeed")
+        .0
+        .data;
+        assert!(city_response.success);
+        let city_id = city_response.row_id.expect("city id");
+
+        let load_type_response = upsert_load_type_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(SimpleCatalogUpsertRequest {
+                id: None,
+                name: "Full Truckload".into(),
+            }),
+        )
+        .await
+        .expect("load type create should succeed")
+        .0
+        .data;
+        assert!(load_type_response.success);
+        let load_type_id = load_type_response.row_id.expect("load type id");
+
+        let equipment_response = upsert_equipment_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(SimpleCatalogUpsertRequest {
+                id: None,
+                name: "Dry Van".into(),
+            }),
+        )
+        .await
+        .expect("equipment create should succeed")
+        .0
+        .data;
+        assert!(equipment_response.success);
+        let equipment_id = equipment_response.row_id.expect("equipment id");
+
+        let commodity_response = upsert_commodity_type_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(SimpleCatalogUpsertRequest {
+                id: None,
+                name: "Paper Goods".into(),
+            }),
+        )
+        .await
+        .expect("commodity type create should succeed")
+        .0
+        .data;
+        assert!(commodity_response.success);
+        let commodity_id = commodity_response.row_id.expect("commodity id");
+
+        let location_response = upsert_location_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(LocationUpsertRequest {
+                id: None,
+                name: "Dallas Yard".into(),
+                city_id: Some(city_id),
+                country_id: Some(country_id),
+            }),
+        )
+        .await
+        .expect("location create should succeed")
+        .0
+        .data;
+        assert!(location_response.success);
+        let location_id = location_response.row_id.expect("location id");
+
+        let update_equipment = upsert_equipment_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(SimpleCatalogUpsertRequest {
+                id: Some(equipment_id),
+                name: "53 ft Dry Van".into(),
+            }),
+        )
+        .await
+        .expect("equipment update should succeed")
+        .0
+        .data;
+        assert!(update_equipment.success);
+        assert!(update_equipment.message.contains("updated"));
+
+        let update_location = upsert_location_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(LocationUpsertRequest {
+                id: Some(location_id),
+                name: "Dallas Main Yard".into(),
+                city_id: Some(city_id),
+                country_id: Some(country_id),
+            }),
+        )
+        .await
+        .expect("location update should succeed")
+        .0
+        .data;
+        assert!(update_location.success);
+
+        let archive_load_type = delete_load_type_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(MasterDataDeleteRequest { id: load_type_id }),
+        )
+        .await
+        .expect("load type archive should succeed")
+        .0
+        .data;
+        assert!(archive_load_type.success);
+
+        let archive_equipment = delete_equipment_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(MasterDataDeleteRequest { id: equipment_id }),
+        )
+        .await
+        .expect("equipment archive should succeed")
+        .0
+        .data;
+        assert!(archive_equipment.success);
+
+        let archive_commodity = delete_commodity_type_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(MasterDataDeleteRequest { id: commodity_id }),
+        )
+        .await
+        .expect("commodity archive should succeed")
+        .0
+        .data;
+        assert!(archive_commodity.success);
+
+        let archive_location = delete_location_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(MasterDataDeleteRequest { id: location_id }),
+        )
+        .await
+        .expect("location archive should succeed")
+        .0
+        .data;
+        assert!(archive_location.success);
+
+        let delete_city = delete_city_handler(
+            State(state.clone()),
+            admin_headers.clone(),
+            Json(MasterDataDeleteRequest { id: city_id }),
+        )
+        .await
+        .expect("city delete should succeed")
+        .0
+        .data;
+        assert!(delete_city.success);
+
+        let delete_country = delete_country_handler(
+            State(state),
+            admin_headers,
+            Json(MasterDataDeleteRequest { id: country_id }),
+        )
+        .await
+        .expect("country delete should succeed")
+        .0
+        .data;
+        assert!(delete_country.success);
+
+        assert!(db::master_data::list_countries(&pool).await?.is_empty());
+        assert!(db::master_data::list_cities(&pool).await?.is_empty());
+        assert!(db::master_data::list_load_types(&pool).await?.is_empty());
+        assert!(db::master_data::list_equipments(&pool).await?.is_empty());
+        assert!(
+            db::master_data::list_commodity_types(&pool)
+                .await?
+                .is_empty()
+        );
+        assert!(db::master_data::list_locations(&pool).await?.is_empty());
+
+        let archived_equipment_name =
+            sqlx::query_scalar::<_, String>("SELECT name FROM equipments WHERE id = $1")
+                .bind(equipment_id as i64)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(archived_equipment_name, "53 ft Dry Van");
+
+        let archived_location_name =
+            sqlx::query_scalar::<_, String>("SELECT name FROM locations WHERE id = $1")
+                .bind(location_id as i64)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(archived_location_name, "Dallas Main Yard");
+
+        Ok(())
+    }
+}

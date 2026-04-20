@@ -77,6 +77,7 @@ None recorded yet.
 | 2026-04-18 | rust-frontend-hosting | passed | Rust frontend is now hosted at `https://stloads-rust-frontend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud`, so browser QA can target a real IBM Code Engine Leptos deployment. |
 | 2026-04-18 | rust-role-matrix | passed | Ran `scripts/verify_rust_role_matrix.ps1` against hosted IBM staging. Frontend health/routes passed, approved role access passed, admin-vs-non-admin route scoping passed, and pending-OTP/pending-review/revision-requested/rejected lifecycle-state onboarding behavior matched the Rust contract. |
 | 2026-04-20 | php-lifecycle-script | blocked | Added `scripts/verify_php_lifecycle_states.ps1` and ran it against the PHP accounts that had been supplied earlier as lifecycle-state candidates. All four still landed on `/dashboard`, so they are confirmed active accounts rather than true pending-OTP, pending-review, revision-requested, or rejected PHP users. |
+| 2026-04-21 | tms-workers-hosted | partial | Ran `scripts/verify_tms_workers_hosted.ps1` against the hosted IBM Rust backend and IBM PostgreSQL staging. Retry worker validation passed: queued handoff `#9639` republished as load `#9341`. Reconciliation validation remains open: cancelled-drift handoff `#9640` stayed `published` during the validation window and no `rust_tms_reconciliation_worker` reconciliation row appeared. |
 
 ## Test Account Matrix
 

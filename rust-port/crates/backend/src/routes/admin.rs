@@ -2132,3 +2132,109 @@ fn push_profile_fact(facts: &mut Vec<AdminUserProfileFact>, label: &str, value: 
 fn format_datetime(value: &chrono::NaiveDateTime) -> String {
     value.format("%b %d, %Y %H:%M").to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        auth_headers_for_user, insert_load_fixture, insert_user_with_role_status, prepare_pool,
+        read_leg_status, test_state,
+    };
+    use domain::auth::{AccountStatus, UserRole};
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn review_user_handler_updates_status_and_reports_email_delivery()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let admin_user = insert_user_with_role_status(
+            &pool,
+            "Admin Reviewer",
+            "admin-reviewer@example.com",
+            UserRole::Admin,
+            AccountStatus::Approved,
+        )
+        .await?;
+        let review_target = insert_user_with_role_status(
+            &pool,
+            "Pending Carrier",
+            "pending-carrier@example.com",
+            UserRole::Carrier,
+            AccountStatus::PendingReview,
+        )
+        .await?;
+        let admin_headers = auth_headers_for_user(&state, &admin_user).await?;
+
+        let response = review_user_handler(
+            State(state),
+            Path(review_target.id),
+            admin_headers,
+            Json(ReviewOnboardingRequest {
+                decision: "revision".into(),
+                remarks: Some("Need clearer carrier compliance detail.".into()),
+            }),
+        )
+        .await
+        .expect("admin review user request should succeed")
+        .0
+        .data;
+
+        assert!(response.success);
+        assert_eq!(response.status_label.as_deref(), Some("Revision Requested"));
+        assert!(response.message.contains("Email notification logged"));
+        let updated = db::auth::find_user_by_id(&pool, review_target.id)
+            .await?
+            .expect("review target still exists");
+        assert_eq!(
+            updated.account_status(),
+            Some(AccountStatus::RevisionRequested)
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn review_load_handler_updates_legs_and_reports_email_delivery()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let admin_user = insert_user_with_role_status(
+            &pool,
+            "Admin Load Reviewer",
+            "admin-load-reviewer@example.com",
+            UserRole::Admin,
+            AccountStatus::Approved,
+        )
+        .await?;
+        let fixture = insert_load_fixture(&pool, 1).await?;
+        let admin_headers = auth_headers_for_user(&state, &admin_user).await?;
+
+        let response = review_load_handler(
+            State(state),
+            Path(fixture.load_id),
+            admin_headers,
+            Json(AdminReviewLoadRequest {
+                decision: "approve".into(),
+                remarks: Some("Approved from backend route acceptance test.".into()),
+            }),
+        )
+        .await
+        .expect("admin review load request should succeed")
+        .0
+        .data;
+
+        assert!(response.success);
+        assert_eq!(response.status_label, "Approved");
+        assert!(response.message.contains("Email notification logged"));
+        assert_eq!(read_leg_status(&pool, fixture.leg_id).await?, 2);
+
+        Ok(())
+    }
+}

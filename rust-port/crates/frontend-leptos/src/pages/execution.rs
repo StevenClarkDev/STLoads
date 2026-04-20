@@ -199,6 +199,16 @@ fn document_readiness_label(
     }
 }
 
+fn count_execution_documents_by_type(
+    documents: &[ExecutionDocumentItem],
+    document_type_key: &str,
+) -> usize {
+    documents
+        .iter()
+        .filter(|document| document.document_type_key == document_type_key)
+        .count()
+}
+
 fn execution_blocker_items(
     point_count: usize,
     document_count: usize,
@@ -288,6 +298,9 @@ fn event_tone(event_type_key: &str) -> &'static str {
 #[component]
 pub fn ExecutionLegPage() -> impl IntoView {
     let auth = use_auth();
+    let auth_for_admin_handoffs = auth.clone();
+    let auth_for_desk_handoffs = auth.clone();
+    let auth_for_payment_handoffs = auth.clone();
     let params = use_params_map();
     let leg_id = Memo::new(move |_| {
         params.with(|map| {
@@ -312,6 +325,18 @@ pub fn ExecutionLegPage() -> impl IntoView {
     let live_tracking_enabled = RwSignal::new(false);
     let is_toggling_live_tracking = RwSignal::new(false);
     let live_tracking_watcher_id = RwSignal::new(None::<i32>);
+    let can_open_admin_handoffs = Signal::derive(move || {
+        session::has_permission(&auth_for_admin_handoffs, "access_admin_portal")
+            || session::has_permission(&auth_for_admin_handoffs, "manage_loads")
+    });
+    let can_open_desk_handoffs = Signal::derive(move || {
+        session::has_permission(&auth_for_desk_handoffs, "access_admin_portal")
+            || session::has_permission(&auth_for_desk_handoffs, "manage_dispatch_desk")
+    });
+    let can_open_payment_handoffs = Signal::derive(move || {
+        session::has_permission(&auth_for_payment_handoffs, "access_admin_portal")
+            || session::has_permission(&auth_for_payment_handoffs, "manage_payments")
+    });
 
     on_cleanup(move || {
         if let Some(watcher_id) = live_tracking_watcher_id.get_untracked() {
@@ -741,6 +766,25 @@ pub fn ExecutionLegPage() -> impl IntoView {
                         screen_value.delivery_completion_ready,
                     );
                     let document_type_options = screen_value.document_type_options.clone();
+                    let pickup_bol_count =
+                        count_execution_documents_by_type(&documents, "pickup_bol");
+                    let pickup_photo_count =
+                        count_execution_documents_by_type(&documents, "pickup_photo");
+                    let delivery_pod_count =
+                        count_execution_documents_by_type(&documents, "delivery_pod");
+                    let delivery_photo_count =
+                        count_execution_documents_by_type(&documents, "delivery_photo");
+                    let other_document_count =
+                        count_execution_documents_by_type(&documents, "other");
+                    let route_stage_key = screen_value.status_label.to_ascii_lowercase();
+                    let desk_handoff = if route_stage_key.contains("delivery")
+                        || route_stage_key.contains("completed")
+                        || screen_value.delivery_completion_ready
+                    {
+                        ("/desk/closeout", "Open closeout desk")
+                    } else {
+                        ("/desk/facility", "Open facility desk")
+                    };
                     view! {
                         <>
                             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;">
@@ -835,6 +879,102 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                             "Open load profile"
                                         </A>
                                     </div>
+                                </section>
+                            </section>
+
+                            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;align-items:start;">
+                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.75rem;">
+                                    <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+                                        <strong>"Execution closeout checklist"</strong>
+                                        <span style=tone_style(if screen_value.delivery_completion_ready { "success" } else { "warning" })>
+                                            {if screen_value.delivery_completion_ready {
+                                                "Ready"
+                                            } else {
+                                                "Still collecting"
+                                            }}
+                                        </span>
+                                    </div>
+                                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.75rem;">
+                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
+                                            <strong>"Pickup docs"</strong>
+                                            <span style=tone_style(if pickup_bol_count + pickup_photo_count > 0 { "success" } else { "warning" })>
+                                                {format!("{} file(s)", pickup_bol_count + pickup_photo_count)}
+                                            </span>
+                                            <small style="color:#64748b;">"Pickup BOL and pickup photos stay visible here for exception handling."</small>
+                                        </div>
+                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
+                                            <strong>"Delivery POD"</strong>
+                                            <span style=tone_style(if delivery_pod_count > 0 { "success" } else { "danger" })>
+                                                {format!("{} file(s)", delivery_pod_count)}
+                                            </span>
+                                            <small style="color:#64748b;">"At least one POD is required before delivery completion can close cleanly."</small>
+                                        </div>
+                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
+                                            <strong>"Delivery photos"</strong>
+                                            <span style=tone_style(if delivery_photo_count > 0 { "success" } else { "info" })>
+                                                {format!("{} file(s)", delivery_photo_count)}
+                                            </span>
+                                            <small style="color:#64748b;">"Photos are optional, but they help when closeout or claims review gets noisy."</small>
+                                        </div>
+                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
+                                            <strong>"Operator notes"</strong>
+                                            <span style=tone_style(if note_count > 0 { "success" } else { "warning" })>
+                                                {format!("{} note(s)", note_count)}
+                                            </span>
+                                            <small style="color:#64748b;">"A clear note trail makes admin closeout and carrier follow-up much safer."</small>
+                                        </div>
+                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
+                                            <strong>"Route trace"</strong>
+                                            <span style=tone_style(gps_focus_tone)>{gps_focus_label.clone()}</span>
+                                            <small style="color:#64748b;">{tracking_window_label.clone()}</small>
+                                        </div>
+                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
+                                            <strong>"Other docs"</strong>
+                                            <span style=tone_style(if other_document_count > 0 { "info" } else { "dark" })>
+                                                {format!("{} file(s)", other_document_count)}
+                                            </span>
+                                            <small style="color:#64748b;">"Use this lane for extra paperwork that does not fit the pickup or delivery buckets."</small>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.75rem;">
+                                    <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+                                        <strong>"Workspace handoff"</strong>
+                                        <span style=tone_style("info")>{screen_value.operator_mode_label.clone()}</span>
+                                    </div>
+                                    <small style="color:#64748b;">
+                                        "This keeps the Rust execution page connected to the operator boards that normally take over after tracking, proof, or closeout starts to matter."
+                                    </small>
+                                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                                        <A href=format!("/loads/{}", screen_value.load_id) attr:style="padding:0.5rem 0.8rem;border-radius:0.8rem;background:#111827;color:white;text-decoration:none;">
+                                            "User load profile"
+                                        </A>
+                                        {can_open_admin_handoffs.get().then(|| view! {
+                                            <A href=format!("/admin/loads/{}", screen_value.load_id) attr:style="padding:0.5rem 0.8rem;border-radius:0.8rem;background:#eef2ff;color:#312e81;text-decoration:none;">
+                                                "Admin load profile"
+                                            </A>
+                                        })}
+                                        {can_open_desk_handoffs.get().then(|| view! {
+                                            <A href=desk_handoff.0 attr:style="padding:0.5rem 0.8rem;border-radius:0.8rem;background:#fff7dd;color:#92400e;text-decoration:none;">
+                                                {desk_handoff.1}
+                                            </A>
+                                        })}
+                                        {can_open_payment_handoffs.get().then(|| view! {
+                                            <A href=format!("/admin/payments?leg_id={}&source=execution", screen_value.leg_id) attr:style="padding:0.5rem 0.8rem;border-radius:0.8rem;background:#e8fff3;color:#166534;text-decoration:none;">
+                                                "Payments console"
+                                            </A>
+                                        })}
+                                    </div>
+                                    <small style="color:#64748b;">
+                                        {if screen_value.delivery_completion_ready {
+                                            "Proof is in place, so closeout and finance follow-up can start without waiting on another document pass."
+                                        } else if delivery_pod_count == 0 {
+                                            "Stay in execution until POD is uploaded, then hand the leg off to closeout and finance."
+                                        } else {
+                                            "Execution still owns the active follow-up, but the next workspace is already linked here."
+                                        }}
+                                    </small>
                                 </section>
                             </section>
 

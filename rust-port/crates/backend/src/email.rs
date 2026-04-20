@@ -818,6 +818,7 @@ mod tests {
             deployment_target: "test".into(),
             environment: "test".into(),
             public_base_url: Some("https://backend.example.test".into()),
+            cors_allowed_origins: vec!["https://portal.example.test".into()],
             run_migrations: false,
             database_url: None,
             document_storage_backend: "local".into(),

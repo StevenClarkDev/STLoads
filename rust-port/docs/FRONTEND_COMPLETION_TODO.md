@@ -1,6 +1,6 @@
 # Frontend Completion TODO
 
-Last updated: 2026-04-18
+Last updated: 2026-04-20
 
 This file is the frontend-only punch list for finishing the Laravel Blade to Leptos migration.
 It is intentionally more detailed than the broader implementation queue so we can work through the remaining UI surfaces one by one without losing momentum.
@@ -32,7 +32,7 @@ It is intentionally more detailed than the broader implementation queue so we ca
 - [-] deeper chat polish and full Blade-level interaction parity
 - [x] Rust execution workspace
 - [x] execution notes, POD guardrails, and execution document upload
-- [-] map polish and remaining execution UX depth after the new inline OSM map, tracking summary cards, approximate route distance and session summaries, start/end route point cards, point-level map links, route-span handoff, tracking-health cues, stale-route recovery guidance, next-step guidance, true start/stop live driver tracking, the inline tracking-guidance checklist, and the new operator readiness plus blocker panels
+- [-] map polish and remaining execution UX depth after the new inline OSM map, tracking summary cards, approximate route distance and session summaries, start/end route point cards, point-level map links, route-span handoff, tracking-health cues, stale-route recovery guidance, next-step guidance, true start/stop live driver tracking, the inline tracking-guidance checklist, the operator readiness plus blocker panels, the execution closeout checklist, and the new workspace handoff panel
 
 ## Dispatch Desks
 
@@ -70,9 +70,9 @@ It is intentionally more detailed than the broader implementation queue so we ca
 - [x] admin-shell load profile route with review, per-leg finance actions, payment shortcuts, and confirm-before-finance UX
 - [x] direct admin load-list finance actions for release-ready and escrow-follow-up rows
 - [x] confirm-before-finance UX on admin load rows
-- [-] last admin account-management edge cases and polish after the new directory attention-summary cards, queue guidance, resend-OTP support, safer delete confirmation flow, profile-level next-step guidance, card-level missing-item hints, and profile-side readiness-gap checklist
+- [-] last admin account-management edge cases and polish after the new directory attention-summary cards, queue guidance, resend-OTP support, safer delete confirmation flow, profile-level next-step guidance, card-level missing-item hints, profile-side readiness-gap checklist, and the new account action-plan plus handoff sections
 - [-] full admin load listing parity after the new attention-summary cards and queue guidance
-- [-] full admin load-profile parity after the new per-leg finance controls, payments deep links, confirm flow, load-level oversight summary cards, active-leg tracking shortcut, STLOADS status freshness context, and the new admin blocker plus shortcut handoff panel
+- [-] full admin load-profile parity after the new per-leg finance controls, payments deep links, confirm flow, load-level oversight summary cards, active-leg tracking shortcut, STLOADS status freshness context, the new admin blocker plus shortcut handoff panel, and the new admin attention-lane plus document-oversight sections
 - [x] admin change-password page parity
 
 ## Master Data And Back Office
@@ -119,8 +119,8 @@ It is intentionally more detailed than the broader implementation queue so we ca
 
 The current active slice is:
 
-1. the last execution/operator polish after the new inline tracking-guidance checklist and operator blocker panels
-2. then the final admin load-profile and account edge cases after the new readiness-gap, missing-item guidance, master-data CRUD pass, and admin blocker handoff panel
+1. the last execution/operator polish after the new inline tracking-guidance checklist, operator blocker panels, closeout checklist, and workspace handoff panel
+2. then the final admin load-profile and account edge cases after the new readiness-gap, missing-item guidance, master-data CRUD pass, admin blocker handoff panel, the new attention-lane/document-oversight layer, and the new account action-plan handoffs in admin users
 3. then a side-by-side PHP vs Rust QA pass using `docs/PHP_RUST_SIDE_BY_SIDE_QA.md`
 
 This file should be updated after every major frontend milestone.

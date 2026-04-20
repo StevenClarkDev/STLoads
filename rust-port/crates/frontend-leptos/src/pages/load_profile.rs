@@ -614,6 +614,190 @@ fn render_admin_profile_summary(
     }
 }
 
+fn render_admin_attention_lanes(
+    load_id: u64,
+    legs: Vec<LoadProfileLegRow>,
+    documents: Vec<LoadDocumentRow>,
+    handoff: Option<LoadHandoffSummary>,
+) -> impl IntoView {
+    let pending_review_count = legs.iter().filter(|leg| leg.status_code == 1).count();
+    let execution_active_count = legs
+        .iter()
+        .filter(|leg| matches!(leg.status_code, 5 | 6 | 8 | 9))
+        .count();
+    let release_ready_count = legs
+        .iter()
+        .filter(|leg| {
+            leg.finance_action_key.as_deref() == Some("release") && leg.finance_action_enabled
+        })
+        .count();
+    let completed_count = legs.iter().filter(|leg| leg.status_code == 11).count();
+    let visible_document_count = documents
+        .iter()
+        .filter(|document| document.can_view_file)
+        .count();
+    let editable_document_count = documents
+        .iter()
+        .filter(|document| document.can_edit)
+        .count();
+    let anchor_follow_up_count = documents
+        .iter()
+        .filter(|document| document.can_verify_blockchain && document.blockchain_label.is_none())
+        .count();
+    let first_execution_leg_id = legs
+        .iter()
+        .find(|leg| matches!(leg.status_code, 5 | 6 | 8 | 9))
+        .map(|leg| leg.leg_id);
+    let first_payment_href = legs.iter().find_map(|leg| leg.payments_href.clone());
+    let handoff_attention_label = handoff
+        .as_ref()
+        .filter(|item| matches!(item.status_tone.as_str(), "warning" | "danger"))
+        .map(|item| item.status_label.clone());
+    let handoff_attention_href = handoff_attention_label.as_ref().map(|_| {
+        if handoff
+            .as_ref()
+            .is_some_and(|item| item.status_tone == "danger")
+        {
+            "/admin/stloads/reconciliation?action=mismatch_detected".to_string()
+        } else {
+            "/admin/stloads/reconciliation?action=auto_archive".to_string()
+        }
+    });
+
+    let lane_cards = vec![
+        (
+            "Review lane",
+            pending_review_count.to_string(),
+            if pending_review_count > 0 {
+                "warning"
+            } else {
+                "success"
+            },
+            "Pending review legs should be cleared before execution and finance feel trustworthy.",
+            Some("/admin/loads?tab=pending".to_string()),
+            Some("Open pending loads".to_string()),
+        ),
+        (
+            "Execution lane",
+            execution_active_count.to_string(),
+            if execution_active_count > 0 {
+                "primary"
+            } else {
+                "info"
+            },
+            "Active legs belong in execution follow-up until pickup, transit, and delivery stabilize.",
+            first_execution_leg_id.map(|leg_id| format!("/execution/legs/{}", leg_id)),
+            first_execution_leg_id.map(|_| "Track active leg".to_string()),
+        ),
+        (
+            "Finance lane",
+            release_ready_count.to_string(),
+            if release_ready_count > 0 {
+                "success"
+            } else {
+                "info"
+            },
+            "Release-ready work should move into payments or closeout instead of staying buried in the profile.",
+            first_payment_href.clone(),
+            Some(if first_payment_href.is_some() {
+                "Open payments".to_string()
+            } else {
+                "Payments opens here when finance activates".to_string()
+            }),
+        ),
+        (
+            "Document lane",
+            visible_document_count.to_string(),
+            if anchor_follow_up_count > 0 {
+                "warning"
+            } else {
+                "success"
+            },
+            "Protected docs stay visible here for admin review, edits, and blockchain follow-up.",
+            Some(format!("/admin/loads/{}", load_id)),
+            Some("Stay on admin profile".to_string()),
+        ),
+    ];
+
+    view! {
+        <section style="display:grid;gap:0.85rem;">
+            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem;">
+                {lane_cards.into_iter().map(|(label, value, tone, note, href, action_label)| view! {
+                    <div style="padding:0.95rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#ffffff;display:grid;gap:0.35rem;">
+                        <div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:center;flex-wrap:wrap;">
+                            <strong>{label}</strong>
+                            <span style=tone_style(tone)>{tone.replace('_', " ")}</span>
+                        </div>
+                        <div style="font-size:1.35rem;font-weight:700;color:#111827;">{value}</div>
+                        <small style="color:#64748b;">{note}</small>
+                        {href.zip(action_label).map(|(href, action_label)| view! {
+                            <A href=href attr:style="justify-self:start;padding:0.45rem 0.75rem;border-radius:0.75rem;background:#f8fafc;color:#0f172a;text-decoration:none;">
+                                {action_label}
+                            </A>
+                        })}
+                    </div>
+                }).collect_view()}
+            </section>
+
+            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0.85rem;">
+                <section style="padding:0.9rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#fcfcfb;display:grid;gap:0.35rem;">
+                    <strong>"Admin handoff guidance"</strong>
+                    <small style="color:#64748b;">
+                        {if pending_review_count > 0 {
+                            "Review is still the lead workflow here, so clear those legs before finance and closeout start driving decisions."
+                        } else if release_ready_count > 0 {
+                            "This profile is now finance-first. Use payments or closeout while the release-ready lane is hot."
+                        } else if execution_active_count > 0 {
+                            "Execution is still the strongest operational lane, so stay close to tracking before you return here."
+                        } else if completed_count > 0 {
+                            "Completed legs are the likely handoff into closeout or collections now."
+                        } else {
+                            "No single lane is dominating this load right now; the Rust profile is mostly in clean-up mode."
+                        }}
+                    </small>
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                        <A href="/desk/facility" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#eef2ff;color:#312e81;text-decoration:none;">
+                            "Facility desk"
+                        </A>
+                        <A href="/desk/closeout" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
+                            "Closeout desk"
+                        </A>
+                        <A href="/desk/collections" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#ffe4e6;color:#be123c;text-decoration:none;">
+                            "Collections desk"
+                        </A>
+                    </div>
+                </section>
+
+                <section style="padding:0.9rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#ffffff;display:grid;gap:0.35rem;">
+                    <strong>"Document oversight"</strong>
+                    <small style="color:#64748b;">{format!(
+                        "{} protected document(s) are visible here, {} remain editable, and {} still have blockchain follow-up open.",
+                        visible_document_count,
+                        editable_document_count,
+                        anchor_follow_up_count
+                    )}</small>
+                    {handoff_attention_label.as_ref().map(|status_label| view! {
+                        <small style="color:#92400e;">{format!(
+                            "STLOADS is also flagging '{}' on this load, so document and ops review may need to happen together.",
+                            status_label
+                        )}</small>
+                    })}
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                        <A href="/admin/stloads/operations" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#ecfeff;color:#155e75;text-decoration:none;">
+                            "STLOADS ops"
+                        </A>
+                        {handoff_attention_href.map(|href| view! {
+                            <A href=href attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
+                                "Reconciliation"
+                            </A>
+                        })}
+                    </div>
+                </section>
+            </section>
+        </section>
+    }
+}
+
 fn render_history(history: Vec<LoadHistoryRow>) -> AnyView {
     if history.is_empty() {
         view! { <p style="margin:0;">"No history entries are recorded for this load yet."</p> }
@@ -1109,6 +1293,12 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                     screen_value.legs.clone(),
                                     screen_value.documents.clone(),
                                     screen_value.history.clone(),
+                                    screen_value.stloads_handoff.clone(),
+                                ))}
+                                {admin_mode.then(|| render_admin_attention_lanes(
+                                    screen_value.load_id,
+                                    screen_value.legs.clone(),
+                                    screen_value.documents.clone(),
                                     screen_value.stloads_handoff.clone(),
                                 ))}
                                 {render_handoff(screen_value.stloads_handoff.clone(), admin_mode)}
