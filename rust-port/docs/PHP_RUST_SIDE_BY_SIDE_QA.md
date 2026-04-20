@@ -6,6 +6,11 @@ This checklist is for the final parity pass before treating the Rust/Leptos app 
 Use it with the PHP app open in one browser/session and the Rust app open in another.
 Record results and defects in `docs/PHP_RUST_QA_FINDINGS.md`.
 
+Helpful repo helpers before the manual pass:
+- `scripts/verify_php_role_logins.ps1` for the five core PHP roles
+- `scripts/verify_php_lifecycle_states.ps1` for PHP pending-OTP, pending-review, revision-requested, and rejected accounts
+- `scripts/verify_rust_role_matrix.ps1` for hosted Rust role and lifecycle-state preflight
+
 ## Goal
 
 Find behavioral differences that only appear during real operator use.

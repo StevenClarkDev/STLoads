@@ -1,6 +1,6 @@
 # PHP vs Rust QA Findings Log
 
-Last updated: 2026-04-18
+Last updated: 2026-04-20
 
 Use this file while running `docs/PHP_RUST_SIDE_BY_SIDE_QA.md`.
 Every side-by-side difference should be logged here, even if it is later marked as expected or accepted.
@@ -45,7 +45,7 @@ Frontend parity can move to `100% cutover-ready` only when:
 | ID | Severity | Status | Role | PHP route | Rust route | Summary | Owner | Fix/Decision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | QA-001 | `P1` | `verified` | all | document flows | document flows | IBM COS-backed document validation passed through Rust protected routes for KYC, load, and execution documents. | IBM/runtime | Switched staging to `ibm_cos`, redeployed Code Engine, validated upload/view/deny rules, rolled a new revision, and verified documents still opened. |
-| QA-002 | `P1` | `open` | all | all browser routes | all browser routes | Manual side-by-side PHP vs Rust role/session QA is still incomplete. Hosted Rust route and lifecycle-state verification now passes for admin, shipper, carrier, broker, freight-forwarder, pending OTP, pending review, revision requested, and rejected states, but the matching PHP lifecycle-state accounts are still not confirmed. | QA/operator | Use `https://portal.stloads.com` for the PHP app, provide or create the remaining lifecycle-state accounts/sessions, then run `docs/PHP_RUST_SIDE_BY_SIDE_QA.md` against the hosted Rust frontend URL. |
+| QA-002 | `P1` | `open` | all | all browser routes | all browser routes | Manual side-by-side PHP vs Rust role/session QA is still incomplete. Hosted Rust route and lifecycle-state verification now passes for admin, shipper, carrier, broker, freight-forwarder, pending OTP, pending review, revision requested, and rejected states, but the matching PHP lifecycle-state accounts are still not confirmed. The new helper `scripts/verify_php_lifecycle_states.ps1` now proves when a supplied PHP account is actually landing on the intended denial/OTP flow versus just reaching `/dashboard`. | QA/operator | Use `https://portal.stloads.com` for the PHP app, provide or create the remaining lifecycle-state accounts/sessions, then run `docs/PHP_RUST_SIDE_BY_SIDE_QA.md` plus `scripts/verify_php_lifecycle_states.ps1` against the hosted Rust frontend URL. |
 
 ## P0 Stop-Ship Findings
 
@@ -76,6 +76,7 @@ None recorded yet.
 | 2026-04-18 | qa-accounts-refresh | passed | Re-ran `scripts/seed_operator_qa_accounts.ps1` against the hosted IBM Rust backend and re-verified the exact Pending OTP, Pending Review, Revision Requested, and Rejected Rust QA states. |
 | 2026-04-18 | rust-frontend-hosting | passed | Rust frontend is now hosted at `https://stloads-rust-frontend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud`, so browser QA can target a real IBM Code Engine Leptos deployment. |
 | 2026-04-18 | rust-role-matrix | passed | Ran `scripts/verify_rust_role_matrix.ps1` against hosted IBM staging. Frontend health/routes passed, approved role access passed, admin-vs-non-admin route scoping passed, and pending-OTP/pending-review/revision-requested/rejected lifecycle-state onboarding behavior matched the Rust contract. |
+| 2026-04-20 | php-lifecycle-script | blocked | Added `scripts/verify_php_lifecycle_states.ps1` and ran it against the PHP accounts that had been supplied earlier as lifecycle-state candidates. All four still landed on `/dashboard`, so they are confirmed active accounts rather than true pending-OTP, pending-review, revision-requested, or rejected PHP users. |
 
 ## Test Account Matrix
 
@@ -103,5 +104,6 @@ Use this section for observations that are not findings yet.
 - Rust-side disposable QA operator accounts are now seeded and verified through the hosted IBM backend using `scripts/seed_operator_qa_accounts.ps1`.
 - PHP login verification now passes for admin, shipper, carrier, broker, and freight-forwarder through `scripts/verify_php_role_logins.ps1`.
 - Hosted Rust role and lifecycle-state verification now also passes through `scripts/verify_rust_role_matrix.ps1`, so the remaining QA-002 risk is on the PHP lifecycle-state side and true browser comparison rather than on Rust route uncertainty.
-- The PHP accounts later provided for pending OTP, pending review, revision requested, and rejected do not currently behave as those states; all four still log into `/dashboard`.
+- `scripts/verify_php_lifecycle_states.ps1` now exists to verify PHP pending-OTP, pending-review, revision-requested, and rejected behavior with real hosted credentials.
+- The PHP accounts later provided for pending OTP, pending review, revision requested, and rejected do not currently behave as those states; both manual checks and the new lifecycle-state verifier confirmed that all four still log into `/dashboard`.
 - Manual PHP vs Rust role-based QA is still pending because the remaining PHP lifecycle-state accounts are not yet available even though the Rust frontend is now hosted.
