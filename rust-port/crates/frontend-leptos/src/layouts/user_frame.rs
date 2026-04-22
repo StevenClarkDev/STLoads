@@ -37,17 +37,23 @@ pub fn UserFrame(children: Children) -> impl IntoView {
     });
 
     view! {
-        <main class="user-frame">
-            <header style="display:grid;gap:0.75rem;">
-                <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                    <div>
-                        <p>"STLoads User Shell"</p>
-                        <h1>"User Portal"</h1>
+        <main class="app-shell user-frame">
+            <header class="shell-header">
+                <div class="shell-topbar">
+                    <div class="shell-title-row">
+                        <div class="brand-mark" aria-hidden="true">"ST"</div>
+                        <div class="shell-brand-copy">
+                            <p class="shell-kicker">"STLoads Network"</p>
+                            <h1 class="shell-title">"Freight Portal"</h1>
+                            <p class="shell-subtitle">
+                                "Loads. Chat. Execution. Accounts."
+                            </p>
+                        </div>
                     </div>
-                    <div style="display:grid;gap:0.35rem;text-align:right;">
+                    <div class="session-card">
                         {move || auth.session.get().user.map(|user| view! {
                             <>
-                                <strong>{user.name}</strong>
+                                <strong class="session-name">{user.name}</strong>
                                 <small>{format!("{} | {}", user.role_label, user.email)}</small>
                             </>
                         })}
@@ -57,8 +63,8 @@ pub fn UserFrame(children: Children) -> impl IntoView {
                                 view! {
                                     <button
                                         type="button"
+                                        class="shell-button"
                                         on:click=logout
-                                        style="padding:0.45rem 0.8rem;border-radius:0.75rem;border:1px solid #111827;background:#111827;color:white;cursor:pointer;"
                                         disabled=move || auth.session_loading.get()
                                     >
                                         {move || if auth.session_loading.get() { "Working..." } else { "Logout" }}
@@ -66,58 +72,42 @@ pub fn UserFrame(children: Children) -> impl IntoView {
                                 }
                                 .into_any()
                             } else if auth.session_ready.get() {
-                                view! { <small>"Not signed in"</small> }.into_any()
+                                view! { <span class="session-pill">"Not signed in"</span> }.into_any()
                             } else {
-                                view! { <small>"Loading session..."</small> }.into_any()
+                                view! { <span class="session-pill">"Loading session"</span> }.into_any()
                             }
                         }}
                     </div>
                 </div>
-                <nav>
-                    <A href="/">"Dashboard"</A>
-                    " | "
-                    <A href="/loads">"Loads"</A>
+                <nav class="shell-nav" aria-label="Primary">
+                    <A href="/" attr:class="shell-nav-link">"Dashboard"</A>
+                    <A href="/loads" attr:class="shell-nav-link">"Loads"</A>
                     {move || {
                         show_create_load_link.get().then(|| view! {
-                            <>
-                                " | "
-                                <A href="/loads/new">"Create Load"</A>
-                            </>
+                            <A href="/loads/new" attr:class="shell-nav-link">"Create Load"</A>
                         })
                     }}
                     {move || {
                         show_dispatch_desk_link.get().then(|| view! {
-                            <>
-                                " | "
-                                <A href="/desk/quote">"Dispatch Desk"</A>
-                            </>
+                            <A href="/desk/quote" attr:class="shell-nav-link">"Dispatch Desk"</A>
                         })
                     }}
-                    " | "
-                    <A href="/profile">"Profile"</A>
-                    " | "
-                    <A href="/chat">"Chat"</A>
+                    <A href="/profile" attr:class="shell-nav-link">"Profile"</A>
+                    <A href="/chat" attr:class="shell-nav-link">"Chat"</A>
                     {move || {
                         show_onboarding_link.get().then(|| view! {
-                            <>
-                                " | "
-                                <A href="/auth/onboarding">"Onboarding"</A>
-                            </>
+                            <A href="/auth/onboarding" attr:class="shell-nav-link">"Onboarding"</A>
                         })
                     }}
-                    " | "
-                    <A href="/auth/login">"Auth"</A>
+                    <A href="/auth/login" attr:class="shell-nav-link">"Auth"</A>
                     {move || {
                         show_admin_link.get().then(|| view! {
-                            <>
-                                " | "
-                                <A href="/admin">"Admin"</A>
-                            </>
+                            <A href="/admin" attr:class="shell-nav-link">"Admin"</A>
                         })
                     }}
                 </nav>
                 {move || auth.notice.get().map(|message| view! {
-                    <small style="color:#475569;">{message}</small>
+                    <small class="notice-pill">{message}</small>
                 })}
             </header>
             <section>{children()}</section>

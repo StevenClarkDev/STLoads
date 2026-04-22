@@ -40,72 +40,58 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
     });
 
     view! {
-        <main class="admin-frame">
-            <header>
-                <div>
-                    <p>"STLoads Admin Shell"</p>
-                    <h1>"Admin Portal"</h1>
+        <main class="app-shell admin-frame">
+            <header class="shell-header">
+                <div class="shell-topbar">
+                    <div class="shell-title-row">
+                        <div class="brand-mark" aria-hidden="true">"OPS"</div>
+                        <div class="shell-brand-copy">
+                            <p class="shell-kicker">"STLoads Command"</p>
+                            <h1 class="shell-title">"Admin Control"</h1>
+                            <p class="shell-subtitle">
+                                "Escrows. Users. Loads. STLOADS."
+                            </p>
+                        </div>
+                    </div>
+                    <div class="session-card">
+                        <span class="session-pill">"Operator Console"</span>
+                        <A href="/" attr:class="shell-secondary">"User Dashboard"</A>
+                    </div>
                 </div>
-                <nav>
+                <nav class="shell-nav" aria-label="Admin">
                     {move || can_open_admin_dashboard.get().then(|| view! {
-                        <>
-                            <A href="/admin">"Admin Dashboard"</A>
-                            " | "
-                        </>
+                        <A href="/admin" attr:class="shell-nav-link">"Dashboard"</A>
                     })}
                     {move || can_manage_payments.get().then(|| view! {
-                        <>
-                            <A href="/admin/payments">"Escrows"</A>
-                            " | "
-                        </>
+                        <A href="/admin/payments" attr:class="shell-nav-link">"Escrows"</A>
                     })}
                     {move || can_manage_master_data.get().then(|| view! {
-                        <>
-                            <A href="/admin/master-data">"Master Data"</A>
-                            " | "
-                        </>
+                        <A href="/admin/master-data" attr:class="shell-nav-link">"Master Data"</A>
                     })}
                     {move || can_manage_users.get().then(|| view! {
                         <>
-                            <A href="/admin/account-lifecycle">"Lifecycle QA"</A>
-                            " | "
-                            <A href="/admin/users">"Users"</A>
-                            " | "
-                            <A href="/admin/change-password">"Change Password"</A>
-                            " | "
-                            <A href="/admin/users/role/carrier">"Carriers"</A>
-                            " | "
-                            <A href="/admin/users/role/shipper">"Shippers"</A>
-                            " | "
-                            <A href="/admin/users/role/broker">"Brokers"</A>
-                            " | "
-                            <A href="/admin/users/role/freight_forwarder">"Freight Forwarders"</A>
-                            " | "
-                            <A href="/admin/onboarding-reviews">"Onboarding Reviews"</A>
-                            " | "
+                            <A href="/admin/account-lifecycle" attr:class="shell-nav-link">"Lifecycle QA"</A>
+                            <A href="/admin/users" attr:class="shell-nav-link">"Users"</A>
+                            <A href="/admin/change-password" attr:class="shell-nav-link">"Passwords"</A>
+                            <A href="/admin/users/role/carrier" attr:class="shell-nav-link">"Carriers"</A>
+                            <A href="/admin/users/role/shipper" attr:class="shell-nav-link">"Shippers"</A>
+                            <A href="/admin/users/role/broker" attr:class="shell-nav-link">"Brokers"</A>
+                            <A href="/admin/users/role/freight_forwarder" attr:class="shell-nav-link">"Forwarders"</A>
+                            <A href="/admin/onboarding-reviews" attr:class="shell-nav-link">"Reviews"</A>
                         </>
                     })}
                     {move || can_manage_loads.get().then(|| view! {
-                        <>
-                            <A href="/admin/loads">"Loads"</A>
-                            " | "
-                        </>
+                        <A href="/admin/loads" attr:class="shell-nav-link">"Loads"</A>
                     })}
                     {move || can_manage_roles.get().then(|| view! {
-                        <>
-                            <A href="/admin/roles">"Roles & Permissions"</A>
-                            " | "
-                        </>
+                        <A href="/admin/roles" attr:class="shell-nav-link">"Roles"</A>
                     })}
                     {move || can_manage_tms.get().then(|| view! {
                         <>
-                            <A href="/admin/stloads/operations">"STLOADS Ops"</A>
-                            " | "
-                            <A href="/admin/stloads/reconciliation">"Reconciliation"</A>
-                            " | "
+                            <A href="/admin/stloads/operations" attr:class="shell-nav-link">"STLOADS Ops"</A>
+                            <A href="/admin/stloads/reconciliation" attr:class="shell-nav-link">"Reconciliation"</A>
                         </>
                     })}
-                    <A href="/">"User Dashboard"</A>
                 </nav>
             </header>
             <section>{children()}</section>

@@ -201,7 +201,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                     <p style=tone_style("info")>{move || screen.get().map(|value| value.role_label).unwrap_or_else(|| "Marketplace Workspace".into())}</p>
                     <h2>{move || screen.get().map(|value| value.title).unwrap_or_else(|| "Manage Loads".into())}</h2>
                     <p>
-                        "The load board now reads a single app-level Rust auth session and only refreshes for scoped realtime updates."
+                        "Live load board."
                     </p>
                 </div>
                 {move || screen.get().and_then(|value| {

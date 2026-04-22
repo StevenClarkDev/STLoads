@@ -9,4 +9,4 @@ pub mod pool;
 pub mod tms;
 pub mod tracking;
 
-pub use pool::{DbPool, MIGRATOR, connect, migrate};
+pub use pool::{DbPool, MIGRATOR, connect, connect_with_schema, migrate};

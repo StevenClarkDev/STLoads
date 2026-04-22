@@ -10,6 +10,7 @@ pub struct RuntimeConfig {
     pub cors_allowed_origins: Vec<String>,
     pub run_migrations: bool,
     pub database_url: Option<String>,
+    pub database_schema: Option<String>,
     pub document_storage_backend: String,
     pub document_storage_root: String,
     pub object_storage_bucket: Option<String>,
@@ -69,6 +70,10 @@ impl RuntimeConfig {
                 .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
                 .unwrap_or(false),
             database_url: env::var("DATABASE_URL").ok(),
+            database_schema: env::var("STLOADS_DATABASE_SCHEMA")
+                .or_else(|_| env::var("DATABASE_SCHEMA"))
+                .ok()
+                .and_then(optional_env_value),
             document_storage_backend: env::var("DOCUMENT_STORAGE_BACKEND")
                 .unwrap_or_else(|_| "local".to_string()),
             document_storage_root: env::var("DOCUMENT_STORAGE_ROOT")

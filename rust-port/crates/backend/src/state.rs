@@ -26,7 +26,7 @@ impl AppState {
         let mut pool = None;
 
         if let Some(database_url) = config.database_url.as_deref() {
-            match db::connect(database_url).await {
+            match db::connect_with_schema(database_url, config.database_schema.as_deref()).await {
                 Ok(connected_pool) => {
                     if config.run_migrations {
                         match db::migrate(&connected_pool).await {

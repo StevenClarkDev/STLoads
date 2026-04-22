@@ -746,6 +746,10 @@ async fn authorize_tms_lifecycle_request(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<Option<ResolvedSession>, StatusCode> {
+    if tms_shared_secret_matches(state, headers) {
+        return Ok(None);
+    }
+
     let Some(session) = auth_session::resolve_session_from_headers(state, headers)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -771,16 +775,8 @@ async fn authorize_tms_webhook_request(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<Option<ResolvedSession>, StatusCode> {
-    if let Some(expected_secret) = state.config.tms_shared_secret.as_deref() {
-        let supplied_secret = headers
-            .get("x-tms-shared-secret")
-            .and_then(|value| value.to_str().ok())
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-
-        if supplied_secret == Some(expected_secret) {
-            return Ok(None);
-        }
+    if tms_shared_secret_matches(state, headers) {
+        return Ok(None);
     }
 
     let Some(session) = auth_session::resolve_session_from_headers(state, headers)
@@ -799,6 +795,20 @@ async fn authorize_tms_webhook_request(
     } else {
         Err(StatusCode::FORBIDDEN)
     }
+}
+
+fn tms_shared_secret_matches(state: &AppState, headers: &HeaderMap) -> bool {
+    let Some(expected_secret) = state.config.tms_shared_secret.as_deref() else {
+        return false;
+    };
+
+    let supplied_secret = headers
+        .get("x-tms-shared-secret")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    supplied_secret == Some(expected_secret)
 }
 
 fn validate_handoff_payload(payload: &TmsHandoffPayload) -> Option<String> {

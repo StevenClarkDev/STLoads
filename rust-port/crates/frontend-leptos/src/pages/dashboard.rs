@@ -1,64 +1,113 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 
-fn tone_style(tone: &str) -> &'static str {
-    match tone {
-        "success" => "background:#e8fff3;padding:0.25rem 0.6rem;border-radius:999px;color:#0f766e;",
-        "warning" => "background:#fff7dd;padding:0.25rem 0.6rem;border-radius:999px;color:#b45309;",
-        "danger" => "background:#ffe4e6;padding:0.25rem 0.6rem;border-radius:999px;color:#be123c;",
-        "info" => "background:#e0f2fe;padding:0.25rem 0.6rem;border-radius:999px;color:#0369a1;",
-        "primary" => "background:#ede9fe;padding:0.25rem 0.6rem;border-radius:999px;color:#6d28d9;",
-        "secondary" => {
-            "background:#f1f5f9;padding:0.25rem 0.6rem;border-radius:999px;color:#475569;"
-        }
-        _ => "background:#e5e7eb;padding:0.25rem 0.6rem;border-radius:999px;color:#111827;",
-    }
-}
-
 #[component]
 pub fn DashboardPage() -> impl IntoView {
     let destinations = vec![
-        ("Load Board", "/loads", "Dispatch and booking workspace"),
-        ("Private Chat", "/chat", "Conversation and offer workflow"),
         (
+            "Market",
+            "Load Board",
+            "/loads",
+            "Dispatch and booking.",
+            "accent-teal",
+        ),
+        (
+            "Desk",
+            "Private Chat",
+            "/chat",
+            "Offers and messages.",
+            "accent-gold",
+        ),
+        (
+            "Sync",
             "STLOADS Ops",
             "/admin/stloads",
-            "Publish, retry, and sync monitoring",
+            "Sync and retries.",
+            "accent-copper",
         ),
         (
+            "Audit",
             "Reconciliation",
             "/admin/stloads/reconciliation",
-            "Mismatch cleanup and audit log",
+            "Exceptions and audit.",
+            "accent-coral",
         ),
         (
+            "Account",
             "My Profile",
             "/profile",
-            "Self-serve account, company, and password workspace",
+            "Company and credentials.",
+            "accent-violet",
         ),
     ];
 
     view! {
-        <article style="display:grid;gap:1.25rem;">
-            <section>
-                <p style=tone_style("info")>"Rust + Leptos Workspace"</p>
-                <h2>"Operational Port Progress"</h2>
-                <p>
-                    "The dashboard is now a navigation hub for the first real screen ports instead of a single placeholder."
-                </p>
+        <article class="dashboard-page">
+            <section class="dashboard-hero">
+                <div class="hero-copy">
+                    <p class="eyebrow">"Rust + Leptos Workspace"</p>
+                    <h2>"Freight Command Center"</h2>
+                    <p>
+                        "Live freight operations."
+                    </p>
+                    <div class="hero-actions">
+                        <A href="/loads" attr:class="shell-cta">"Open Load Board"</A>
+                        <A href="/admin/stloads/operations" attr:class="shell-secondary">"Monitor STLOADS"</A>
+                    </div>
+                </div>
+                <div class="route-visual" aria-label="Lane telemetry snapshot">
+                    <div class="route-map">
+                        <div class="route-node origin">
+                            <strong>"DAL"</strong>
+                            <small>"pickup"</small>
+                        </div>
+                        <div class="route-node crossdock">
+                            <strong>"MEM"</strong>
+                            <small>"handoff"</small>
+                        </div>
+                        <div class="route-node dest">
+                            <strong>"ATL"</strong>
+                            <small>"delivery"</small>
+                        </div>
+                        <div class="route-node audit">
+                            <strong>"QA"</strong>
+                            <small>"audit"</small>
+                        </div>
+                    </div>
+                    <div class="signal-strip">
+                        <div class="signal-card">
+                            <strong>"45"</strong>
+                            <small>"tracked tables"</small>
+                        </div>
+                        <div class="signal-card">
+                            <strong>"9"</strong>
+                            <small>"route groups"</small>
+                        </div>
+                        <div class="signal-card">
+                            <strong>"Rust"</strong>
+                            <small>"API surface"</small>
+                        </div>
+                    </div>
+                </div>
             </section>
-            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;">
+
+            <section class="command-grid" aria-label="Workspace destinations">
                 {destinations
                     .into_iter()
-                    .map(|(label, href, detail)| {
+                    .map(|(kicker, label, href, detail, accent)| {
                         view! {
-                            <A href=href attr:style="display:block;padding:1rem;border:1px solid #dbeafe;border-radius:1rem;text-decoration:none;color:inherit;background:#f8fbff;">
-                                <strong>{label}</strong>
-                                <p style="margin:0.5rem 0 0;">{detail}</p>
+                            <A href=href attr:class=format!("command-card {}", accent)>
+                                <span class="command-card-header">
+                                    <span class="command-card-kicker">{kicker}</span>
+                                    <strong>{label}</strong>
+                                </span>
+                                <p>{detail}</p>
                             </A>
                         }
                     })
                     .collect_view()}
             </section>
+
         </article>
     }
 }
