@@ -11,6 +11,15 @@ use crate::{
 
 use super::admin_guard_view;
 
+fn scroll_to_top_of_page() {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(window) = web_sys::window() {
+            window.scroll_to_with_x_and_y(0.0, 0.0);
+        }
+    }
+}
+
 fn tone_style(tone: &str) -> &'static str {
     match tone {
         "success" => "background:#e8fff3;padding:0.25rem 0.6rem;border-radius:999px;color:#0f766e;",
@@ -69,9 +78,11 @@ pub fn MasterDataPage() -> impl IntoView {
     let is_loading = RwSignal::new(false);
     let error_message = RwSignal::new(None::<String>);
     let action_message = RwSignal::new(None::<String>);
+    let search_query = RwSignal::new(String::new());
     let refresh_nonce = RwSignal::new(0_u64);
     let pending_action = RwSignal::new(None::<String>);
     let armed_delete = RwSignal::new(None::<String>);
+    let active_editor = RwSignal::new(None::<String>);
 
     let country_id = RwSignal::new(String::new());
     let country_name = RwSignal::new(String::new());
@@ -137,27 +148,42 @@ pub fn MasterDataPage() -> impl IntoView {
         country_id.set(String::new());
         country_name.set(String::new());
         country_iso_code.set(String::new());
+        if active_editor.get() == Some("countries".into()) {
+            active_editor.set(None);
+        }
     };
 
     let clear_city_form = move |_| {
         city_id.set(String::new());
         city_name.set(String::new());
         city_country_id.set(String::new());
+        if active_editor.get() == Some("cities".into()) {
+            active_editor.set(None);
+        }
     };
 
     let clear_load_type_form = move |_| {
         load_type_id.set(String::new());
         load_type_name.set(String::new());
+        if active_editor.get() == Some("load_types".into()) {
+            active_editor.set(None);
+        }
     };
 
     let clear_equipment_form = move |_| {
         equipment_id.set(String::new());
         equipment_name.set(String::new());
+        if active_editor.get() == Some("equipments".into()) {
+            active_editor.set(None);
+        }
     };
 
     let clear_commodity_form = move |_| {
         commodity_type_id.set(String::new());
         commodity_type_name.set(String::new());
+        if active_editor.get() == Some("commodity_types".into()) {
+            active_editor.set(None);
+        }
     };
 
     let clear_location_form = move |_| {
@@ -165,6 +191,9 @@ pub fn MasterDataPage() -> impl IntoView {
         location_name.set(String::new());
         location_country_id.set(String::new());
         location_city_id.set(String::new());
+        if active_editor.get() == Some("locations".into()) {
+            active_editor.set(None);
+        }
     };
 
     let save_country = move |_| {
@@ -394,11 +423,13 @@ pub fn MasterDataPage() -> impl IntoView {
     };
 
     let start_edit_row = move |kind: String, row: MasterDataRow| {
+        active_editor.set(Some(kind.clone()));
         action_message.set(Some(format!(
-            "Loaded {} #{} into the write form.",
+            "Loaded {} #{} into the highlighted write form above. Review the populated fields, then click Save to finish the edit.",
             kind.replace('_', " "),
             row.id
         )));
+        scroll_to_top_of_page();
 
         match kind.as_str() {
             "countries" => {
@@ -457,70 +488,51 @@ pub fn MasterDataPage() -> impl IntoView {
                                 <h2>{move || screen.get().map(|value| value.title).unwrap_or_else(|| "Master Data Catalog".into())}</h2>
                                 <p>{move || screen.get().map(|value| value.subtitle).unwrap_or_else(|| "Admin write controls for the lookup data that keeps the Rust app moving.".into())}</p>
                             </div>
-                            <span style=move || tone_style(match pending_action.get() {
-                                Some(_) => "warning",
-                                None if armed_delete.get().is_some() => "danger",
-                                None => "success",
-                            })>
-                                {move || {
-                                    if let Some(value) = pending_action.get() {
-                                        format!("Working on {}...", value)
-                                    } else if let Some(value) = armed_delete.get() {
-                                        format!("Confirm {}", value.replace(':', " #"))
-                                    } else {
-                                        "Write controls ready".into()
-                                    }
-                                }}
-                            </span>
+                            <div style="display:grid;gap:0.6rem;min-width:280px;">
+                                <input
+                                    type="text"
+                                    placeholder="Search master data rows"
+                                    prop:value=move || search_query.get()
+                                    on:input=move |ev| search_query.set(event_target_value(&ev))
+                                    style="width:100%;padding:0.75rem 0.85rem;border:1px solid #d6d3d1;border-radius:0.9rem;"
+                                />
+                                <span style=move || tone_style(match pending_action.get() {
+                                    Some(_) => "warning",
+                                    None if armed_delete.get().is_some() => "danger",
+                                    None => "success",
+                                })>
+                                    {move || {
+                                        if let Some(value) = pending_action.get() {
+                                            format!("Working on {}...", value)
+                                        } else if let Some(value) = armed_delete.get() {
+                                            format!("Confirm {}", value.replace(':', " #"))
+                                        } else {
+                                            "Write controls ready".into()
+                                        }
+                                    }}
+                                </span>
+                            </div>
                         </section>
 
-                        {move || auth.session.get().user.map(|user| view! {
-                            <section style="padding:0.85rem 1rem;border:1px solid #dcfce7;border-radius:0.9rem;background:#f0fdf4;color:#166534;">
-                                {format!("Authenticated as {} ({})", user.name, user.role_label)}
-                            </section>
-                        })}
                         {move || action_message.get().map(|message| view! {
                             <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">{message}</section>
                         })}
                         {move || error_message.get().map(|message| view! {
                             <section style="padding:0.85rem 1rem;border:1px solid #fecaca;border-radius:0.9rem;background:#fff1f2;color:#be123c;">{message}</section>
                         })}
-
-                        <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;">
-                            {move || {
-                                if is_loading.get() && screen.get().is_none() {
-                                    view! {
-                                        <div style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;">
-                                            "Loading master-data catalog from the Rust backend..."
-                                        </div>
-                                    }.into_any()
-                                } else {
-                                    screen.get().map(|data| {
-                                        data.summary_cards.into_iter().map(|card| view! {
-                                            <div style="padding:1rem;border:1px solid #d6d3d1;border-radius:1rem;background:#fcfcfb;display:grid;gap:0.45rem;">
-                                                <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;">
-                                                    <strong>{card.label}</strong>
-                                                    <span style="padding:0.2rem 0.55rem;border-radius:999px;background:#eff6ff;color:#1d4ed8;">{card.total}</span>
-                                                </div>
-                                                <p style="margin:0;">{card.note}</p>
-                                                <small style="color:#64748b;">{card.admin_route}</small>
-                                            </div>
-                                        }).collect_view().into_any()
-                                    }).unwrap_or_else(|| view! {
-                                        <div style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;">
-                                            "No master-data catalog is available yet."
-                                        </div>
-                                    }.into_any())
-                                }
-                            }}
-                        </section>
+                        {move || active_editor.get().map(|kind| view! {
+                            <section style="padding:0.9rem 1rem;border:1px solid #bfdbfe;border-radius:0.95rem;background:#f8fbff;color:#1d4ed8;display:grid;gap:0.25rem;">
+                                <strong>{format!("Editing {}", kind.replace('_', " "))}</strong>
+                                <small>"The matching write panel is highlighted below so the loaded values are easier to spot."</small>
+                            </section>
+                        })}
 
                         <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;align-items:start;">
-                            {render_country_panel(country_id, country_name, country_iso_code, save_country, clear_country_form)}
-                            {render_city_panel(screen, city_id, city_name, city_country_id, save_city, clear_city_form)}
-                            {render_simple_panel("Load type write flow", "Dry Van", load_type_id, load_type_name, save_load_type, clear_load_type_form, "Save load type")}
-                            {render_simple_panel("Equipment write flow", "Reefer", equipment_id, equipment_name, save_equipment, clear_equipment_form, "Save equipment")}
-                            {render_simple_panel("Commodity type write flow", "Consumer Goods", commodity_type_id, commodity_type_name, save_commodity_type, clear_commodity_form, "Save commodity type")}
+                            {render_country_panel(country_id, country_name, country_iso_code, save_country, clear_country_form, Signal::derive(move || active_editor.get().as_deref() == Some("countries")))}
+                            {render_city_panel(screen, city_id, city_name, city_country_id, save_city, clear_city_form, Signal::derive(move || active_editor.get().as_deref() == Some("cities")))}
+                            {render_simple_panel("load_types", "Load type write flow", "Dry Van", load_type_id, load_type_name, save_load_type, clear_load_type_form, "Save load type", Signal::derive(move || active_editor.get().as_deref() == Some("load_types")))}
+                            {render_simple_panel("equipments", "Equipment write flow", "Reefer", equipment_id, equipment_name, save_equipment, clear_equipment_form, "Save equipment", Signal::derive(move || active_editor.get().as_deref() == Some("equipments")))}
+                            {render_simple_panel("commodity_types", "Commodity type write flow", "Consumer Goods", commodity_type_id, commodity_type_name, save_commodity_type, clear_commodity_form, "Save commodity type", Signal::derive(move || active_editor.get().as_deref() == Some("commodity_types")))}
                             {render_location_panel(
                                 screen,
                                 location_id,
@@ -529,6 +541,7 @@ pub fn MasterDataPage() -> impl IntoView {
                                 location_city_id,
                                 save_location,
                                 clear_location_form,
+                                Signal::derive(move || active_editor.get().as_deref() == Some("locations")),
                             )}
                         </section>
 
@@ -536,7 +549,13 @@ pub fn MasterDataPage() -> impl IntoView {
                             {move || screen.get().map(|data| {
                                 data.sections.into_iter().map(|section| {
                                     let section_key = section.key.clone();
-                                    let rows = section.rows.clone();
+                                    let query = search_query.get();
+                                    let rows = section
+                                        .rows
+                                        .clone()
+                                        .into_iter()
+                                        .filter(|row| master_data_row_matches_query(&section_key, row, &query))
+                                        .collect::<Vec<_>>();
                                     let total = section.total;
                                     let empty_message = section.empty_message.clone();
                                     let label = section.label.clone();
@@ -639,17 +658,30 @@ pub fn MasterDataPage() -> impl IntoView {
                                 }).collect_view()
                             })}
                         </section>
-
-                        <section style="display:grid;gap:0.35rem;">
-                            {move || screen.get().map(|data| data.notes.into_iter().map(|note| view! {
-                                <p style="margin:0;">{note}</p>
-                            }).collect_view())}
-                        </section>
                     </article>
                 }.into_any()
             }
         }}
     }
+}
+
+fn master_data_row_matches_query(kind: &str, row: &MasterDataRow, query: &str) -> bool {
+    let query = query.trim().to_ascii_lowercase();
+    if query.is_empty() {
+        return true;
+    }
+
+    kind.to_ascii_lowercase().contains(&query)
+        || row.id.to_string().contains(&query)
+        || row.primary_label.to_ascii_lowercase().contains(&query)
+        || row
+            .secondary_label
+            .as_deref()
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .contains(&query)
+        || row.status_label.to_ascii_lowercase().contains(&query)
+        || row.detail.to_ascii_lowercase().contains(&query)
 }
 
 fn handle_master_data_result(
@@ -691,6 +723,7 @@ fn render_clear_button(
 }
 
 fn render_simple_panel(
+    kind: &'static str,
     title: &'static str,
     placeholder: &'static str,
     id_signal: RwSignal<String>,
@@ -698,12 +731,24 @@ fn render_simple_panel(
     save_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
     clear_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
     button_label: &'static str,
+    is_active: Signal<bool>,
 ) -> impl IntoView {
     view! {
-        <div style="border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;">
+        <div style=move || {
+            if is_active.get() {
+                "border:2px solid #60a5fa;border-radius:1rem;padding:1rem;background:#f8fbff;display:grid;gap:0.75rem;box-shadow:0 0 0 3px rgba(191,219,254,0.35);".to_string()
+            } else {
+                "border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;".to_string()
+            }
+        }>
             <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
                 <strong>{title}</strong>
-                {render_clear_button(clear_action)}
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    {move || is_active.get().then(|| view! {
+                        <span style=tone_style("info")>{format!("Editing {}", kind.replace('_', " "))}</span>
+                    })}
+                    {render_clear_button(clear_action)}
+                </div>
             </div>
             <input
                 prop:value=move || id_signal.get()
@@ -734,12 +779,22 @@ fn render_country_panel(
     country_iso_code: RwSignal<String>,
     save_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
     clear_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
+    is_active: Signal<bool>,
 ) -> impl IntoView {
     view! {
-        <div style="border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;">
+        <div style=move || {
+            if is_active.get() {
+                "border:2px solid #60a5fa;border-radius:1rem;padding:1rem;background:#f8fbff;display:grid;gap:0.75rem;box-shadow:0 0 0 3px rgba(191,219,254,0.35);".to_string()
+            } else {
+                "border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;".to_string()
+            }
+        }>
             <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
                 <strong>"Countries management"</strong>
-                {render_clear_button(clear_action)}
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    {move || is_active.get().then(|| view! { <span style=tone_style("info")>"Editing country"</span> })}
+                    {render_clear_button(clear_action)}
+                </div>
             </div>
             <input
                 prop:value=move || country_id.get()
@@ -778,12 +833,22 @@ fn render_city_panel(
     city_country_id: RwSignal<String>,
     save_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
     clear_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
+    is_active: Signal<bool>,
 ) -> impl IntoView {
     view! {
-        <div style="border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;">
+        <div style=move || {
+            if is_active.get() {
+                "border:2px solid #60a5fa;border-radius:1rem;padding:1rem;background:#f8fbff;display:grid;gap:0.75rem;box-shadow:0 0 0 3px rgba(191,219,254,0.35);".to_string()
+            } else {
+                "border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;".to_string()
+            }
+        }>
             <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
                 <strong>"Cities management"</strong>
-                {render_clear_button(clear_action)}
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    {move || is_active.get().then(|| view! { <span style=tone_style("info")>"Editing city"</span> })}
+                    {render_clear_button(clear_action)}
+                </div>
             </div>
             <input
                 prop:value=move || city_id.get()
@@ -826,12 +891,22 @@ fn render_location_panel(
     location_city_id: RwSignal<String>,
     save_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
     clear_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
+    is_active: Signal<bool>,
 ) -> impl IntoView {
     view! {
-        <div style="border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;">
+        <div style=move || {
+            if is_active.get() {
+                "border:2px solid #60a5fa;border-radius:1rem;padding:1rem;background:#f8fbff;display:grid;gap:0.75rem;box-shadow:0 0 0 3px rgba(191,219,254,0.35);".to_string()
+            } else {
+                "border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;".to_string()
+            }
+        }>
             <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
                 <strong>"Location write flow"</strong>
-                {render_clear_button(clear_action)}
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                    {move || is_active.get().then(|| view! { <span style=tone_style("info")>"Editing location"</span> })}
+                    {render_clear_button(clear_action)}
+                </div>
             </div>
             <input
                 prop:value=move || location_id.get()

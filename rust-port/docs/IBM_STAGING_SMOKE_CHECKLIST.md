@@ -1,6 +1,6 @@
 # IBM Staging Smoke Checklist
 
-Last updated: 2026-04-08
+Last updated: 2026-04-24
 
 This checklist is the operational companion to the Rust backend deployment guide.
 Use it when the backend is deployed on IBM Code Engine with IBM PostgreSQL and IBM Cloud Object Storage.
@@ -33,6 +33,7 @@ Before running this checklist, make sure all of these are true:
 - `rust-port/docs/PHP_RUST_SIDE_BY_SIDE_QA.md`
 - `rust-port/scripts/seed_postgres_smoke_data.sql`
 - `rust-port/scripts/smoke_test_backend.ps1`
+- `rust-port/scripts/verify_backend_cutover_hosted.ps1`
 
 ## Step 1. Confirm App Health
 
@@ -85,6 +86,15 @@ The current script validates:
 Pass criteria:
 - script exits cleanly
 - final JSON summary shows `result: ok`
+
+Optional hosted bundle:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "rust-port\scripts\verify_backend_cutover_hosted.ps1"
+```
+
+The bundle script reseeds the disposable staging dataset, runs the core API smoke pass, reruns the hosted Rust role matrix, SMTP validation, TMS worker validation, and hosted Stripe release verification, then emits one final `result: ok` summary for the backend-only cutover gate.
+The hosted role matrix now also refreshes the disposable lifecycle-state QA accounts before validation and checks frontend routes with a browser-style HTML `Accept` header so the IBM frontend proxy rules do not create false `404` failures for SPA pages like `/admin/account-lifecycle`.
 
 ## Step 4. Run Manual Browser Validation
 

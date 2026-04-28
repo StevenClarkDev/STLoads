@@ -40,7 +40,7 @@ pub fn admin_guard_view(
                 <section style="display:grid;gap:0.5rem;padding:1rem;border:1px solid #fde68a;border-radius:1rem;background:#fffbeb;color:#92400e;">
                     <strong>{format!("{} is restricted", title)}</strong>
                     <span>"The authenticated session does not have the required admin permission for this route."</span>
-                    <A href="/">"Back to user dashboard"</A>
+                    <A href="/dashboard">"Back to user dashboard"</A>
                 </section>
             }
             .into_any(),

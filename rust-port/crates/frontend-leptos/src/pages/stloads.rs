@@ -504,7 +504,6 @@ pub fn StloadsOperationsPage() -> impl IntoView {
                         <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
                             <div>
                                 <h2>{move || screen.get().map(|value| value.title).unwrap_or_else(|| "STLOADS Operations".into())}</h2>
-                                <p>"This route now loads the Rust STLOADS operations screen from the backend and gives ops direct controls for push, queue, requeue, withdraw, close, and status webhook flows."</p>
                             </div>
                             <div style="display:grid;gap:0.45rem;justify-items:end;">
                                 <A href="/admin/stloads/reconciliation" attr:style="padding:0.7rem 1rem;border-radius:0.9rem;background:#111827;color:white;text-decoration:none;">"Open reconciliation"</A>
@@ -512,7 +511,6 @@ pub fn StloadsOperationsPage() -> impl IntoView {
                             </div>
                         </section>
 
-                        {move || action_message.get().map(|message| view! { <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">{message}</section> })}
                         {move || error_message.get().map(|message| view! { <section style="padding:0.85rem 1rem;border:1px solid #fecaca;border-radius:0.9rem;background:#fff1f2;color:#be123c;">{message}</section> })}
 
                         <section style="padding:1rem;border:1px solid #fecaca;border-radius:1rem;background:#fff7f7;display:grid;gap:0.5rem;">
@@ -614,7 +612,6 @@ pub fn StloadsOperationsPage() -> impl IntoView {
                             </div>
                         </section>
 
-                        <section style="display:grid;gap:0.35rem;">{move || screen.get().map(|value| value.notes.into_iter().map(|note| view! { <p style="margin:0;">{note}</p> }).collect_view())}</section>
                     </article>
                 }.into_any()
             }

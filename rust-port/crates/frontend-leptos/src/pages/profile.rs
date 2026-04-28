@@ -482,12 +482,6 @@ pub fn ProfilePage() -> impl IntoView {
                 </div>
             </section>
 
-            {move || feedback.get().map(|message| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;white-space:pre-wrap;">
-                    {message}
-                </section>
-            })}
-
             {move || {
                 if !auth.session_ready.get() {
                     view! { <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;">"Loading Rust session..."</section> }.into_any()
@@ -507,10 +501,7 @@ pub fn ProfilePage() -> impl IntoView {
                             </section>
 
                             <form on:submit=submit style="display:grid;gap:1rem;padding:1rem;border:1px solid #d6d3d1;border-radius:1rem;background:#fff;">
-                                <div style="display:grid;gap:0.35rem;">
-                                    <strong>"Edit profile"</strong>
-                                    <small style="color:#64748b;">"This Rust screen replaces the old profile view and edit Blade pages with one self-serve workspace."</small>
-                                </div>
+                                <div style="display:grid;gap:0.35rem;"><strong>"Edit profile"</strong></div>
                                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
                                     <label style="display:grid;gap:0.35rem;"><span>"Name"</span><input type="text" prop:value=move || name.get() on:input=move |ev| name.set(event_target_value(&ev)) /></label>
                                     <label style="display:grid;gap:0.35rem;"><span>"Email"</span><input type="email" prop:value=move || email.get() on:input=move |ev| email.set(event_target_value(&ev)) /></label>

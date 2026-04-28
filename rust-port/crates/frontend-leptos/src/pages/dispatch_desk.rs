@@ -280,7 +280,6 @@ pub fn DispatchDeskPage() -> impl IntoView {
                 <div style="display:grid;gap:0.35rem;">
                     <p style=tone_style("info")>"Dispatch Operations"</p>
                     <h2>{move || screen.get().map(|value| value.title).unwrap_or_else(|| "Dispatch Desk".into())}</h2>
-                    <p>{move || screen.get().map(|value| value.subtitle).unwrap_or_else(|| "Laravel desk workflows are being replaced route by route with Rust-backed boards.".into())}</p>
                 </div>
                 <span style=tone_style(if ws_connected.get() { "success" } else { "secondary" })>
                     {move || if ws_connected.get() { "Realtime connected" } else { "Realtime reconnecting" }}
@@ -421,11 +420,6 @@ pub fn DispatchDeskPage() -> impl IntoView {
                 </table>
             </section>
 
-            <section style="display:grid;gap:0.35rem;">
-                {move || screen.get().map(|value| {
-                    value.notes.into_iter().map(|note| view! { <p style="margin:0;">{note}</p> }).collect_view()
-                })}
-            </section>
         </article>
     }
 }

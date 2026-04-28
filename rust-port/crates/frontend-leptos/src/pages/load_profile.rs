@@ -385,7 +385,7 @@ fn admin_profile_actions(
 }
 
 fn render_admin_profile_summary(
-    load_id: u64,
+    _load_id: u64,
     legs: Vec<LoadProfileLegRow>,
     documents: Vec<LoadDocumentRow>,
     history: Vec<LoadHistoryRow>,
@@ -412,7 +412,7 @@ fn render_admin_profile_summary(
         .find(|leg| matches!(leg.status_code, 5 | 6 | 8 | 9))
         .map(|leg| leg.leg_id);
     let first_payments_href = legs.iter().find_map(|leg| leg.payments_href.clone());
-    let first_finance_label = legs
+    let _first_finance_label = legs
         .iter()
         .find(|leg| leg.finance_action_enabled)
         .and_then(|leg| leg.finance_action_label.clone());
@@ -434,7 +434,7 @@ fn render_admin_profile_summary(
             "/admin/stloads/reconciliation?action=auto_archive".to_string()
         }
     });
-    let blocker_items = {
+    let _blocker_items = {
         let mut items = Vec::new();
 
         if pending_count > 0 {
@@ -544,258 +544,47 @@ fn render_admin_profile_summary(
     view! {
         <section style="display:grid;gap:0.85rem;">
             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;">
-                {cards.into_iter().map(|(label, value, tone, note)| view! {
+                {cards.into_iter().map(|(label, value, tone, _note)| view! {
                     <div style="padding:0.9rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#ffffff;display:grid;gap:0.3rem;">
                         <div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:center;flex-wrap:wrap;">
                             <strong>{label}</strong>
                             <span style=tone_style(tone)>{tone.replace('_', " ")}</span>
                         </div>
                         <div style="font-size:1.3rem;font-weight:700;color:#111827;">{value}</div>
-                        <small style="color:#64748b;">{note}</small>
                     </div>
                 }).collect_view()}
             </section>
-            <section style="padding:0.85rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#fcfcfb;display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                <div style="display:grid;gap:0.2rem;">
-                    <strong>"Admin next step"</strong>
-                    <small style="color:#64748b;">
-                        {if pending_count > 0 {
-                            "Pending review still comes first on this load."
-                        } else if release_ready_count > 0 {
-                            "Finance release is the next likely admin action on this load."
-                        } else if execution_active_count > 0 {
-                            "Execution is still active, so tracking and delivery follow-up should stay in focus."
-                        } else if missing_blockchain_count > 0 {
-                            "Document anchor cleanup is the main remaining admin follow-up here."
-                        } else {
-                            "This load is relatively clean from an admin-overview perspective."
-                        }}
-                    </small>
-                </div>
-                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                    {first_active_leg_id.map(|leg_id| view! {
-                        <A href=format!("/execution/legs/{}", leg_id) attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#e8fff3;color:#166534;text-decoration:none;">
-                            "Track active leg"
-                        </A>
-                    })}
-                    {first_payments_href.clone().map(|href| view! {
-                        <A href=href attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
-                            "Open Payments"
-                        </A>
-                    })}
-                    <A href="/admin/stloads/operations" attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#eef2ff;color:#312e81;text-decoration:none;">
-                        "STLOADS Ops"
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                {first_active_leg_id.map(|leg_id| view! {
+                    <A href=format!("/execution/legs/{}", leg_id) attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#e8fff3;color:#166534;text-decoration:none;">
+                        "Track active leg"
                     </A>
-                    {reconciliation_href.clone().map(|href| view! {
-                        <A href=href attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#ffe4e6;color:#be123c;text-decoration:none;">
-                            "Reconciliation"
-                        </A>
-                    })}
-                </div>
-            </section>
-            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0.85rem;">
-                <section style="padding:0.85rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#ffffff;display:grid;gap:0.45rem;">
-                    <strong>"Admin blocker checklist"</strong>
-                    <ul style="margin:0;padding-left:1.1rem;display:grid;gap:0.3rem;color:#475569;">
-                        {blocker_items.into_iter().map(|item| view! { <li>{item}</li> }).collect_view()}
-                    </ul>
-                </section>
-                <section style="padding:0.85rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#ffffff;display:grid;gap:0.35rem;">
-                    <strong>"Finance handoff"</strong>
-                    <small style="color:#64748b;">
-                        {first_finance_label
-                            .map(|label| format!("The first direct finance cue on this profile is '{}'.", label))
-                            .unwrap_or_else(|| "No direct finance shortcut is armed yet, so use the leg rows or the payments console when finance opens.".to_string())}
-                    </small>
-                    <small style="color:#64748b;">{format!("Admin load id: #{}", load_id)}</small>
-                </section>
-            </section>
+                })}
+                {first_payments_href.clone().map(|href| view! {
+                    <A href=href attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
+                        "Open Payments"
+                    </A>
+                })}
+                <A href="/admin/stloads/operations" attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#eef2ff;color:#312e81;text-decoration:none;">
+                    "STLOADS Ops"
+                </A>
+                {reconciliation_href.clone().map(|href| view! {
+                    <A href=href attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#ffe4e6;color:#be123c;text-decoration:none;">
+                        "Reconciliation"
+                    </A>
+                })}
+            </div>
         </section>
     }
 }
 
 fn render_admin_attention_lanes(
-    load_id: u64,
-    legs: Vec<LoadProfileLegRow>,
-    documents: Vec<LoadDocumentRow>,
-    handoff: Option<LoadHandoffSummary>,
+    _load_id: u64,
+    _legs: Vec<LoadProfileLegRow>,
+    _documents: Vec<LoadDocumentRow>,
+    _handoff: Option<LoadHandoffSummary>,
 ) -> impl IntoView {
-    let pending_review_count = legs.iter().filter(|leg| leg.status_code == 1).count();
-    let execution_active_count = legs
-        .iter()
-        .filter(|leg| matches!(leg.status_code, 5 | 6 | 8 | 9))
-        .count();
-    let release_ready_count = legs
-        .iter()
-        .filter(|leg| {
-            leg.finance_action_key.as_deref() == Some("release") && leg.finance_action_enabled
-        })
-        .count();
-    let completed_count = legs.iter().filter(|leg| leg.status_code == 11).count();
-    let visible_document_count = documents
-        .iter()
-        .filter(|document| document.can_view_file)
-        .count();
-    let editable_document_count = documents
-        .iter()
-        .filter(|document| document.can_edit)
-        .count();
-    let anchor_follow_up_count = documents
-        .iter()
-        .filter(|document| document.can_verify_blockchain && document.blockchain_label.is_none())
-        .count();
-    let first_execution_leg_id = legs
-        .iter()
-        .find(|leg| matches!(leg.status_code, 5 | 6 | 8 | 9))
-        .map(|leg| leg.leg_id);
-    let first_payment_href = legs.iter().find_map(|leg| leg.payments_href.clone());
-    let handoff_attention_label = handoff
-        .as_ref()
-        .filter(|item| matches!(item.status_tone.as_str(), "warning" | "danger"))
-        .map(|item| item.status_label.clone());
-    let handoff_attention_href = handoff_attention_label.as_ref().map(|_| {
-        if handoff
-            .as_ref()
-            .is_some_and(|item| item.status_tone == "danger")
-        {
-            "/admin/stloads/reconciliation?action=mismatch_detected".to_string()
-        } else {
-            "/admin/stloads/reconciliation?action=auto_archive".to_string()
-        }
-    });
-
-    let lane_cards = vec![
-        (
-            "Review lane",
-            pending_review_count.to_string(),
-            if pending_review_count > 0 {
-                "warning"
-            } else {
-                "success"
-            },
-            "Pending review legs should be cleared before execution and finance feel trustworthy.",
-            Some("/admin/loads?tab=pending".to_string()),
-            Some("Open pending loads".to_string()),
-        ),
-        (
-            "Execution lane",
-            execution_active_count.to_string(),
-            if execution_active_count > 0 {
-                "primary"
-            } else {
-                "info"
-            },
-            "Active legs belong in execution follow-up until pickup, transit, and delivery stabilize.",
-            first_execution_leg_id.map(|leg_id| format!("/execution/legs/{}", leg_id)),
-            first_execution_leg_id.map(|_| "Track active leg".to_string()),
-        ),
-        (
-            "Finance lane",
-            release_ready_count.to_string(),
-            if release_ready_count > 0 {
-                "success"
-            } else {
-                "info"
-            },
-            "Release-ready work should move into payments or closeout instead of staying buried in the profile.",
-            first_payment_href.clone(),
-            Some(if first_payment_href.is_some() {
-                "Open payments".to_string()
-            } else {
-                "Payments opens here when finance activates".to_string()
-            }),
-        ),
-        (
-            "Document lane",
-            visible_document_count.to_string(),
-            if anchor_follow_up_count > 0 {
-                "warning"
-            } else {
-                "success"
-            },
-            "Protected docs stay visible here for admin review, edits, and blockchain follow-up.",
-            Some(format!("/admin/loads/{}", load_id)),
-            Some("Stay on admin profile".to_string()),
-        ),
-    ];
-
-    view! {
-        <section style="display:grid;gap:0.85rem;">
-            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem;">
-                {lane_cards.into_iter().map(|(label, value, tone, note, href, action_label)| view! {
-                    <div style="padding:0.95rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#ffffff;display:grid;gap:0.35rem;">
-                        <div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:center;flex-wrap:wrap;">
-                            <strong>{label}</strong>
-                            <span style=tone_style(tone)>{tone.replace('_', " ")}</span>
-                        </div>
-                        <div style="font-size:1.35rem;font-weight:700;color:#111827;">{value}</div>
-                        <small style="color:#64748b;">{note}</small>
-                        {href.zip(action_label).map(|(href, action_label)| view! {
-                            <A href=href attr:style="justify-self:start;padding:0.45rem 0.75rem;border-radius:0.75rem;background:#f8fafc;color:#0f172a;text-decoration:none;">
-                                {action_label}
-                            </A>
-                        })}
-                    </div>
-                }).collect_view()}
-            </section>
-
-            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0.85rem;">
-                <section style="padding:0.9rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#fcfcfb;display:grid;gap:0.35rem;">
-                    <strong>"Admin handoff guidance"</strong>
-                    <small style="color:#64748b;">
-                        {if pending_review_count > 0 {
-                            "Review is still the lead workflow here, so clear those legs before finance and closeout start driving decisions."
-                        } else if release_ready_count > 0 {
-                            "This profile is now finance-first. Use payments or closeout while the release-ready lane is hot."
-                        } else if execution_active_count > 0 {
-                            "Execution is still the strongest operational lane, so stay close to tracking before you return here."
-                        } else if completed_count > 0 {
-                            "Completed legs are the likely handoff into closeout or collections now."
-                        } else {
-                            "No single lane is dominating this load right now; the Rust profile is mostly in clean-up mode."
-                        }}
-                    </small>
-                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                        <A href="/desk/facility" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#eef2ff;color:#312e81;text-decoration:none;">
-                            "Facility desk"
-                        </A>
-                        <A href="/desk/closeout" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
-                            "Closeout desk"
-                        </A>
-                        <A href="/desk/collections" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#ffe4e6;color:#be123c;text-decoration:none;">
-                            "Collections desk"
-                        </A>
-                    </div>
-                </section>
-
-                <section style="padding:0.9rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#ffffff;display:grid;gap:0.35rem;">
-                    <strong>"Document oversight"</strong>
-                    <small style="color:#64748b;">{format!(
-                        "{} protected document(s) are visible here, {} remain editable, and {} still have blockchain follow-up open.",
-                        visible_document_count,
-                        editable_document_count,
-                        anchor_follow_up_count
-                    )}</small>
-                    {handoff_attention_label.as_ref().map(|status_label| view! {
-                        <small style="color:#92400e;">{format!(
-                            "STLOADS is also flagging '{}' on this load, so document and ops review may need to happen together.",
-                            status_label
-                        )}</small>
-                    })}
-                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                        <A href="/admin/stloads/operations" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#ecfeff;color:#155e75;text-decoration:none;">
-                            "STLOADS ops"
-                        </A>
-                        {handoff_attention_href.map(|href| view! {
-                            <A href=href attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
-                                "Reconciliation"
-                            </A>
-                        })}
-                    </div>
-                </section>
-            </section>
-        </section>
-    }
+    view! { <></> }
 }
 
 fn render_history(history: Vec<LoadHistoryRow>) -> AnyView {
@@ -1233,16 +1022,6 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                 </div>
             </section>
 
-            {move || auth.session.get().user.map(|user| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #dcfce7;border-radius:0.9rem;background:#f0fdf4;color:#166534;">
-                    {format!("Authenticated as {} ({})", user.name, user.role_label)}
-                </section>
-            })}
-
-            {move || action_message.get().map(|message| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">{message}</section>
-            })}
-
             {move || error_message.get().map(|message| view! {
                 <section style="padding:0.85rem 1rem;border:1px solid #fecaca;border-radius:0.9rem;background:#fff1f2;color:#be123c;">{message}</section>
             })}
@@ -1269,9 +1048,9 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                         <>
                             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;align-items:start;">
                                 {screen_value.info_fields.into_iter().map(|field| view! {
-                                    <div style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fcfcfb;display:grid;gap:0.35rem;">
-                                        <small style="color:#64748b;">{field.label}</small>
-                                        <strong>{field.value}</strong>
+                                    <div class="wrap-safe" style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fcfcfb;display:grid;gap:0.35rem;">
+                                        <small class="wrap-safe" style="color:#64748b;">{field.label}</small>
+                                        <strong class="wrap-safe">{field.value}</strong>
                                     </div>
                                 }).collect_view()}
                             </section>
@@ -1318,10 +1097,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
 
                                 <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:1rem;overflow:auto;">
                                     <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                                        <div style="display:grid;gap:0.35rem;">
-                                            <strong>"Documents"</strong>
-                                            <small style="color:#64748b;">"Uploads now store the binary through the Rust backend. Admins and the uploader profile can open the file, while metadata edits and blockchain follow-up stay on this screen."</small>
-                                        </div>
+                                        <strong>"Documents"</strong>
                                         {can_manage_documents.then(|| view! {
                                             <button
                                                 type="button"
@@ -1341,10 +1117,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                                 upload_document();
                                             }
                                         >
-                                            <div style="display:grid;gap:0.35rem;">
-                                                <strong>"Upload a document"</strong>
-                                                <small style="color:#64748b;">"The uploaded binary will only open for admin users and the profile that uploaded it."</small>
-                                            </div>
+                                            <strong>"Upload a document"</strong>
                                             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
                                                 <label style="display:grid;gap:0.35rem;">
                                                     <span>"Document name"</span>
@@ -1363,7 +1136,6 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                                 <button type="submit" style="padding:0.65rem 0.95rem;border-radius:0.85rem;border:none;background:#111827;color:white;cursor:pointer;" disabled=move || is_uploading_document.get()>
                                                     {move || if is_uploading_document.get() { "Uploading..." } else { "Upload document" }}
                                                 </button>
-                                                <small style="color:#64748b;">"25 MB limit in the current Rust slice."</small>
                                             </div>
                                         </form>
                                     })}
@@ -1412,7 +1184,6 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                                         "Save metadata"
                                                     }}
                                                 </button>
-                                                <small style="color:#64748b;">{move || editing_document_id.get().map(|id| format!("Editing document #{}", id)).unwrap_or_else(|| "Select a document row to edit its metadata".into())}</small>
                                             </div>
                                         </form>
                                     })}
@@ -1537,9 +1308,6 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                 {render_history(screen_value.history.clone())}
                             </section>
 
-                            <section style="display:grid;gap:0.35rem;">
-                                {screen_value.notes.into_iter().map(|note| view! { <p style="margin:0;">{note}</p> }).collect_view()}
-                            </section>
                         </>
                     }.into_any()
                 } else {

@@ -35,6 +35,12 @@ use crate::runtime_config;
 pub struct AdminOverview {
     pub screen_routes: Vec<String>,
     pub operational_views: usize,
+    pub user_total: usize,
+    pub shipper_total: usize,
+    pub carrier_total: usize,
+    pub broker_total: usize,
+    pub freight_forwarder_total: usize,
+    pub admin_total: usize,
     pub notes: Vec<String>,
 }
 
@@ -639,6 +645,24 @@ pub fn api_href(path: &str) -> String {
         format!("/{}", path)
     };
 
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(base) = runtime_config::backend_api_base_url() {
+            return format!("{}{}", base, normalized_path);
+        }
+
+        if let Some(base) = option_env!("BACKEND_API_BASE_URL") {
+            let trimmed = base.trim().trim_end_matches('/');
+            if !trimmed.is_empty() {
+                return format!("{}{}", trimmed, normalized_path);
+            }
+        }
+
+        // Use a dedicated proxied API prefix in the browser so JSON requests do not
+        // collide with same-path SPA routes such as /admin/users or /admin/onboarding-reviews.
+        return format!("/api/stloads{}", normalized_path);
+    }
+
     let base = configured_api_base();
     if base.is_empty() {
         normalized_path
@@ -718,7 +742,7 @@ async fn fetch_get<T>(url: &str) -> Result<T, String>
 where
     T: DeserializeOwned,
 {
-    let mut request = gloo_net::http::Request::get(url);
+    let mut request = gloo_net::http::Request::get(url).header("Accept", "application/json");
     if let Some(token) = read_auth_token() {
         request = request.header("Authorization", &format!("Bearer {}", token));
     }
@@ -747,7 +771,9 @@ async fn fetch_get<T>(url: &str) -> Result<T, String>
 where
     T: DeserializeOwned,
 {
-    let mut request = reqwest::Client::new().get(url);
+    let mut request = reqwest::Client::new()
+        .get(url)
+        .header(reqwest::header::ACCEPT, "application/json");
     if let Some(token) = read_auth_token() {
         request = request.bearer_auth(token);
     }

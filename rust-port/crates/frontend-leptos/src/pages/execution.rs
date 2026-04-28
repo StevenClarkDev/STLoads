@@ -120,60 +120,6 @@ fn tracking_window_summary(points: &[ExecutionTrackingPointItem]) -> Option<Stri
     ))
 }
 
-fn tracking_guidance_items(
-    point_count: usize,
-    tracking_health_tone: &str,
-    can_send_location_ping: bool,
-    live_tracking_available: bool,
-    delivery_completion_ready: bool,
-) -> Vec<String> {
-    let mut items = Vec::new();
-
-    if point_count == 0 {
-        items.push(
-            "No GPS points are recorded yet. Send the first ping now so operations can frame the leg on the map."
-                .to_string(),
-        );
-    } else if point_count == 1 {
-        items.push(
-            "Only one GPS point is recorded. Send one more update so the route span becomes easier to validate."
-                .to_string(),
-        );
-    }
-
-    if matches!(tracking_health_tone, "warning" | "danger") {
-        items.push(
-            "Tracking health is degraded. Send a fresh GPS ping or restart live tracking before moving the leg forward."
-                .to_string(),
-        );
-    }
-
-    if live_tracking_available
-        && point_count > 0
-        && !matches!(tracking_health_tone, "warning" | "danger")
-    {
-        items.push(
-            "Live tracking is available here. Keep it running while the truck is moving so dispatch does not lose route continuity."
-                .to_string(),
-        );
-    }
-
-    if !delivery_completion_ready {
-        items.push(
-            "Delivery completion still needs both a POD upload and an execution note.".to_string(),
-        );
-    }
-
-    if !can_send_location_ping {
-        items.push(
-            "This leg is currently view-only for GPS updates, so coordinate with the booked carrier or operations team for the next location refresh."
-                .to_string(),
-        );
-    }
-
-    items
-}
-
 fn gps_coverage_label(point_count: usize, tracking_health_tone: &str) -> (&'static str, String) {
     if point_count == 0 {
         ("danger", "No route trace yet".into())
@@ -690,16 +636,6 @@ pub fn ExecutionLegPage() -> impl IntoView {
                 </div>
             </section>
 
-            {move || auth.session.get().user.map(|user| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #dcfce7;border-radius:0.9rem;background:#f0fdf4;color:#166534;">
-                    {format!("Authenticated as {} ({})", user.name, user.role_label)}
-                </section>
-            })}
-
-            {move || action_message.get().map(|message| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">{message}</section>
-            })}
-
             {move || error_message.get().map(|message| view! {
                 <section style="padding:0.85rem 1rem;border:1px solid #fecaca;border-radius:0.9rem;background:#fff1f2;color:#be123c;">{message}</section>
             })}
@@ -730,15 +666,8 @@ pub fn ExecutionLegPage() -> impl IntoView {
                         .clone()
                         .unwrap_or_else(|| "Tracking health will appear here once execution data settles.".into());
                     let tracking_health_tone = screen_value.tracking_health_tone.clone();
-                    let tracking_health_tone_for_hint = tracking_health_tone.clone();
-                    let tracking_guidance = tracking_guidance_items(
-                        tracking_point_count,
-                        &tracking_health_tone,
-                        screen_value.can_send_location_ping,
-                        screen_value.live_tracking_available,
-                        screen_value.delivery_completion_ready,
-                    );
-                    let next_action_label = screen_value
+                    let _tracking_health_tone_for_hint = tracking_health_tone.clone();
+                    let _next_action_label = screen_value
                         .next_action_label
                         .clone()
                         .unwrap_or_else(|| "Use the execution controls below to keep this leg moving.".into());
@@ -750,13 +679,13 @@ pub fn ExecutionLegPage() -> impl IntoView {
                     let earliest_tracking_point = tracking_points.last().cloned();
                     let documents = screen_value.documents.clone();
                     let document_count = documents.len();
-                    let (gps_focus_tone, gps_focus_label) =
+                    let (_gps_focus_tone, _gps_focus_label) =
                         gps_coverage_label(tracking_point_count, &tracking_health_tone);
-                    let (document_focus_tone, document_focus_label) = document_readiness_label(
+                    let (_document_focus_tone, _document_focus_label) = document_readiness_label(
                         document_count,
                         screen_value.delivery_completion_ready,
                     );
-                    let execution_blockers = execution_blocker_items(
+                    let _execution_blockers = execution_blocker_items(
                         tracking_point_count,
                         document_count,
                         note_count,
@@ -766,15 +695,15 @@ pub fn ExecutionLegPage() -> impl IntoView {
                         screen_value.delivery_completion_ready,
                     );
                     let document_type_options = screen_value.document_type_options.clone();
-                    let pickup_bol_count =
+                    let _pickup_bol_count =
                         count_execution_documents_by_type(&documents, "pickup_bol");
-                    let pickup_photo_count =
+                    let _pickup_photo_count =
                         count_execution_documents_by_type(&documents, "pickup_photo");
-                    let delivery_pod_count =
+                    let _delivery_pod_count =
                         count_execution_documents_by_type(&documents, "delivery_pod");
-                    let delivery_photo_count =
+                    let _delivery_photo_count =
                         count_execution_documents_by_type(&documents, "delivery_photo");
-                    let other_document_count =
+                    let _other_document_count =
                         count_execution_documents_by_type(&documents, "other");
                     let route_stage_key = screen_value.status_label.to_ascii_lowercase();
                     let desk_handoff = if route_stage_key.contains("delivery")
@@ -814,168 +743,35 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                 />
                             </section>
 
-                            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;align-items:start;">
-                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.75rem;">
-                                    <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                                        <strong>"Operator readiness"</strong>
-                                        <span style=tone_style(gps_focus_tone)>{gps_focus_label.clone()}</span>
-                                    </div>
-                                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.75rem;">
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.15rem;">
-                                            <strong>"GPS coverage"</strong>
-                                            <small style="color:#64748b;">{gps_focus_label.clone()}</small>
-                                        </div>
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.15rem;">
-                                            <strong>"Document pack"</strong>
-                                            <span style=tone_style(document_focus_tone)>{document_focus_label.clone()}</span>
-                                        </div>
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.15rem;">
-                                            <strong>"Realtime path"</strong>
-                                            <small style="color:#64748b;">
-                                                {if screen_value.live_tracking_available {
-                                                    "This role can keep live route updates flowing from this page."
-                                                } else {
-                                                    "This leg is view-first here, so location refresh depends on the booked carrier or ops."
-                                                }}
-                                            </small>
-                                        </div>
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.15rem;">
-                                            <strong>"Closeout gate"</strong>
-                                            <small style="color:#64748b;">{if screen_value.delivery_completion_ready {
-                                                "Delivery closeout prerequisites are ready."
-                                            } else {
-                                                "POD and execution note are still required for clean closeout."
-                                            }}</small>
-                                        </div>
-                                    </div>
-                                </section>
-
-                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.6rem;">
-                                    <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                                        <strong>"Operator blocker checklist"</strong>
-                                        <span style=tone_style(if execution_blockers.len() > 1 || !execution_blockers.first().is_some_and(|item| item.contains("No obvious operator blockers")) { "warning" } else { "success" })>
-                                            {if execution_blockers.first().is_some_and(|item| item.contains("No obvious operator blockers")) {
-                                                "Clear"
-                                            } else {
-                                                "Needs attention"
-                                            }}
-                                        </span>
-                                    </div>
-                                    <ul style="margin:0;padding-left:1.1rem;display:grid;gap:0.35rem;color:#475569;">
-                                        {execution_blockers.into_iter().map(|item| view! { <li>{item}</li> }).collect_view()}
-                                    </ul>
-                                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                                        {screen_value.latest_map_url.clone().map(|map_url| view! {
-                                            <a href=map_url target="_blank" rel="noopener noreferrer" style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#e0f2fe;color:#075985;text-decoration:none;">
-                                                "Open latest point"
-                                            </a>
-                                        })}
-                                        {earliest_tracking_point.clone().zip(latest_tracking_point.clone()).map(|(start, end)| view! {
-                                            <a href=tracking_route_maps_url(&start, &end) target="_blank" rel="noopener noreferrer" style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#ede9fe;color:#5b21b6;text-decoration:none;">
-                                                "Open route span"
-                                            </a>
-                                        })}
-                                        <A href=format!("/loads/{}", screen_value.load_id) attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#f1f5f9;color:#0f172a;text-decoration:none;">
-                                            "Open load profile"
-                                        </A>
-                                    </div>
-                                </section>
-                            </section>
-
-                            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;align-items:start;">
-                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.75rem;">
-                                    <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                                        <strong>"Execution closeout checklist"</strong>
-                                        <span style=tone_style(if screen_value.delivery_completion_ready { "success" } else { "warning" })>
-                                            {if screen_value.delivery_completion_ready {
-                                                "Ready"
-                                            } else {
-                                                "Still collecting"
-                                            }}
-                                        </span>
-                                    </div>
-                                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.75rem;">
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
-                                            <strong>"Pickup docs"</strong>
-                                            <span style=tone_style(if pickup_bol_count + pickup_photo_count > 0 { "success" } else { "warning" })>
-                                                {format!("{} file(s)", pickup_bol_count + pickup_photo_count)}
-                                            </span>
-                                            <small style="color:#64748b;">"Pickup BOL and pickup photos stay visible here for exception handling."</small>
-                                        </div>
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
-                                            <strong>"Delivery POD"</strong>
-                                            <span style=tone_style(if delivery_pod_count > 0 { "success" } else { "danger" })>
-                                                {format!("{} file(s)", delivery_pod_count)}
-                                            </span>
-                                            <small style="color:#64748b;">"At least one POD is required before delivery completion can close cleanly."</small>
-                                        </div>
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
-                                            <strong>"Delivery photos"</strong>
-                                            <span style=tone_style(if delivery_photo_count > 0 { "success" } else { "info" })>
-                                                {format!("{} file(s)", delivery_photo_count)}
-                                            </span>
-                                            <small style="color:#64748b;">"Photos are optional, but they help when closeout or claims review gets noisy."</small>
-                                        </div>
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
-                                            <strong>"Operator notes"</strong>
-                                            <span style=tone_style(if note_count > 0 { "success" } else { "warning" })>
-                                                {format!("{} note(s)", note_count)}
-                                            </span>
-                                            <small style="color:#64748b;">"A clear note trail makes admin closeout and carrier follow-up much safer."</small>
-                                        </div>
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
-                                            <strong>"Route trace"</strong>
-                                            <span style=tone_style(gps_focus_tone)>{gps_focus_label.clone()}</span>
-                                            <small style="color:#64748b;">{tracking_window_label.clone()}</small>
-                                        </div>
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
-                                            <strong>"Other docs"</strong>
-                                            <span style=tone_style(if other_document_count > 0 { "info" } else { "dark" })>
-                                                {format!("{} file(s)", other_document_count)}
-                                            </span>
-                                            <small style="color:#64748b;">"Use this lane for extra paperwork that does not fit the pickup or delivery buckets."</small>
-                                        </div>
-                                    </div>
-                                </section>
-
-                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.75rem;">
-                                    <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                                        <strong>"Workspace handoff"</strong>
-                                        <span style=tone_style("info")>{screen_value.operator_mode_label.clone()}</span>
-                                    </div>
-                                    <small style="color:#64748b;">
-                                        "This keeps the Rust execution page connected to the operator boards that normally take over after tracking, proof, or closeout starts to matter."
-                                    </small>
-                                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                                        <A href=format!("/loads/{}", screen_value.load_id) attr:style="padding:0.5rem 0.8rem;border-radius:0.8rem;background:#111827;color:white;text-decoration:none;">
-                                            "User load profile"
-                                        </A>
-                                        {can_open_admin_handoffs.get().then(|| view! {
-                                            <A href=format!("/admin/loads/{}", screen_value.load_id) attr:style="padding:0.5rem 0.8rem;border-radius:0.8rem;background:#eef2ff;color:#312e81;text-decoration:none;">
-                                                "Admin load profile"
-                                            </A>
-                                        })}
-                                        {can_open_desk_handoffs.get().then(|| view! {
-                                            <A href=desk_handoff.0 attr:style="padding:0.5rem 0.8rem;border-radius:0.8rem;background:#fff7dd;color:#92400e;text-decoration:none;">
-                                                {desk_handoff.1}
-                                            </A>
-                                        })}
-                                        {can_open_payment_handoffs.get().then(|| view! {
-                                            <A href=format!("/admin/payments?leg_id={}&source=execution", screen_value.leg_id) attr:style="padding:0.5rem 0.8rem;border-radius:0.8rem;background:#e8fff3;color:#166534;text-decoration:none;">
-                                                "Payments console"
-                                            </A>
-                                        })}
-                                    </div>
-                                    <small style="color:#64748b;">
-                                        {if screen_value.delivery_completion_ready {
-                                            "Proof is in place, so closeout and finance follow-up can start without waiting on another document pass."
-                                        } else if delivery_pod_count == 0 {
-                                            "Stay in execution until POD is uploaded, then hand the leg off to closeout and finance."
-                                        } else {
-                                            "Execution still owns the active follow-up, but the next workspace is already linked here."
-                                        }}
-                                    </small>
-                                </section>
+                            <section style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                                {screen_value.latest_map_url.clone().map(|map_url| view! {
+                                    <a href=map_url target="_blank" rel="noopener noreferrer" style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#e0f2fe;color:#075985;text-decoration:none;">
+                                        "Open latest point"
+                                    </a>
+                                })}
+                                {earliest_tracking_point.clone().zip(latest_tracking_point.clone()).map(|(start, end)| view! {
+                                    <a href=tracking_route_maps_url(&start, &end) target="_blank" rel="noopener noreferrer" style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#ede9fe;color:#5b21b6;text-decoration:none;">
+                                        "Open route span"
+                                    </a>
+                                })}
+                                <A href=format!("/loads/{}", screen_value.load_id) attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#f1f5f9;color:#0f172a;text-decoration:none;">
+                                    "Open load profile"
+                                </A>
+                                {can_open_admin_handoffs.get().then(|| view! {
+                                    <A href=format!("/admin/loads/{}", screen_value.load_id) attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#eef2ff;color:#312e81;text-decoration:none;">
+                                        "Admin load profile"
+                                    </A>
+                                })}
+                                {can_open_desk_handoffs.get().then(|| view! {
+                                    <A href=desk_handoff.0 attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
+                                        {desk_handoff.1}
+                                    </A>
+                                })}
+                                {can_open_payment_handoffs.get().then(|| view! {
+                                    <A href=format!("/admin/payments?leg_id={}&source=execution", screen_value.leg_id) attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#e8fff3;color:#166534;text-decoration:none;">
+                                        "Payments"
+                                    </A>
+                                })}
                             </section>
 
                             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;align-items:start;">
@@ -1021,10 +817,7 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                     </div>
 
                                     <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                                        <div style="display:grid;gap:0.3rem;">
-                                            <strong>"Execution actions"</strong>
-                                            <small style="color:#64748b;">"The action list follows the same pickup-to-delivery sequence the Laravel tracking page uses."</small>
-                                        </div>
+                                        <strong>"Execution actions"</strong>
                                         <button
                                             type="button"
                                             style="padding:0.55rem 0.85rem;border-radius:0.8rem;border:none;background:#0f766e;color:white;cursor:pointer;"
@@ -1038,34 +831,14 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                         <strong>"Latest location"</strong>
                                         <span>{screen_value.latest_location_label.clone().unwrap_or_else(|| "No location ping yet".into())}</span>
                                         <small>{screen_value.latest_coordinate_label.clone().unwrap_or_else(|| "Waiting for the first GPS update".into())}</small>
-                                        {screen_value.tracking_summary_label.clone().map(|summary| view! {
-                                            <small style="color:#64748b;">{summary}</small>
-                                        })}
                                         <small style="color:#64748b;">{tracking_window_label.clone()}</small>
                                         <span style=tone_style(&tracking_health_tone)>{screen_value.tracking_health_tone.replace('_', " ")}</span>
                                         <small style="color:#64748b;">{tracking_health_label.clone()}</small>
-                                        {move || {
-                                            if screen_value.can_send_location_ping
-                                                && matches!(tracking_health_tone_for_hint.as_str(), "warning" | "danger")
-                                            {
-                                                view! {
-                                                    <small style="color:#92400e;">
-                                                        "If the route has gone quiet, send a fresh GPS update now or restart live tracking before moving to the next execution step."
-                                                    </small>
-                                                }.into_any()
-                                            } else {
-                                                view! { <></> }.into_any()
-                                            }
-                                        }}
                                         {screen_value.latest_map_url.clone().map(|map_url| view! {
                                             <a href=map_url target="_blank" rel="noopener noreferrer" style="justify-self:start;padding:0.45rem 0.75rem;border-radius:0.75rem;background:#e0f2fe;color:#075985;text-decoration:none;">
-                                                "Open latest point in Google Maps"
+                                                "Open latest point"
                                             </a>
                                         })}
-                                    </div>
-                                    <div style="display:grid;gap:0.35rem;padding:0.85rem 1rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;">
-                                        <strong>"Recommended next step"</strong>
-                                        <small style="color:#64748b;">{next_action_label.clone()}</small>
                                     </div>
                                     <div style="display:grid;gap:0.4rem;padding:0.85rem 1rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;">
                                         <strong>"Execution note"</strong>
@@ -1086,19 +859,15 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                 </section>
 
                                 <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.85rem;overflow:auto;">
-                                    <div style="display:grid;gap:0.3rem;">
-                                        <strong>"Live location map"</strong>
-                                        <small style="color:#64748b;">"The Rust execution view now keeps the map context inline so operators do not have to bounce back to the Blade tracking page for every GPS check."</small>
-                                    </div>
+                                    <strong>"Live location map"</strong>
                                     {tracking_embed.clone().map(|embed_url| view! {
                                         <iframe
                                             src=embed_url
                                             style="width:100%;min-height:320px;border:1px solid #e5e7eb;border-radius:0.95rem;background:#f8fafc;"
                                         ></iframe>
                                     }.into_any()).unwrap_or_else(|| view! {
-                                        <section style="padding:1rem;border:1px dashed #cbd5e1;border-radius:0.95rem;background:#f8fafc;display:grid;gap:0.35rem;">
+                                        <section style="padding:1rem;border:1px dashed #cbd5e1;border-radius:0.95rem;background:#f8fafc;">
                                             <strong>"No live map yet"</strong>
-                                            <small style="color:#64748b;">"Once the driver sends the first GPS ping, the Rust execution workspace will frame the active leg here."</small>
                                         </section>
                                     }.into_any())}
                                     {latest_tracking_point.clone().map(|point| view! {
@@ -1129,7 +898,6 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                         <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;padding:0.75rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;">
                                             <div style="display:grid;gap:0.2rem;">
                                                 <strong>"Route handoff"</strong>
-                                                <small style="color:#64748b;">"Open the first-to-latest GPS span in Google Maps for a quick operator route check."</small>
                                             </div>
                                             <a href=tracking_route_maps_url(&start, &end) target="_blank" rel="noopener noreferrer" style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#ede9fe;color:#5b21b6;text-decoration:none;">
                                                 "Open route span"
@@ -1149,19 +917,7 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                             <strong>"Tracking health"</strong>
                                             <span style=tone_style(&tracking_health_tone)>{screen_value.tracking_health_tone.replace('_', " ")}</span>
                                         </div>
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.15rem;">
-                                            <strong>"Next step"</strong>
-                                            <small style="color:#64748b;">{next_action_label.clone()}</small>
-                                        </div>
                                     </div>
-                                    {(!tracking_guidance.is_empty()).then(|| view! {
-                                        <div style="display:grid;gap:0.45rem;padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;">
-                                            <strong>"Tracking guidance"</strong>
-                                            <ul style="margin:0;padding-left:1.1rem;display:grid;gap:0.3rem;color:#1d4ed8;">
-                                                {tracking_guidance.into_iter().map(|item| view! { <li>{item}</li> }).collect_view()}
-                                            </ul>
-                                        </div>
-                                    })}
                                     <strong>"Tracking points"</strong>
                                     {render_tracking_points(tracking_points)}
                                 </section>
@@ -1182,7 +938,6 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                 <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.85rem;overflow:auto;">
                                     <div style="display:grid;gap:0.3rem;">
                                         <strong>"Execution documents"</strong>
-                                        <small style="color:#64748b;">"Attach pickup and delivery paperwork directly to the leg so the carrier, shipper, and admin workflow stays off the old Laravel page."</small>
                                         <small style="color:#64748b;">{format!("{} execution document(s) currently attached.", document_count)}</small>
                                     </div>
                                     <div style="display:grid;gap:0.65rem;padding:0.85rem 1rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;">
@@ -1219,9 +974,6 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                 </section>
                             </section>
 
-                            <section style="display:grid;gap:0.35rem;">
-                                {screen_value.notes.into_iter().map(|note| view! { <p style="margin:0;">{note}</p> }).collect_view()}
-                            </section>
                         </>
                     }.into_any()
                 } else {

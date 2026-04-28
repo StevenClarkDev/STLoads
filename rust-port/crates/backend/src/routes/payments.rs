@@ -29,6 +29,7 @@ use shared::{
     EscrowReleaseRequest, RealtimeEvent, RealtimeEventKind, RealtimeTopic, StripeWebhookRequest,
     StripeWebhookResponse,
 };
+use tracing::warn;
 
 use crate::{
     auth_session, auth_session::ResolvedSession, realtime_bus::RoutedRealtimeEvent, state::AppState,
@@ -847,8 +848,17 @@ async fn stripe_webhook(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<ApiResponse<StripeWebhookResponse>>, StatusCode> {
-    let actor_session = authorize_payments_webhook(&state, &headers, &body).await?;
-    let payload = parse_stripe_webhook_payload(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let actor_session = match authorize_payments_webhook(&state, &headers, &body).await {
+        Ok(session) => session,
+        Err(status) => {
+            warn!(status = ?status, "Stripe webhook authorization failed");
+            return Err(status);
+        }
+    };
+    let payload = parse_stripe_webhook_payload(&body).map_err(|error| {
+        warn!(error = %error, body_len = body.len(), "Stripe webhook payload parsing failed");
+        StatusCode::BAD_REQUEST
+    })?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(StripeWebhookResponse {
             acknowledged: false,
@@ -1080,33 +1090,9 @@ async fn create_or_refresh_connect_link(
         .filter(|value| !value.is_empty())
     {
         Some(existing) => existing.to_string(),
-        None => match state.stripe.create_express_account(&user.email).await {
-            Ok(account) => {
-                if let Err(error) =
-                    set_user_stripe_connect_account_id(pool, user.id, &account.id).await
-                {
-                    return StripeConnectLinkResponse {
-                        success: false,
-                        user_id: user.id,
-                        account_id: Some(account.id),
-                        onboarding_url: None,
-                        message: format!(
-                            "Stripe account was created, but saving it to the Rust database failed: {}",
-                            error
-                        ),
-                    };
-                }
-                account.id
-            }
-            Err(error) => {
-                return StripeConnectLinkResponse {
-                    success: false,
-                    user_id: user.id,
-                    account_id: None,
-                    onboarding_url: None,
-                    message: format!("Stripe Express account creation failed: {}", error),
-                };
-            }
+        None => match create_and_store_connect_account(state, pool, user).await {
+            Ok(account_id) => account_id,
+            Err(response) => return response,
         },
     };
 
@@ -1127,6 +1113,40 @@ async fn create_or_refresh_connect_link(
             message: "Stripe Connect onboarding link created through the Rust payments backend."
                 .into(),
         },
+        Err(error) if should_recreate_missing_connect_account(&error) => {
+            let refreshed_account_id =
+                match create_and_store_connect_account(state, pool, user).await {
+                    Ok(account_id) => account_id,
+                    Err(response) => return response,
+                };
+
+            match state
+                .stripe
+                .create_account_link_with_urls(
+                    &refreshed_account_id,
+                    payload.refresh_url.as_deref(),
+                    payload.return_url.as_deref(),
+                )
+                .await
+            {
+                Ok(link) => StripeConnectLinkResponse {
+                    success: true,
+                    user_id: user.id,
+                    account_id: Some(refreshed_account_id),
+                    onboarding_url: Some(link.url),
+                    message:
+                        "Stripe Connect onboarding link was recreated after clearing a stale Stripe account reference."
+                            .into(),
+                },
+                Err(error) => StripeConnectLinkResponse {
+                    success: false,
+                    user_id: user.id,
+                    account_id: Some(refreshed_account_id),
+                    onboarding_url: None,
+                    message: format!("Stripe Connect onboarding link creation failed: {}", error),
+                },
+            }
+        }
         Err(error) => StripeConnectLinkResponse {
             success: false,
             user_id: user.id,
@@ -1135,6 +1155,45 @@ async fn create_or_refresh_connect_link(
             message: format!("Stripe Connect onboarding link creation failed: {}", error),
         },
     }
+}
+
+async fn create_and_store_connect_account(
+    state: &AppState,
+    pool: &db::DbPool,
+    user: &db::auth::UserRecord,
+) -> Result<String, StripeConnectLinkResponse> {
+    match state.stripe.create_express_account(&user.email).await {
+        Ok(account) => {
+            if let Err(error) = set_user_stripe_connect_account_id(pool, user.id, &account.id).await
+            {
+                return Err(StripeConnectLinkResponse {
+                    success: false,
+                    user_id: user.id,
+                    account_id: Some(account.id),
+                    onboarding_url: None,
+                    message: format!(
+                        "Stripe account was created, but saving it to the Rust database failed: {}",
+                        error
+                    ),
+                });
+            }
+            Ok(account.id)
+        }
+        Err(error) => Err(StripeConnectLinkResponse {
+            success: false,
+            user_id: user.id,
+            account_id: None,
+            onboarding_url: None,
+            message: format!("Stripe Express account creation failed: {}", error),
+        }),
+    }
+}
+
+fn should_recreate_missing_connect_account(error: &str) -> bool {
+    let normalized = error.trim().to_ascii_lowercase();
+    normalized.contains("no such account:")
+        || normalized.contains("no such account ")
+        || normalized.contains("resource_missing")
 }
 
 async fn authorize_payments_webhook(
@@ -1566,6 +1625,19 @@ mod tests {
         assert_eq!(parsed.amount_cents, Some(125000));
         assert_eq!(parsed.currency.as_deref(), Some("USD"));
         assert_eq!(parsed.platform_fee_cents, Some(1250));
+    }
+
+    #[test]
+    fn detects_stale_connect_account_errors() {
+        assert!(should_recreate_missing_connect_account(
+            "Stripe API returned 400 Bad Request: No such account: 'acct_123'"
+        ));
+        assert!(should_recreate_missing_connect_account(
+            "Stripe API returned 404 Not Found: resource_missing"
+        ));
+        assert!(!should_recreate_missing_connect_account(
+            "Stripe API returned 400 Bad Request: Invalid email"
+        ));
     }
 
     fn sign_test_payload(secret: &str, timestamp: &str, payload: &[u8]) -> String {

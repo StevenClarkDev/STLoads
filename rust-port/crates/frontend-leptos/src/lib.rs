@@ -8,7 +8,7 @@ pub mod realtime;
 pub mod runtime_config;
 pub mod session;
 
-use leptos::prelude::*;
+use leptos::{prelude::*, tachys::view::any_view::IntoAny};
 use leptos_router::{
     components::{Route, Router, Routes},
     path,
@@ -20,10 +20,10 @@ use pages::{
     AdminRolesPage, AdminUsersByRolePage, AdminUsersPage, ChatWorkspacePage, DashboardPage,
     DispatchDeskPage, EscrowOperationsPage, ExecutionLegPage, ForgotPasswordPage, LoadBoardPage,
     LoadBuilderPage, LoadProfilePage, LoginPage, MasterDataPage, NotFoundPage, OnboardingPage,
-    OnboardingReviewPage, ProfilePage, RegisterPage, ResetPasswordPage, StloadsOperationsPage,
-    StloadsReconciliationPage, VerifyOtpPage,
+    OnboardingReviewPage, PortalLandingPage, ProfilePage, RegisterPage, ResetPasswordPage,
+    StloadsOperationsPage, StloadsReconciliationPage, VerifyOtpPage,
 };
-use session::AuthProvider;
+use session::{AuthProvider, use_auth};
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -33,11 +33,11 @@ pub fn App() -> impl IntoView {
                 <Routes fallback=|| view! { <NotFoundPage /> }>
                     <Route
                         path=path!("")
-                        view=|| view! {
-                            <UserFrame>
-                                <DashboardPage />
-                            </UserFrame>
-                        }
+                        view=|| view! { <HomePage /> }
+                    />
+                    <Route
+                        path=path!("dashboard")
+                        view=|| view! { <DashboardRoutePage /> }
                     />
                     <Route
                         path=path!("loads")
@@ -266,5 +266,98 @@ pub fn App() -> impl IntoView {
                 </Routes>
             </Router>
         </AuthProvider>
+    }
+}
+
+#[component]
+fn HomePage() -> impl IntoView {
+    let auth = use_auth();
+
+    view! {
+        {move || {
+            if !auth.session_ready.get() {
+                view! {
+                    <AuthFrame>
+                        <PortalLandingPage />
+                    </AuthFrame>
+                }
+                .into_any()
+            } else if auth
+                .session
+                .get()
+                .user
+                .as_ref()
+                .map(|user| user.dashboard_href.as_str() == "/admin")
+                .unwrap_or(false)
+            {
+                view! {
+                    <AdminFrame>
+                        <AdminDashboardPage />
+                    </AdminFrame>
+                }
+                .into_any()
+            } else if auth.session.get().authenticated {
+                view! {
+                    <UserFrame>
+                        <DashboardPage />
+                    </UserFrame>
+                }
+                .into_any()
+            } else {
+                view! {
+                    <AuthFrame>
+                        <PortalLandingPage />
+                    </AuthFrame>
+                }
+                .into_any()
+            }
+        }}
+    }
+}
+
+#[component]
+fn DashboardRoutePage() -> impl IntoView {
+    let auth = use_auth();
+
+    view! {
+        {move || {
+            if !auth.session_ready.get() {
+                view! {
+                    <AuthFrame>
+                        <section class="auth-shell" style="min-height:55vh;align-items:center;">
+                            <div class="auth-card" style="max-width:32rem;text-align:center;">
+                                <span class="auth-kicker">"Checking session"</span>
+                                <h1>"Opening the correct workspace"</h1>
+                                <p>
+                                    "The Rust app is resolving whether this session belongs in the admin portal or the user workspace before loading the dashboard."
+                                </p>
+                            </div>
+                        </section>
+                    </AuthFrame>
+                }
+                .into_any()
+            } else if auth
+                .session
+                .get()
+                .user
+                .as_ref()
+                .map(|user| user.dashboard_href.as_str() == "/admin")
+                .unwrap_or(false)
+            {
+                view! {
+                    <AdminFrame>
+                        <AdminDashboardPage />
+                    </AdminFrame>
+                }
+                .into_any()
+            } else {
+                view! {
+                    <UserFrame>
+                        <DashboardPage />
+                    </UserFrame>
+                }
+                .into_any()
+            }
+        }}
     }
 }

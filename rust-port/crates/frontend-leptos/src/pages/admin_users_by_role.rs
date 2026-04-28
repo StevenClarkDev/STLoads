@@ -96,18 +96,6 @@ pub fn AdminUsersByRolePage() -> impl IntoView {
                                     style="padding:0.75rem 0.85rem;border:1px solid #d6d3d1;border-radius:0.9rem;"
                                 />
 
-                                {move || feedback.get().map(|message| view! {
-                                    <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;white-space:pre-wrap;">
-                                        {message}
-                                    </section>
-                                })}
-
-                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fcfcfb;display:grid;gap:0.45rem;">
-                                    <strong>"What matches the PHP screen"</strong>
-                                    <small style="color:#64748b;">
-                                        "The legacy users-by-role Blade view only showed approved accounts for the selected role. This Rust page starts with the same filter and lets admin widen it when needed."
-                                    </small>
-                                </section>
                             </div>
 
                             <div style="display:grid;gap:1rem;">
@@ -116,11 +104,7 @@ pub fn AdminUsersByRolePage() -> impl IntoView {
                                 } else if let Some(profile) = selected_profile.get() {
                                     render_role_profile_panel(profile, feedback).into_any()
                                 } else {
-                                    view! {
-                                        <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;">
-                                            "Select a user profile to inspect role-specific details, KYC files, and history here."
-                                        </section>
-                                    }.into_any()
+                                    view! { <></> }.into_any()
                                 }}
 
                                 {move || {

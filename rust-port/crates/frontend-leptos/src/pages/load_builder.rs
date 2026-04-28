@@ -652,24 +652,6 @@ pub fn LoadBuilderPage() -> impl IntoView {
                 </div>
             </section>
 
-            {move || auth.session.get().user.map(|user| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #dcfce7;border-radius:0.9rem;background:#f0fdf4;color:#166534;">
-                    {format!("Authenticated as {} ({})", user.name, user.role_label)}
-                </section>
-            })}
-
-            {move || google_status.get().map(|message| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #bfdbfe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">
-                    {message}
-                </section>
-            })}
-
-            {move || action_message.get().map(|message| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">
-                    {message}
-                </section>
-            })}
-
             {move || error_message.get().map(|message| view! {
                 <section style="padding:0.85rem 1rem;border:1px solid #fecaca;border-radius:0.9rem;background:#fff1f2;color:#be123c;">
                     {message}
@@ -753,7 +735,6 @@ pub fn LoadBuilderPage() -> impl IntoView {
                                 <div style="display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap;">
                                     <div>
                                         <strong>"Load legs"</strong>
-                                        <p style="margin:0.25rem 0 0;">"Each leg now uses Google-powered pickup and delivery address fields. When device GPS is available, suggestions are biased to the current area; when GPS is off, Google shows broader autocomplete results."</p>
                                     </div>
                                     <button type="button" on:click=add_leg style="padding:0.65rem 0.9rem;border:none;border-radius:0.85rem;background:#111827;color:white;cursor:pointer;">"Add leg"</button>
                                 </div>
@@ -979,9 +960,6 @@ pub fn LoadBuilderPage() -> impl IntoView {
                 }
             }}
 
-            <section style="display:grid;gap:0.4rem;">
-                {move || screen.get().map(|value| value.notes.into_iter().map(|note| view! { <p style="margin:0;">{note}</p> }).collect_view())}
-            </section>
         </article>
     }
 }

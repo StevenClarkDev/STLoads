@@ -1,10 +1,8 @@
-use leptos::{ev::SubmitEvent, prelude::*, tachys::view::any_view::IntoAny, task::spawn_local};
-use leptos_router::components::A;
-
 use crate::{
     api,
     session::{self, use_auth},
 };
+use leptos::{ev::SubmitEvent, prelude::*, tachys::view::any_view::IntoAny, task::spawn_local};
 use shared::{
     AdminCreateUserRequest, AdminUserDirectoryScreen, AdminUserDirectoryUser, OtpPurpose,
     ResendOtpRequest, ReviewOnboardingRequest,
@@ -18,6 +16,7 @@ pub fn AccountLifecyclePage() -> impl IntoView {
     let screen = RwSignal::new(None::<AdminUserDirectoryScreen>);
     let loading = RwSignal::new(false);
     let feedback = RwSignal::new(None::<String>);
+    let search_query = RwSignal::new(String::new());
     let refresh_nonce = RwSignal::new(0_u64);
     let action_loading_user_id = RwSignal::new(None::<u64>);
 
@@ -61,53 +60,33 @@ pub fn AccountLifecyclePage() -> impl IntoView {
             } else {
                 view! {
                     <article style="display:grid;gap:1.1rem;">
-                        <section style="display:grid;gap:0.75rem;padding:1.1rem;border:1px solid #dbeafe;border-radius:1.1rem;background:linear-gradient(135deg,#eff6ff 0%,#f8fafc 100%);">
-                            <div style="display:flex;justify-content:space-between;gap:1rem;align-items:start;flex-wrap:wrap;">
-                                <div style="display:grid;gap:0.35rem;max-width:860px;">
-                                    <p style="margin:0;color:#1d4ed8;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;font-size:0.8rem;">"Account Lifecycle Workspace"</p>
-                                    <h2 style="margin:0;">"Rust QA lane for Pending OTP, Pending Review, Revision Requested, and Rejected"</h2>
-                                    <p style="margin:0;color:#334155;">"This page turns the exact PHP comparison flow into a guided Rust admin workspace: create fresh lifecycle accounts, support OTP stalls, and move review-ready users into revision or rejection without bouncing between screens."</p>
-                                </div>
-                                <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
-                                    <A href="/admin/users" attr:style="padding:0.65rem 0.9rem;border:1px solid #cbd5e1;border-radius:0.9rem;background:white;color:#0f172a;text-decoration:none;font-weight:600;">"Open Full User Directory"</A>
-                                    <A href="/admin/onboarding-reviews" attr:style="padding:0.65rem 0.9rem;border:1px solid #cbd5e1;border-radius:0.9rem;background:white;color:#0f172a;text-decoration:none;font-weight:600;">"Open Review Queue"</A>
-                                </div>
-                            </div>
-                            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;">
-                                <div style="padding:0.9rem 1rem;border:1px solid #bfdbfe;border-radius:0.95rem;background:white;display:grid;gap:0.3rem;">
-                                    <strong>"Step 1"</strong>
-                                    <span>"Create one fresh Pending OTP account."</span>
-                                    <small style="color:#64748b;">"This simulates a user who registered but never finished verification."</small>
-                                </div>
-                                <div style="padding:0.9rem 1rem;border:1px solid #bfdbfe;border-radius:0.95rem;background:white;display:grid;gap:0.3rem;">
-                                    <strong>"Step 2"</strong>
-                                    <span>"Create one fresh Pending Review account."</span>
-                                    <small style="color:#64748b;">"This simulates a user who is ready for admin decision now."</small>
-                                </div>
-                                <div style="padding:0.9rem 1rem;border:1px solid #bfdbfe;border-radius:0.95rem;background:white;display:grid;gap:0.3rem;">
-                                    <strong>"Step 3"</strong>
-                                    <span>"Use the review queue to request revision on one account."</span>
-                                    <small style="color:#64748b;">"Keep the admin note clear so PHP-vs-Rust QA can compare the hold reason."</small>
-                                </div>
-                                <div style="padding:0.9rem 1rem;border:1px solid #bfdbfe;border-radius:0.95rem;background:white;display:grid;gap:0.3rem;">
-                                    <strong>"Step 4"</strong>
-                                    <span>"Reject one account and confirm it falls into the rejected lane."</span>
-                                    <small style="color:#64748b;">"That gives us the final lifecycle state needed for parity checks."</small>
-                                </div>
-                            </section>
-                        </section>
-
                         {move || feedback.get().map(|message| view! {
                             <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;white-space:pre-wrap;">
                                 {message}
                             </section>
                         })}
 
+                        <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+                            <div style="max-width:760px;color:#475569;">
+                                "Search by name, email, role, company, or lifecycle status to narrow the QA workspace before resending OTPs or taking review actions."
+                            </div>
+                            <div style="min-width:280px;">
+                                <input
+                                    type="text"
+                                    placeholder="Search lifecycle accounts"
+                                    prop:value=move || search_query.get()
+                                    on:input=move |ev| search_query.set(event_target_value(&ev))
+                                    style="width:100%;padding:0.75rem 0.85rem;border:1px solid #d6d3d1;border-radius:0.9rem;"
+                                />
+                            </div>
+                        </section>
+
                         {move || if loading.get() && screen.get().is_none() {
                             view! { <p>"Loading lifecycle data from the Rust admin backend..."</p> }.into_any()
                         } else if let Some(screen_data) = screen.get() {
                             render_workspace(
                                 screen_data,
+                                search_query.get(),
                                 feedback,
                                 action_loading_user_id,
                                 refresh_nonce,
@@ -124,6 +103,7 @@ pub fn AccountLifecyclePage() -> impl IntoView {
 
 fn render_workspace(
     screen_data: AdminUserDirectoryScreen,
+    search_query: String,
     feedback: RwSignal<Option<String>>,
     action_loading_user_id: RwSignal<Option<u64>>,
     refresh_nonce: RwSignal<u64>,
@@ -132,52 +112,52 @@ fn render_workspace(
         .users
         .iter()
         .filter(|user| user.status_key == "pending_otp")
+        .filter(|user| lifecycle_user_matches_query(user, &search_query))
         .cloned()
         .collect::<Vec<_>>();
     let pending_review_users = screen_data
         .users
         .iter()
         .filter(|user| user.status_key == "pending_review")
+        .filter(|user| lifecycle_user_matches_query(user, &search_query))
         .cloned()
         .collect::<Vec<_>>();
     let revision_users = screen_data
         .users
         .iter()
         .filter(|user| user.status_key == "revision_requested")
+        .filter(|user| lifecycle_user_matches_query(user, &search_query))
         .cloned()
         .collect::<Vec<_>>();
     let rejected_users = screen_data
         .users
         .iter()
         .filter(|user| user.status_key == "rejected")
+        .filter(|user| lifecycle_user_matches_query(user, &search_query))
         .cloned()
         .collect::<Vec<_>>();
 
     view! {
         <>
             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0.75rem;">
-                <LifecycleSummaryCard title="Pending OTP" value=pending_otp_users.len().to_string() tone="info" note="Accounts waiting on verification before they can even enter review." />
-                <LifecycleSummaryCard title="Pending Review" value=pending_review_users.len().to_string() tone="warning" note="Accounts ready for approve, revision, or reject decisions." />
-                <LifecycleSummaryCard title="Revision Requested" value=revision_users.len().to_string() tone="primary" note="Accounts already sent back to the user for another pass." />
-                <LifecycleSummaryCard title="Rejected" value=rejected_users.len().to_string() tone="danger" note="Accounts blocked from progress and ready for parity comparison." />
+                <LifecycleSummaryCard title="Pending OTP" value=pending_otp_users.len().to_string() tone="info" />
+                <LifecycleSummaryCard title="Pending Review" value=pending_review_users.len().to_string() tone="warning" />
+                <LifecycleSummaryCard title="Revision Requested" value=revision_users.len().to_string() tone="primary" />
+                <LifecycleSummaryCard title="Rejected" value=rejected_users.len().to_string() tone="danger" />
             </section>
 
             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;">
                 <LifecycleCreateCard
                     title="Create Fresh Pending OTP"
-                    subtitle="Use this for the account that should stop before OTP completion."
                     status_key="pending_otp"
                     accent="#0369a1"
-                    helper="The account is created unverified, so admin can test resend-OTP support and blocked pre-onboarding behavior."
                     feedback=feedback
                     refresh_nonce=refresh_nonce
                 />
                 <LifecycleCreateCard
                     title="Create Fresh Pending Review"
-                    subtitle="Use this for the account that should already be waiting on admin review."
                     status_key="pending_review"
                     accent="#b45309"
-                    helper="This creates a review-ready account directly in Rust so the revision and rejection actions below have a safe target."
                     feedback=feedback
                     refresh_nonce=refresh_nonce
                 />
@@ -186,7 +166,6 @@ fn render_workspace(
             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;align-items:start;">
                 <LifecycleLane
                     title="Pending OTP Support Lane"
-                    subtitle="These users are not ready for onboarding review yet. The main admin action here is resending the registration OTP."
                     tone="info"
                 >
                     {if pending_otp_users.is_empty() {
@@ -209,7 +188,6 @@ fn render_workspace(
 
                 <LifecycleLane
                     title="Pending Review Queue"
-                    subtitle="This is the live admin decision point. Use it to request revision on one user and reject another."
                     tone="warning"
                 >
                     {if pending_review_users.is_empty() {
@@ -234,7 +212,6 @@ fn render_workspace(
             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;align-items:start;">
                 <LifecycleLane
                     title="Revision Requested Lane"
-                    subtitle="Accounts moved here should match the PHP revision-requested behavior and preserve the latest admin note."
                     tone="primary"
                 >
                     {if revision_users.is_empty() {
@@ -250,7 +227,6 @@ fn render_workspace(
 
                 <LifecycleLane
                     title="Rejected Lane"
-                    subtitle="Accounts moved here should now behave like final denial states during side-by-side QA."
                     tone="danger"
                 >
                     {if rejected_users.is_empty() {
@@ -264,13 +240,6 @@ fn render_workspace(
                     }}
                 </LifecycleLane>
             </section>
-
-            <section style="padding:0.95rem 1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fcfcfb;display:grid;gap:0.35rem;">
-                <strong>"Why this page exists"</strong>
-                {screen_data.notes.into_iter().map(|note| view! {
-                    <small style="color:#475569;">{note}</small>
-                }).collect_view()}
-            </section>
         </>
     }
 }
@@ -280,7 +249,6 @@ fn LifecycleSummaryCard(
     title: &'static str,
     value: String,
     tone: &'static str,
-    note: &'static str,
 ) -> impl IntoView {
     view! {
         <div style="padding:0.95rem 1rem;border:1px solid #e5e7eb;border-radius:1rem;background:white;display:grid;gap:0.35rem;">
@@ -289,7 +257,6 @@ fn LifecycleSummaryCard(
                 <span style=badge_style(tone)>{tone.replace('_', " ")}</span>
             </div>
             <div style="font-size:1.35rem;font-weight:700;color:#111827;">{value}</div>
-            <small style="color:#64748b;">{note}</small>
         </div>
     }
 }
@@ -297,7 +264,6 @@ fn LifecycleSummaryCard(
 #[component]
 fn LifecycleLane(
     title: &'static str,
-    subtitle: &'static str,
     tone: &'static str,
     children: Children,
 ) -> impl IntoView {
@@ -308,7 +274,6 @@ fn LifecycleLane(
                     <strong>{title}</strong>
                     <span style=badge_style(tone)>{tone.replace('_', " ")}</span>
                 </div>
-                <small style="color:#64748b;">{subtitle}</small>
             </div>
             <div style="display:grid;gap:0.7rem;">
                 {children()}
@@ -320,10 +285,8 @@ fn LifecycleLane(
 #[component]
 fn LifecycleCreateCard(
     title: &'static str,
-    subtitle: &'static str,
     status_key: &'static str,
     accent: &'static str,
-    helper: &'static str,
     feedback: RwSignal<Option<String>>,
     refresh_nonce: RwSignal<u64>,
 ) -> impl IntoView {
@@ -377,8 +340,6 @@ fn LifecycleCreateCard(
                     <strong>{title}</strong>
                     <span style=format!("background:{}1A;color:{};padding:0.28rem 0.7rem;border-radius:999px;font-size:0.82rem;font-weight:700;", accent, accent)>{status_key.replace('_', " ")}</span>
                 </div>
-                <small style="color:#475569;">{subtitle}</small>
-                <small style="color:#64748b;">{helper}</small>
             </div>
 
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.7rem;">
@@ -633,4 +594,29 @@ fn badge_style(tone: &str) -> &'static str {
         "primary" => "background:#ede9fe;padding:0.25rem 0.6rem;border-radius:999px;color:#6d28d9;",
         _ => "background:#f1f5f9;padding:0.25rem 0.6rem;border-radius:999px;color:#475569;",
     }
+}
+
+fn lifecycle_user_matches_query(user: &AdminUserDirectoryUser, query: &str) -> bool {
+    let query = query.trim().to_ascii_lowercase();
+    if query.is_empty() {
+        return true;
+    }
+
+    user.name.to_ascii_lowercase().contains(&query)
+        || user.email.to_ascii_lowercase().contains(&query)
+        || user.role_label.to_ascii_lowercase().contains(&query)
+        || user.status_label.to_ascii_lowercase().contains(&query)
+        || user.status_key.to_ascii_lowercase().contains(&query)
+        || user
+            .company_name
+            .as_deref()
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .contains(&query)
+        || user
+            .latest_review_note
+            .as_deref()
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .contains(&query)
 }

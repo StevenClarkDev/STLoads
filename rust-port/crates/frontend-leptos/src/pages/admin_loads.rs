@@ -98,12 +98,6 @@ pub fn AdminLoadsPage() -> impl IntoView {
                             </div>
                         </section>
 
-                        {move || feedback.get().map(|message| view! {
-                            <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">
-                                {message}
-                            </section>
-                        })}
-
                         <section style="display:flex;gap:0.6rem;flex-wrap:wrap;">
                             {move || screen.get().map(|screen_data| {
                                 screen_data.tabs.into_iter().map(|tab| {
@@ -136,17 +130,9 @@ pub fn AdminLoadsPage() -> impl IntoView {
                                     .filter(|row| row_matches_query(row, &query))
                                     .cloned()
                                     .collect::<Vec<_>>();
-                                let active_tab = screen_data.active_tab.clone();
-
-                                view! {
-                                    <section style="display:grid;gap:0.75rem;">
-                                        {render_admin_load_attention_summary(active_tab.clone(), rows.clone())}
-                                        <section style="padding:0.85rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#fcfcfb;display:grid;gap:0.25rem;">
-                                            <strong>"Queue guidance"</strong>
-                                            <small style="color:#64748b;">{admin_tab_guidance(&active_tab)}</small>
-                                        </section>
-                                    </section>
-                                }
+                                let _active_tab = screen_data.active_tab.clone();
+                                let _rows = rows.clone();
+                                view! { <></> }
                             })
                         }}
 
@@ -204,14 +190,6 @@ pub fn AdminLoadsPage() -> impl IntoView {
                                 </tbody>
                             </table>
                         </section>
-
-                        <section style="display:grid;gap:0.35rem;">
-                            {move || screen.get().map(|value| {
-                                value.notes.into_iter().map(|note| view! {
-                                    <p style="margin:0;">{note}</p>
-                                }).collect_view()
-                            })}
-                        </section>
                     </article>
                 }.into_any()
             }
@@ -233,6 +211,7 @@ fn render_admin_load_row(
     let date_label = format!("{} -> {}", row.pickup_date_label, row.delivery_date_label);
     let review_note = RwSignal::new(String::new());
     let confirm_finance_action = RwSignal::new(None::<String>);
+    let row_notice = RwSignal::new(None::<String>);
     let finance_action_key = row.finance_action_key.clone();
     let finance_action_label = row.finance_action_label.clone();
     let finance_action_key_for_run = finance_action_key.clone();
@@ -240,11 +219,21 @@ fn render_admin_load_row(
 
     let run_review = move |decision: &'static str| {
         action_loading_load_id.set(Some(load_id));
+        row_notice.set(Some(format!(
+            "Submitting {} for load #{} from the inline Rust queue...",
+            decision, load_id
+        )));
         let remarks = {
             let value = review_note.get();
             let trimmed = value.trim().to_string();
             if trimmed.is_empty() {
-                None
+                match decision {
+                    "revision" => {
+                        Some("Returned for revision from the Rust admin loads board.".into())
+                    }
+                    "reject" => Some("Rejected from the Rust admin loads board.".into()),
+                    _ => None,
+                }
             } else {
                 Some(trimmed)
             }
@@ -260,13 +249,17 @@ fn render_admin_load_row(
             .await
             {
                 Ok(response) => {
-                    feedback.set(Some(response.message));
+                    feedback.set(Some(response.message.clone()));
+                    row_notice.set(Some(response.message));
                     if response.success {
                         review_note.set(String::new());
                         refresh_nonce.update(|value| *value += 1);
                     }
                 }
-                Err(error) => feedback.set(Some(error)),
+                Err(error) => {
+                    feedback.set(Some(error.clone()));
+                    row_notice.set(Some(error));
+                }
             }
             action_loading_load_id.set(None);
         });
@@ -274,24 +267,32 @@ fn render_admin_load_row(
 
     let run_finance_action = move || {
         let Some(action_key) = finance_action_key_for_run.clone() else {
-            feedback.set(Some(
-                "No direct finance action is available for this admin load row.".into(),
-            ));
+            let message: String =
+                "No direct finance action is available for this admin load row.".into();
+            feedback.set(Some(message.clone()));
+            row_notice.set(Some(message));
             return;
         };
 
+        let action_label = finance_action_label_for_run
+            .clone()
+            .unwrap_or_else(|| action_key.replace('_', " "));
+
         if confirm_finance_action.get() != Some(action_key.clone()) {
             confirm_finance_action.set(Some(action_key.clone()));
-            feedback.set(Some(format!(
-                "Confirm {} for load #{} to continue the Rust finance action.",
-                finance_action_label_for_run
-                    .clone()
-                    .unwrap_or_else(|| action_key.replace('_', " ")),
-                load_id
-            )));
+            let message = format!(
+                "{} is armed for load #{}. Click the same button again to confirm the escrow action.",
+                action_label, load_id
+            );
+            feedback.set(Some(message.clone()));
+            row_notice.set(Some(message));
             return;
         }
 
+        row_notice.set(Some(format!(
+            "Submitting {} for load #{} from the inline Rust finance queue...",
+            action_label, load_id
+        )));
         finance_loading_leg_id.set(Some(leg_id));
         spawn_local(async move {
             let note = Some(format!(
@@ -330,13 +331,17 @@ fn render_admin_load_row(
 
             match result {
                 Ok(response) => {
-                    feedback.set(Some(response.message));
+                    feedback.set(Some(response.message.clone()));
+                    row_notice.set(Some(response.message));
                     if response.success {
                         confirm_finance_action.set(None);
                         refresh_nonce.update(|value| *value += 1);
                     }
                 }
-                Err(error) => feedback.set(Some(error)),
+                Err(error) => {
+                    feedback.set(Some(error.clone()));
+                    row_notice.set(Some(error));
+                }
             }
             finance_loading_leg_id.set(None);
         });
@@ -379,7 +384,8 @@ fn render_admin_load_row(
                 })}
                 {finance_action_label.as_ref().map(|label| {
                     let label = label.clone();
-                    let finance_action_key = finance_action_key.clone();
+                    let finance_action_key_for_button = finance_action_key.clone();
+                    let finance_action_key_for_hint = finance_action_key.clone();
                     if row.finance_action_enabled && can_manage_payments {
                         view! {
                             <div style="display:grid;gap:0.35rem;">
@@ -392,13 +398,25 @@ fn render_admin_load_row(
                                     {move || {
                                         if finance_loading_leg_id.get() == Some(leg_id) {
                                             "Updating finance...".to_string()
-                                        } else if confirm_finance_action.get() == finance_action_key {
+                                        } else if confirm_finance_action.get() == finance_action_key_for_button {
                                             format!("Confirm {}", label.clone())
                                         } else {
                                             label.clone()
                                         }
                                     }}
                                 </button>
+                                {move || {
+                                    (confirm_finance_action.get() == finance_action_key_for_hint
+                                        && finance_loading_leg_id.get() != Some(leg_id))
+                                        .then(|| view! {
+                                            <small style="color:#166534;">
+                                                "Second click confirms the escrow mutation for this row."
+                                            </small>
+                                        })
+                                }}
+                                <small style="color:#64748b;">
+                                    "Finance actions are confirm-first so accidental funding, hold, or release clicks do not mutate escrow immediately."
+                                </small>
                                 {move || {
                                     if confirm_finance_action.get().is_some()
                                         && finance_loading_leg_id.get() != Some(leg_id)
@@ -431,8 +449,16 @@ fn render_admin_load_row(
                 {row.primary_action_label.map(|label| view! {
                     <small style="color:#64748b;">{format!("Primary: {}", label)}</small>
                 })}
+                {move || row_notice.get().map(|message| view! {
+                    <small style="padding:0.55rem 0.65rem;border:1px solid #dbeafe;border-radius:0.75rem;background:#eff6ff;color:#1d4ed8;display:block;white-space:normal;">
+                        {message}
+                    </small>
+                })}
                 {row.can_review.then(|| view! {
                     <div style="display:grid;gap:0.45rem;padding-top:0.35rem;border-top:1px solid #e5e7eb;">
+                        <small style="color:#64748b;">
+                            "Review actions stay on this board. A successful action refreshes the queue inline instead of opening a new screen."
+                        </small>
                         <textarea
                             rows="2"
                             prop:value=move || review_note.get()
@@ -490,118 +516,4 @@ fn row_matches_query(row: &AdminLoadRow, query: &str) -> bool {
     ]
     .into_iter()
     .any(|value| value.to_ascii_lowercase().contains(query))
-}
-
-fn render_admin_load_attention_summary(
-    active_tab: String,
-    rows: Vec<AdminLoadRow>,
-) -> impl IntoView {
-    let review_count = rows.iter().filter(|row| row.can_review).count();
-    let release_count = rows
-        .iter()
-        .filter(|row| {
-            row.finance_action_key.as_deref() == Some("release") && row.finance_action_enabled
-        })
-        .count();
-    let execution_count = rows
-        .iter()
-        .filter(|row| matches!(row.status_code, 5 | 6 | 8 | 9))
-        .count();
-    let attention_count = rows
-        .iter()
-        .filter(|row| {
-            row.can_review
-                || row.finance_action_enabled
-                || row
-                    .finance_note
-                    .as_ref()
-                    .is_some_and(|note| !note.trim().is_empty())
-        })
-        .count();
-
-    let summary_cards = vec![
-        (
-            "Visible rows",
-            rows.len().to_string(),
-            "dark",
-            "Rows matching the current tab and search query.",
-        ),
-        (
-            "Needs review",
-            review_count.to_string(),
-            if review_count > 0 {
-                "warning"
-            } else {
-                "success"
-            },
-            "Pending approval, reject, or revision decisions in the current queue.",
-        ),
-        (
-            "Release-ready",
-            release_count.to_string(),
-            if release_count > 0 { "success" } else { "info" },
-            "Rows that can complete the direct Rust release flow right now.",
-        ),
-        (
-            "Execution-active",
-            execution_count.to_string(),
-            if execution_count > 0 {
-                "primary"
-            } else {
-                "info"
-            },
-            "Loads still moving through pickup, transit, or delivery execution stages.",
-        ),
-        (
-            "Attention queue",
-            attention_count.to_string(),
-            if attention_count > 0 {
-                "danger"
-            } else {
-                "success"
-            },
-            "Rows that still need finance, review, or operator follow-up.",
-        ),
-    ];
-
-    view! {
-        <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0.75rem;">
-            {summary_cards.into_iter().map(|(label, value, tone, note)| {
-                let pill_label = if active_tab == "release-funds" && label == "Release-ready" {
-                    "focus".to_string()
-                } else {
-                    tone.replace('_', " ")
-                };
-                view! {
-                <div style="padding:0.9rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#ffffff;display:grid;gap:0.3rem;">
-                    <div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:center;flex-wrap:wrap;">
-                        <strong>{label}</strong>
-                        <span style=tone_style(tone)>{pill_label}</span>
-                    </div>
-                    <div style="font-size:1.3rem;font-weight:700;color:#111827;">{value}</div>
-                    <small style="color:#64748b;">{note}</small>
-                </div>
-            }}).collect_view()}
-        </section>
-    }
-}
-
-fn admin_tab_guidance(active_tab: &str) -> &'static str {
-    match active_tab {
-        "pending" => {
-            "Pending approval mirrors the old Blade action modal flow: review the profile, leave remarks when needed, then approve, reject, or send back for revision."
-        }
-        "approved" => {
-            "Approved and active loads are the fastest route into profile review and live tracking. Use Track for moving freight and Profile for document or finance follow-up."
-        }
-        "completed" => {
-            "Completed loads should now be checked for payout readiness, closeout cleanup, and any document gaps before they fully leave the operator queue."
-        }
-        "release-funds" => {
-            "Fund Release is the closest Rust mirror of the old Blade release queue. Use the confirm-first release action for clean cases and fall back to Payments when the row notes call out an exception."
-        }
-        _ => {
-            "All Loads is the admin oversight view. Start with the attention cards above, then drill into rows that still need review, finance, or tracking follow-up."
-        }
-    }
 }

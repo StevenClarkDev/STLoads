@@ -215,18 +215,6 @@ pub fn LoadBoardPage() -> impl IntoView {
                 })}
             </section>
 
-            {move || auth.session.get().user.map(|user| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #dcfce7;border-radius:0.9rem;background:#f0fdf4;color:#166534;">
-                    {format!("Authenticated as {} ({})", user.name, user.role_label)}
-                </section>
-            })}
-
-            {move || action_message.get().map(|message| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">
-                    {message}
-                </section>
-            })}
-
             {move || error_message.get().map(|message| view! {
                 <section style="padding:0.85rem 1rem;border:1px solid #fecaca;border-radius:0.9rem;background:#fff1f2;color:#be123c;">
                     {message}

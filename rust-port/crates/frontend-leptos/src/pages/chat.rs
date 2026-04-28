@@ -292,21 +292,6 @@ pub fn ChatWorkspacePage() -> impl IntoView {
                 </p>
             </section>
 
-            {move || auth.session.get().user.map(|user| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #dcfce7;border-radius:0.9rem;background:#f0fdf4;color:#166534;display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:center;">
-                    <span>{format!("Authenticated as {} ({})", user.name, user.role_label)}</span>
-                    <span style=tone_style(if ws_connected.get() { "success" } else { "secondary" })>
-                        {move || if ws_connected.get() { "Realtime connected" } else { "Realtime reconnecting" }}
-                    </span>
-                </section>
-            })}
-
-            {move || action_message.get().map(|message| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">
-                    {message}
-                </section>
-            })}
-
             {move || error_message.get().map(|message| view! {
                 <section style="padding:0.85rem 1rem;border:1px solid #fecaca;border-radius:0.9rem;background:#fff1f2;color:#be123c;">
                     {message}

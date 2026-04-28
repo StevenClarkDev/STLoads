@@ -62,22 +62,12 @@ pub fn AdminRolesPage() -> impl IntoView {
                             <p>"Edit the live role-to-permission matrix that Rust sessions now resolve from at runtime."</p>
                         </section>
 
-                        {move || feedback.get().map(|message| view! {
-                            <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;white-space:pre-wrap;">
-                                {message}
-                            </section>
-                        })}
-
                         {move || if loading.get() && screen.get().is_none() {
                             view! { <p>"Loading role-permission matrix from the Rust backend..."</p> }.into_any()
                         } else if let Some(screen_data) = screen.get() {
                             let permissions = screen_data.permissions.clone();
                             view! {
                                 <>
-                                    <section style="display:grid;gap:0.35rem;">
-                                        <strong>{screen_data.summary}</strong>
-                                        {screen_data.notes.into_iter().map(|note| view! { <p style="margin:0;">{note}</p> }).collect_view()}
-                                    </section>
                                     <section style="display:grid;gap:1rem;">
                                         {screen_data.roles.into_iter().map(|role| {
                                             render_role_card(

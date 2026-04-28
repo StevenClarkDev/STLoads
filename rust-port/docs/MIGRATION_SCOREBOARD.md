@@ -1,6 +1,6 @@
 # Migration Scoreboard
 
-Last updated: 2026-04-21
+Last updated: 2026-04-27
 
 This file is the living migration tracker for the Laravel-to-Rust/Leptos port.
 It should be updated after every major implementation milestone so the repo itself shows what is done, what is partial, and what still blocks full PHP retirement.
@@ -16,7 +16,7 @@ It should be updated after every major implementation milestone so the repo itse
 
 - Backend/domain migration: `partial`
 - Frontend/Leptos migration: `partial`
-- IBM deployment readiness for backend: `partial`
+- IBM deployment readiness for backend: `done`
 - Full Laravel retirement readiness: `partial`
 
 ## Feature Scoreboard
@@ -28,8 +28,8 @@ It should be updated after every major implementation milestone so the repo itse
 | Session auth, tokens, RBAC, and route scoping | `partial` | Login, session, OTP continuity, onboarding gating, KYC review access, route scoping, admin-driven role or status updates, and DB-backed role-permission session resolution now work; full broader permission-management parity is still incomplete. |
 | Load board read surface | `partial` | Real auth-scoped load board exists with booking integration and execution refresh hooks, but full load-management parity is still missing. |
 | Chat and offers | `partial` | Real chat, offer review, read receipts, presence, and scoped realtime exist; still not full Blade parity. |
-| Payments and escrow lifecycle | `partial` | Fund, hold, release, real Stripe `Stripe-Signature` verification, platform/connect webhook secrets, real Stripe payment-intent/account payload parsing, Stripe Connect Express account/onboarding-link creation, live PaymentIntent creation, and live Transfer creation now exist. Hosted Stripe test-mode verification passed through Connect link creation, PaymentIntent creation, signed webhook funding, and DB escrow funding on 2026-04-16; final transfer-release verification is waiting on Stripe-hosted Express onboarding to enable the `transfers` capability for the staging carrier account. |
-| STLOADS/TMS lifecycle and ops | `partial` | Push, queue, requeue, withdraw, close, status webhooks, admin ops views, and Rust background workers for queued/push-failed retry plus reconciliation scanning now exist. Hosted IBM validation on 2026-04-21 proved the retry worker republishes queued handoffs, but the cancelled-drift reconciliation scenario did not auto-withdraw within the staging validation window yet, so hosted reconciliation hardening is still pending. |
+| Payments and escrow lifecycle | `partial` | Fund, hold, release, real Stripe `Stripe-Signature` verification, platform/connect webhook secrets, real Stripe payment-intent/account payload parsing, Stripe Connect Express account/onboarding-link creation, live PaymentIntent creation, and live Transfer creation now exist. Hosted Stripe test-mode verification now passes end to end on IBM staging, including stale-account recovery, Connect link creation, PaymentIntent creation, signed webhook funding, DB escrow funding, and transfer release after Stripe-hosted onboarding completed for the staging carrier account. |
+| STLOADS/TMS lifecycle and ops | `partial` | Push, queue, requeue, withdraw, close, status webhooks, admin ops views, and Rust background workers for queued/push-failed retry plus reconciliation scanning now exist. Hosted IBM validation on 2026-04-21 proved both worker paths: queued handoffs republish through the retry worker, and cancelled-drift handoffs auto-withdraw through the reconciliation worker against IBM PostgreSQL staging. Deeper production parity is still pending. |
 | Admin STLOADS reconciliation | `partial` | Real Rust screens and DB-backed data exist; broader admin surface is still incomplete. |
 | Master-data admin visibility | `done` | Rust now has a DB-backed admin master-data catalog page with row-level create, edit, and safe delete or archive controls for countries, cities, locations, load types, equipments, and commodity types, while workflow statuses stay intentionally read-only. |
 | Master-data CRUD | `done` | Rust supports create/update plus delete/archive flows for countries, cities, locations, load types, equipments, and commodity types. Route-level DB-backed acceptance tests now cover the master-data screen access boundary plus create, update, hard delete, and soft archive flows. Load and offer status masters intentionally remain read-only because they drive canonical workflow state machines. |
@@ -37,18 +37,18 @@ It should be updated after every major implementation milestone so the repo itse
 | Load detail, profile, and documents | `partial` | Rust has an auth-scoped `/dispatch/loads/{id}` detail surface plus Leptos `/loads/:load_id` for info, legs, binary document upload, restricted file viewing for admin plus uploader, metadata edits, history, latest STLOADS handoff context, blockchain follow-up controls, and richer admin document actions with preview/download plus hash visibility. |
 | Self-service profile and account edit flow | `partial` | Rust now has `/profile` with self-serve account, company, password, protected KYC visibility, a revision-oriented KYC document workspace for add, edit, replace, blockchain anchor, delete actions, and local SHA-256 blockchain verification against stored hashes. Final profile parity and hosted document validation are still pending. |
 | Tracking and execution UI | `partial` | Rust now has `/execution/legs/{leg_id}`, execution status actions, GPS ping writes, realtime refresh, timeline, tracking-point views, execution document upload, protected file viewing, POD-oriented document types, execution notes, Google Maps handoff for latest coordinates, execution-note history surfaced back into the UI, a delivery-completion guardrail that requires both a POD and a closing note, an inline OSM live-map embed with point-level map links and quick execution summary cards, plus true start/stop live driver tracking while the page stays open. The execution workspace now also surfaces an approximate route distance, the active tracking session window, start/end route point cards, route-span Google Maps handoff, tracking-health guidance, a stale-tracking recovery hint, a recommended next-step callout, an inline tracking-guidance checklist for thin or unhealthy GPS coverage, operator-readiness plus blocker panels that call out GPS, document, closeout, and handoff gaps directly from runtime data, an execution closeout checklist grouped by proof/note/route readiness, and a workspace-handoff panel back into admin, desk, and payments surfaces. Deeper map polish and broader carrier/operator workflow depth are still pending. |
-| Onboarding and registration flows | `partial` | Rust now has role-aware registration, OTP verify and resend, password reset, onboarding continuation, secure KYC file upload, protected uploader-plus-admin document viewing, and admin approve, reject, and revision actions. Final polish, hosted validation, and broader user-management parity are still pending. |
+| Onboarding and registration flows | `partial` | Rust now has role-aware registration, OTP verify and resend, password reset, onboarding continuation, secure KYC file upload, protected uploader-plus-admin document viewing, and admin approve, reject, and revision actions. Hosted validation and lifecycle-state parity are now verified on staging; remaining work is broader UI polish and any future acceptance tweaks. |
 | Admin CRUD for users and roles | `partial` | Rust now has an onboarding review queue, a broader admin user directory with search, role reassignment, account-status updates, user-history writes, session-refresh invalidation events, a DB-backed role-permission matrix at `/admin/roles`, a richer `/admin/users` surface with create, profile detail, KYC visibility, profile-edit, guarded delete flows, in-place approve/reject/revision shortcuts from both the directory cards and selected profile panel, plus directory attention-summary cards, queue guidance, pending-OTP resend support, safer delete cancellation, profile-level next-step guidance by account state, card-level missing-item hints, a profile-side readiness-gap checklist, account action-plan and handoff panels in both the directory cards and selected profile panel, and a dedicated `/admin/account-lifecycle` workspace for creating or driving Pending OTP, Pending Review, Revision Requested, and Rejected QA accounts. Role-filtered `/admin/users/role/:role_key` pages now replace the old Blade `users_by_role` surface, and there is a dedicated `/admin/change-password` page for the current admin account. Final polish and a few edge-case account-management actions are still pending. |
 | Admin load and load-profile surfaces | `partial` | Rust now has `/admin/loads` with PHP-aligned status buckets, pending-load approve/reject/revision actions, direct in-row finance actions for release-ready and escrow-follow-up rows, plus an admin-shell `/admin/loads/{id}` profile route backed by the Rust load profile data and admin-only review/payment shortcuts. Admin profiles now expose per-leg payment state, direct fund/hold/release actions, payments deep links from the leg table itself, a load-level oversight summary, an active-leg tracking shortcut, STLOADS status freshness context, a blocker-checklist plus shortcut-handoff panel, and a new attention-lane/document-oversight layer so admins can move faster between review, execution, finance, closeout, collections, documents, and reconciliation without falling back to Blade instincts. Both admin loads and admin profiles now use a confirm-before-finance flow closer to the old Blade release modal behavior. The list page now also has attention-summary cards and queue guidance so admins can scan release, review, and execution follow-up faster. Final admin-profile and finance parity are still pending. |
 | Dispatch desk pages | `partial` | Rust now has DB-backed quote, tender, facility, closeout, and collections desk boards at `/desk/:desk_key` with owner-vs-admin scoping, STLOADS desk counters, realtime refresh, first operator actions for requeue, withdraw, and close flows, inline desk follow-up note capture, finance/archive quick links, direct in-row fund/hold/release actions for closeout and collections, and clearer archive-state guidance. Broader desk workflow parity is still pending. |
-| Email templates and outbound mail workflows | `partial` | Rust now has an env-driven outbound mail service with log, disabled, and SMTP modes. Registration OTP, OTP resend, password-reset OTP, account approve/reject/revision, admin account status changes, and load approve/reject/revision notifications are wired through Rust. Durable `email_outbox` persistence, stale lock recovery, retry worker polling, and route-level DB-backed acceptance coverage for auth plus admin review mail triggers now exist; hosted SMTP provider validation and broader notification coverage are still pending. |
+| Email templates and outbound mail workflows | `partial` | Rust now has an env-driven outbound mail service with log, disabled, and SMTP modes. Registration OTP, OTP resend, password-reset OTP, account approve/reject/revision, admin account status changes, and load approve/reject/revision notifications are wired through Rust. Durable `email_outbox` persistence, stale lock recovery, retry worker polling, and route-level DB-backed acceptance coverage for auth plus admin review mail triggers now exist; hosted SMTP validation passed on IBM staging on 2026-04-21, while broader notification coverage and final parity QA still remain. |
 | File and document storage abstraction for IBM | `done` | The Rust upload and view flow includes an IBM Cloud Object Storage-compatible adapter and env contract. IBM staging now runs with `DOCUMENT_STORAGE_BACKEND=ibm_cos`, and hosted KYC, load, and execution document upload/view/deny/durability checks passed on 2026-04-15. |
 | Frontend deployment strategy on IBM | `partial` | The Leptos frontend is now hosted as a separate Code Engine app and points at the hosted Rust backend through runtime config; final cutover strategy is still open. |
 | Smoke-test tooling for IBM and PostgreSQL | `done` | Seed SQL, smoke script, IBM env template, deployment guide, and IBM staging checklist exist in `rust-port/scripts` and `rust-port/docs`. Backend route-level DB-backed acceptance tests now also cover auth, admin review, and execution/document lifecycle on PostgreSQL. |
 | Side-by-side PHP vs Rust QA process | `done` | `docs/PHP_RUST_SIDE_BY_SIDE_QA.md` now defines the final operator QA pass, severity model, COS validation gates, and completion criteria for calling the frontend cutover-ready; `docs/PHP_RUST_QA_FINDINGS.md` is the findings log for P0/P1/P2/P3 results. |
 | IBM Code Engine backend deployment assets | `done` | Dockerfile, ignore files, runtime template, deployment guide, and a UBI-based build path now work on Code Engine. |
 | IBM Code Engine staging backend validation | `done` | The hosted staging backend deploys cleanly on Code Engine. The deterministic IBM PostgreSQL smoke dataset was reseeded on 2026-04-15, the full backend smoke pass returned `ok`, and COS-backed document validation passed after a current-source rebuild. |
-| Side-by-side QA run status | `partial` | Automated IBM backend preflight and COS-backed document validation are green, the hosted Rust frontend URL is live, and the core PHP role logins are verified in `docs/PHP_RUST_QA_FINDINGS.md`; manual browser-based lifecycle-state QA remains the open P1 gate. |
+| Side-by-side QA run status | `done` | Automated IBM backend preflight, the hosted backend cutover bundle, COS-backed document validation, manual browser QA, and hosted PHP plus Rust lifecycle-state verification are all closed in `docs/PHP_RUST_QA_FINDINGS.md`. No open P1 blockers remain in the staging cutover log. |
 
 ## Legacy Surface Still To Replace
 
@@ -65,16 +65,19 @@ It should be updated after every major implementation milestone so the repo itse
 
 ## Current Remaining High-Value Work
 
-1. Run manual browser-based PHP vs Rust side-by-side QA with real operator roles and fix every P0/P1 finding.
-2. Deepen tracking and execution parity only where side-by-side QA finds real gaps.
-3. Keep IBM COS-backed document validation green during future deploys.
-4. Finalize frontend hosting and cutover on IBM.
-5. Finish the remaining hosted acceptance gates before retiring Laravel, especially SMTP, Stripe transfer release, TMS workers, and final side-by-side backend QA.
-6. Finish the remaining execution/map polish plus the last closeout/collections operator edge cases that still depend on Blade behavior after the new tracking-session summaries and inline guidance checklist.
-7. Finish the remaining admin load-profile and admin user-management edge polish that still carries Blade-era behavior after the new per-leg finance controls, confirm flow, in-place review shortcuts, and readiness-gap guidance.
-8. Finalize frontend hosting and broader acceptance coverage for cutover confidence.
-9. Run the side-by-side PHP vs Rust QA checklist and fix all P0/P1 findings before declaring frontend parity complete.
-10. Harden outbound email with provider-specific staging credentials and broader notification coverage now that the durable retry outbox exists.
+1. Decide which remaining PHP-vs-Rust UI differences are accepted improvements versus parity work still worth doing.
+2. Deepen tracking, execution, admin-load, and dispatch-desk polish only where operators still feel the Rust flow is weaker than PHP.
+3. Keep IBM COS-backed document validation, Stripe release validation, SMTP validation, and TMS worker validation green during future deploys.
+4. Finalize the production cutover plan on IBM now that the staged backend and QA gates are closed.
+5. Expand broader acceptance coverage only if you want stronger pre-cutover confidence than the current verified staging pass.
+
+### 2026-04-24 - Hosted Backend Bundle Reverified
+
+- Rebuilt and redeployed the current Rust backend source to IBM Code Engine as revision `stloads-rust-backend-00020`.
+- Verified the current backend source still passes `cargo check -p backend` and `cargo test -p backend` locally before the hosted rerun.
+- Hardened `scripts/verify_rust_role_matrix.ps1` so it now refreshes the disposable lifecycle-state QA accounts before validating them and sends a browser-style `Accept: text/html` header when checking frontend routes behind the IBM frontend proxy.
+- Reran `scripts/verify_backend_cutover_hosted.ps1` successfully on IBM staging; smoke, role matrix, SMTP, TMS worker, and Stripe release checks all returned `ok`.
+- Confirmed the latest hosted Stripe release rerun returned transfer `tr_3TPUIpLZLVGhpopD0YPIQ4Zr`, keeping the backend-only cutover gate closed after the fresh redeploy.
 
 ## Major Updates
 
@@ -389,9 +392,31 @@ It should be updated after every major implementation milestone so the repo itse
 ### 2026-04-21 - Hosted TMS Worker Validation
 
 - Added `scripts/verify_tms_workers_hosted.ps1` so IBM staging can validate the retry and reconciliation workers against the hosted backend plus IBM PostgreSQL without depending on a local `psql` install.
-- Proved the hosted retry worker with queued handoff `#9639`, which the worker republished as load `#9341`.
-- Proved the remaining hosted reconciliation gap is real instead of theoretical: cancelled-drift handoff `#9640` stayed `published` during the validation window and no `rust_tms_reconciliation_worker` reconciliation row appeared for it.
-- Narrowed the next backend hardening step to Code Engine reconciliation interval inspection or tuning plus a rerun of the hosted worker validator.
+- Hardened the hosted validator with a `hostaddr` PostgreSQL fallback so Docker-based `psql` checks stay stable even when container DNS is flaky.
+- Tuned IBM staging to use the current Rust backend revision with `TMS_RETRY_INTERVAL_SECONDS=60`, `TMS_RECONCILIATION_INTERVAL_SECONDS=60` which clamps to the Rust minimum of `300`, and `RUN_MIGRATIONS=false`.
+- Proved the hosted retry worker with queued handoff `#9641`, which the worker republished as load `#9343`.
+- Proved the hosted reconciliation worker with cancelled-drift handoff `#9642`, which auto-withdrew and wrote `auto_withdraw` into `stloads_reconciliation_log` with `triggered_by=rust_tms_reconciliation_worker`.
+
+### 2026-04-21 - Hosted SMTP Validation
+
+- Added `scripts/verify_smtp_hosted.ps1` so IBM staging can validate a real registration OTP mail flow through the hosted backend plus IBM PostgreSQL outbox state.
+- Copied the live PHP SMTP provider settings into the Code Engine runtime secret, switched staging to `MAIL_MAILER=smtp` with `MAIL_FAIL_OPEN=false`, and redeployed the current Rust backend as revision `stloads-rust-backend-00016`.
+- Fixed the Rust SMTP transport to treat `MAIL_ENCRYPTION=tls` on port `587` as STARTTLS instead of implicit TLS, matching Laravel or SendGrid behavior and removing the prior `InvalidContentType` TLS failure.
+- Verified the hosted registration OTP flow returned `Email notification sent.`, and the matching `email_outbox` row settled in `status=sent` on the first delivery attempt.
+
+### 2026-04-21 - Hosted Stripe Release Verification Closed
+
+- Hardened the Rust payments route so stale stored Stripe Connect account ids are automatically replaced with a fresh Express account when Stripe responds with `No such account`.
+- Verified on IBM staging that the hosted Stripe flow creates a fresh Express account, returns an onboarding link, creates a live test PaymentIntent, confirms it, and applies the signed `payment_intent.succeeded` webhook successfully.
+- Completed Stripe-hosted onboarding for the staging carrier account and reran `scripts/verify_stripe_hosted.ps1` end to end.
+- Confirmed transfer release now succeeds on IBM staging, with Stripe transfer `tr_3TOhX4LZLVGhpopD1igiLh76` returned by the hosted Rust release route.
+
+### 2026-04-22 - Hosted Backend Cutover Bundle Closed
+
+- Added `scripts/verify_backend_cutover_hosted.ps1` to run the full backend-only hosted cutover bundle from one entry point.
+- Hardened `verify_smtp_hosted.ps1` and `verify_tms_workers_hosted.ps1` to prefer local `psql` when available, fall back to Docker only when needed, and use explicit PostgreSQL conninfo with `hostaddr` so staging validation is not blocked by Docker Desktop or DNS flakiness.
+- Hardened `verify_tms_workers_hosted.ps1` to accept a retry worker that publishes the queued handoff before the first DB poll and fixed the load soft-delete timestamp query.
+- Verified on IBM staging that the aggregate hosted bundle reseeds the smoke dataset, reruns `smoke_test_backend.ps1`, `verify_rust_role_matrix.ps1`, `verify_smtp_hosted.ps1`, `verify_tms_workers_hosted.ps1`, and `verify_stripe_hosted.ps1`, restores the known onboarded staging carrier Stripe account after reseed, and finishes with `result = ok`.
 
 ### 2026-04-16 - Master Data CRUD Parity
 

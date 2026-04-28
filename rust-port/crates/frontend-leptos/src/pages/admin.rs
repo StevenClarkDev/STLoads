@@ -11,16 +11,6 @@ use crate::{
 
 use super::admin_guard_view;
 
-fn tone_style(tone: &str) -> &'static str {
-    match tone {
-        "success" => "background:#e8fff3;padding:0.25rem 0.6rem;border-radius:999px;color:#0f766e;",
-        "secondary" => {
-            "background:#f1f5f9;padding:0.25rem 0.6rem;border-radius:999px;color:#475569;"
-        }
-        _ => "background:#e0f2fe;padding:0.25rem 0.6rem;border-radius:999px;color:#0369a1;",
-    }
-}
-
 #[component]
 pub fn AdminDashboardPage() -> impl IntoView {
     let auth = use_auth();
@@ -138,72 +128,129 @@ pub fn AdminDashboardPage() -> impl IntoView {
             ) {
                 guard
             } else {
-                view! {
-                    <article style="display:grid;gap:1.25rem;">
-                        <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                            <div>
-                                <h2>"Admin Dashboard"</h2>
-                                <p>
-                                    "This dashboard now loads its route inventory from the Rust backend and refreshes only for admin-scoped realtime events."
-                                </p>
-                            </div>
-                            <span style=tone_style(if ws_connected.get() { "success" } else { "secondary" })>
-                                {move || if ws_connected.get() { "Realtime connected" } else { "Realtime reconnecting" }}
-                            </span>
-                        </section>
+                let route_count = overview.get().as_ref().map(|data| data.screen_routes.len()).unwrap_or(0);
+                let operational_views = overview.get().as_ref().map(|data| data.operational_views).unwrap_or(0);
+                let user_total = overview.get().as_ref().map(|data| data.user_total).unwrap_or(0);
+                let shipper_total = overview.get().as_ref().map(|data| data.shipper_total).unwrap_or(0);
+                let carrier_total = overview.get().as_ref().map(|data| data.carrier_total).unwrap_or(0);
+                let broker_total = overview.get().as_ref().map(|data| data.broker_total).unwrap_or(0);
+                let freight_forwarder_total = overview.get().as_ref().map(|data| data.freight_forwarder_total).unwrap_or(0);
+                let admin_total = overview.get().as_ref().map(|data| data.admin_total).unwrap_or(0);
 
-                        {move || action_message.get().map(|message| view! {
-                            <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">
-                                {message}
-                            </section>
-                        })}
+                view! {
+                    <article class="php-grid">
+                        <section class="php-page-title">
+                            <div>
+                                <h4>"Admin Dashboard"</h4>
+                                <p>"Overview"</p>
+                            </div>
+                            <ol class="php-breadcrumb">
+                                <li><i class="fas fa-home"></i></li>
+                                <li>"Admin"</li>
+                                <li><strong>"Overview"</strong></li>
+                            </ol>
+                        </section>
 
                         {move || error_message.get().map(|message| view! {
-                            <section style="padding:0.85rem 1rem;border:1px solid #fecaca;border-radius:0.9rem;background:#fff1f2;color:#be123c;">
-                                {message}
-                            </section>
+                            <section class="auth-notice" style="border-color:#fecaca;background:#fff1f2;color:#be123c;">{message}</section>
                         })}
 
-                        <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;">
-                            {move || {
-                                if is_loading.get() && overview.get().is_none() {
-                                    view! {
-                                        <div style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;">
-                                            "Loading admin route inventory from the Rust backend..."
-                                        </div>
-                                    }
-                                    .into_any()
-                                } else {
-                                    overview
-                                        .get()
-                                        .map(|data| {
-                                            data.screen_routes
-                                                .into_iter()
-                                                .map(render_admin_card)
-                                                .collect_view()
-                                                .into_any()
-                                        })
-                                        .unwrap_or_else(|| view! {
-                                            <div style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;">
-                                                "No admin route inventory is available yet."
-                                            </div>
-                                        }
-                                        .into_any())
-                                }
-                            }}
+                        <section class="php-grid columns-3">
+                            <div class="php-card php-widget-card">
+                                <div class="php-card-body">
+                                    <span class="label">"User Accounts"</span>
+                                    <span class="value">{move || user_total.to_string()}</span>
+                                    <span class="sub">"Admin-visible accounts across shipper, carrier, broker, freight forwarder, and admin roles"</span>
+                                    <div class="icon php-icon-primary"><i class="fas fa-users"></i></div>
+                                </div>
+                            </div>
+                            <div class="php-card php-widget-card">
+                                <div class="php-card-body">
+                                    <span class="label">"Dashboard Routes"</span>
+                                    <span class="value">{move || route_count.to_string()}</span>
+                                    <span class="sub">"Backend-discovered admin routes"</span>
+                                    <div class="icon php-icon-warning"><i class="fas fa-route"></i></div>
+                                </div>
+                            </div>
+                            <div class="php-card php-widget-card">
+                                <div class="php-card-body">
+                                    <span class="label">"Realtime"</span>
+                                    <span class="value">{move || if ws_connected.get() { "Live" } else { "Retry" }}</span>
+                                    <span class="sub">"Admin-scoped event channel state"</span>
+                                    <div class="icon php-icon-success"><i class="fas fa-signal"></i></div>
+                                </div>
+                            </div>
                         </section>
 
-                        <section style="display:grid;gap:0.5rem;">
-                            {move || overview.get().map(|data| view! {
-                                <>
-                                    <strong>{format!("{} operational views are currently wired through the Rust admin surface.", data.operational_views)}</strong>
-                                    {data
-                                        .notes
-                                        .into_iter()
-                                        .map(|note| view! { <p style="margin:0;">{note}</p> })
-                                        .collect_view()}
-                                </>
-                            })}
+                        <section class="php-grid columns-3">
+                            <div class="php-card">
+                                <div class="php-card-body">
+                                    <h5 style="margin:0 0 1rem;">"Role Breakdown"</h5>
+                                    <div class="php-grid columns-2" style="gap:0.75rem;">
+                                        <div class="dashboard-card">
+                                            <span class="status-pill warning">"Shipper"</span>
+                                            <strong class="dashboard-card-title">{move || shipper_total.to_string()}</strong>
+                                            <p class="dashboard-card-copy">"Shipper accounts visible to admin"</p>
+                                        </div>
+                                        <div class="dashboard-card">
+                                            <span class="status-pill warning">"Carrier"</span>
+                                            <strong class="dashboard-card-title">{move || carrier_total.to_string()}</strong>
+                                            <p class="dashboard-card-copy">"Carrier accounts visible to admin"</p>
+                                        </div>
+                                        <div class="dashboard-card">
+                                            <span class="status-pill warning">"Broker"</span>
+                                            <strong class="dashboard-card-title">{move || broker_total.to_string()}</strong>
+                                            <p class="dashboard-card-copy">"Broker accounts visible to admin"</p>
+                                        </div>
+                                        <div class="dashboard-card">
+                                            <span class="status-pill warning">"Freight Forwarder"</span>
+                                            <strong class="dashboard-card-title">{move || freight_forwarder_total.to_string()}</strong>
+                                            <p class="dashboard-card-copy">"Forwarder accounts visible to admin"</p>
+                                        </div>
+                                        <div class="dashboard-card">
+                                            <span class="status-pill warning">"Admin"</span>
+                                            <strong class="dashboard-card-title">{move || admin_total.to_string()}</strong>
+                                            <p class="dashboard-card-copy">"Admin accounts in the current Rust directory"</p>
+                                        </div>
+                                        <div class="dashboard-card">
+                                            <span class="status-pill warning">"Ops Surfaces"</span>
+                                            <strong class="dashboard-card-title">{move || operational_views.to_string()}</strong>
+                                            <p class="dashboard-card-copy">"Operational workspaces currently wired through Rust admin"</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="php-grid columns-2">
+                            <div class="php-card">
+                                <div class="php-card-body">
+                                    <h5 style="margin:0 0 1rem;">"Admin Workspaces"</h5>
+                                    {move || {
+                                        if is_loading.get() && overview.get().is_none() {
+                                            view! { <p style="margin:0;color:#64748b;">"Loading admin route inventory from the Rust backend..."</p> }.into_any()
+                                        } else {
+                                            overview
+                                                .get()
+                                                .map(|data| {
+                                                    view! {
+                                                        <div class="php-grid">
+                                                            {data.screen_routes
+                                                                .into_iter()
+                                                                .map(render_admin_card)
+                                                                .collect_view()}
+                                                        </div>
+                                                    }
+                                                        .into_any()
+                                                })
+                                                .unwrap_or_else(|| view! {
+                                                    <p style="margin:0;color:#64748b;">"No admin route inventory is available yet."</p>
+                                                }
+                                                .into_any())
+                                        }
+                                    }}
+                                </div>
+                            </div>
                         </section>
                     </article>
                 }
@@ -221,18 +268,18 @@ fn render_admin_card(route: String) -> impl IntoView {
         ),
         "/admin/loads" => (
             "Admin Loads",
-            "Approval-stage, active, completed, and release-ready load oversight",
+            "Approval-stage, active, completed, and release-ready oversight",
         ),
         "/admin/roles/permissions" | "/admin/roles" => (
             "Roles & Permissions",
-            "Database-backed role permission matrix for live Rust sessions",
+            "Database-backed role permission matrix for live sessions",
         ),
         "/admin/stloads/operations" => (
             "STLOADS Operations",
             "Publish queue, alerts, and handoff table",
         ),
         "/admin/stloads/reconciliation" => (
-            "Reconciliation Desk",
+            "Reconciliation",
             "Mismatch counts, sync errors, and audit trail",
         ),
         "/admin/payments" => ("Escrow Operations", "Funding and payout readiness"),
@@ -247,9 +294,10 @@ fn render_admin_card(route: String) -> impl IntoView {
     };
 
     view! {
-        <A href=route attr:style="display:block;padding:1rem;border:1px solid #d6d3d1;border-radius:1rem;text-decoration:none;color:inherit;background:#fcfcfb;">
-            <strong>{label}</strong>
-            <p style="margin:0.5rem 0 0;">{detail}</p>
+        <A href=route attr:class="dashboard-card">
+            <span class="status-pill warning">"Admin"</span>
+            <strong class="dashboard-card-title">{label}</strong>
+            <p class="dashboard-card-copy">{detail}</p>
         </A>
     }
 }

@@ -452,7 +452,6 @@ pub fn EscrowOperationsPage() -> impl IntoView {
                         <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
                             <div>
                                 <h2>"Escrow Operations"</h2>
-                                <p>"This screen now loads payment lifecycle metadata from the Rust backend and gives ops direct controls for escrow and Stripe webhook mutations."</p>
                             </div>
                             <div style="display:grid;gap:0.45rem;justify-items:end;">
                                 <A href="/admin/stloads">"Open STLOADS operations"</A>
@@ -461,7 +460,7 @@ pub fn EscrowOperationsPage() -> impl IntoView {
                         </section>
 
                         {move || {
-                            let (prefill_leg_id, prefill_action, prefill_source, prefill_load_id) =
+                            let (prefill_leg_id, prefill_action, _prefill_source, _prefill_load_id) =
                                 prefill_context.get();
                             let has_prefill = prefill_leg_id
                                 .as_deref()
@@ -470,48 +469,14 @@ pub fn EscrowOperationsPage() -> impl IntoView {
                                 || !prefill_action.trim().is_empty();
 
                             has_prefill.then(|| {
-                                let source_label = match prefill_source.as_str() {
-                                    "admin-load-profile" => "the admin load profile",
-                                    "admin-loads" => "the admin loads board",
-                                    other if !other.is_empty() => other,
-                                    _ => "an admin shortcut",
-                                };
-                                let action_label = if prefill_action == "release" {
-                                    "release"
-                                } else if prefill_action.trim().is_empty() {
-                                    "follow up on"
-                                } else {
-                                    prefill_action.as_str()
-                                };
-                                let load_fragment = prefill_load_id
-                                    .map(|value| format!(" for load #{}", value))
-                                    .unwrap_or_default();
-                                view! {
-                                    <section style="padding:0.85rem 1rem;border:1px solid #dcfce7;border-radius:0.9rem;background:#f0fdf4;color:#166534;">
-                                        {format!(
-                                            "This console was opened from {}{} to {} leg #{}.",
-                                            source_label,
-                                            load_fragment,
-                                            action_label,
-                                            prefill_leg_id.unwrap_or_else(|| "unknown".into())
-                                        )}
-                                    </section>
-                                }
+                                view! { <></> }
                             })
                         }}
-
-                        {move || action_message.get().map(|message| view! { <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">{message}</section> })}
                         {move || error_message.get().map(|message| view! { <section style="padding:0.85rem 1rem;border:1px solid #fecaca;border-radius:0.9rem;background:#fff1f2;color:#be123c;">{message}</section> })}
 
-                        <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;">
-                            <div style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;"><strong>"Escrow statuses"</strong><div style="font-size:1.3rem;">{move || overview.get().map(|value| value.escrow_statuses.to_string()).unwrap_or_else(|| "-".into())}</div></div>
-                            <div style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;"><strong>"Webhook events"</strong><div style="font-size:1.3rem;">{move || overview.get().map(|value| value.webhook_events.to_string()).unwrap_or_else(|| "-".into())}</div></div>
-                            <div style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;"><strong>"Contract loaded"</strong><div>{move || if overview.get().is_some() { "Yes" } else { "Loading" }}</div></div>
-                        </section>
-
-                        <section style="display:grid;grid-template-columns:minmax(320px,420px) minmax(0,1fr);gap:1rem;align-items:start;">
+                        <section style="display:grid;grid-template-columns:minmax(320px,420px);gap:1rem;align-items:start;">
                             <div style="border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#fcfcfb;display:grid;gap:0.75rem;">
-                                <strong>"Payments operator console"</strong>
+                                <strong>"Payments"</strong>
                                 <label style="display:grid;gap:0.35rem;"><span>"Leg ID"</span><input prop:value=move || leg_id.get() on:input=move |ev| leg_id.set(event_target_value(&ev)) style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
                                 <label style="display:grid;gap:0.35rem;"><span>"Amount (cents)"</span><input prop:value=move || amount_cents.get() on:input=move |ev| amount_cents.set(event_target_value(&ev)) placeholder="245000" style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
                                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
@@ -526,6 +491,11 @@ pub fn EscrowOperationsPage() -> impl IntoView {
                                     <button type="button" on:click=hold_escrow disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #d97706;border-radius:0.85rem;background:#fff7ed;color:#b45309;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("hold") { "Holding..." } else { "Hold" }}</button>
                                     <button type="button" on:click=release_escrow disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #0f766e;border-radius:0.85rem;background:#ecfdf5;color:#0f766e;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("release") { "Releasing..." } else { "Release" }}</button>
                                 </div>
+                                {move || action_message.get().map(|message| view! {
+                                    <section style="padding:0.75rem 0.9rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">
+                                        {message}
+                                    </section>
+                                })}
                                 <hr style="border:none;border-top:1px solid #e5e7eb;width:100%;" />
                                 <strong>"Stripe webhook simulator"</strong>
                                 <label style="display:grid;gap:0.35rem;"><span>"Event type"</span><input prop:value=move || webhook_event_type.get() on:input=move |ev| webhook_event_type.set(event_target_value(&ev)) style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
@@ -535,17 +505,6 @@ pub fn EscrowOperationsPage() -> impl IntoView {
                                 </div>
                                 <label style="display:grid;gap:0.35rem;"><span>"KYC status"</span><input prop:value=move || kyc_status.get() on:input=move |ev| kyc_status.set(event_target_value(&ev)) placeholder="verified" style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
                                 <button type="button" on:click=trigger_webhook disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:none;border-radius:0.85rem;background:#0f172a;color:white;cursor:pointer;justify-self:start;">{move || if pending_action.get().as_deref() == Some("webhook") { "Sending..." } else { "Send webhook" }}</button>
-                            </div>
-
-                            <div style="display:grid;gap:1rem;">
-                                <div style="border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;">
-                                    <strong>"Escrow lifecycle"</strong>
-                                    {move || if is_loading.get() && statuses.get().is_empty() { view! { <p style="margin:0;">"Loading escrow status definitions from the Rust backend..."</p> }.into_any() } else { statuses.get().into_iter().map(|status| view! { <div style="padding:0.85rem;border:1px solid #e5e7eb;border-radius:0.9rem;display:grid;gap:0.35rem;"><div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;flex-wrap:wrap;"><strong>{status.label}</strong><span style=tone_style("info")>{status.legacy_label}</span></div><small>{status.description}</small></div> }).collect_view().into_any() }}
-                                </div>
-                                <div style="border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;">
-                                    <strong>"Stripe webhook surface"</strong>
-                                    {move || if is_loading.get() && webhooks.get().is_empty() { view! { <p style="margin:0;">"Loading Stripe webhook descriptors from the Rust backend..."</p> }.into_any() } else { webhooks.get().into_iter().map(|webhook| view! { <div style="padding:0.85rem;border:1px solid #e5e7eb;border-radius:0.9rem;display:grid;gap:0.35rem;"><div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;flex-wrap:wrap;"><strong>{webhook.legacy_label}</strong><span style=tone_style("warning")>{format!("{} updates", webhook.updates.len())}</span></div><small>{webhook.notes}</small><code>{webhook.updates.join(", ")}</code></div> }).collect_view().into_any() }}
-                                </div>
                             </div>
                         </section>
                     </article>

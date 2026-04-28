@@ -66,7 +66,6 @@ pub fn AdminChangePasswordPage() -> impl IntoView {
                     <article style="display:grid;gap:1rem;max-width:48rem;">
                         <section style="display:grid;gap:0.35rem;">
                             <h2>"Change Password"</h2>
-                            <p>"This Rust admin security screen replaces the old standalone Blade password page with the same current-password confirmation flow."</p>
                         </section>
 
                         {move || feedback.get().map(|message| view! {

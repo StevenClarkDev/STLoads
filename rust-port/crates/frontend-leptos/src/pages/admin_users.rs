@@ -13,6 +13,15 @@ use shared::{
 
 use super::admin_guard_view;
 
+fn scroll_to_top_of_page() {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(window) = web_sys::window() {
+            window.scroll_to_with_x_and_y(0.0, 0.0);
+        }
+    }
+}
+
 fn tone_style(tone: &str) -> &'static str {
     match tone {
         "success" => "background:#e8fff3;padding:0.25rem 0.6rem;border-radius:999px;color:#0f766e;",
@@ -181,12 +190,6 @@ pub fn AdminUsersPage() -> impl IntoView {
                             </div>
                         </form>
 
-                        {move || feedback.get().map(|message| view! {
-                            <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;white-space:pre-wrap;">
-                                {message}
-                            </section>
-                        })}
-
                         {move || if profile_loading.get() {
                             view! { <section>"Loading profile..."</section> }.into_any()
                         } else if let Some(profile) = selected_profile.get() {
@@ -218,13 +221,6 @@ pub fn AdminUsersPage() -> impl IntoView {
 
                             view! {
                                 <section style="display:grid;gap:1rem;">
-                                    <strong>{screen_data.summary}</strong>
-                                    {render_admin_user_attention_summary(selected_role.clone(), filtered_users.clone())}
-                                    <section style="padding:0.85rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#fcfcfb;display:grid;gap:0.25rem;">
-                                        <strong>"Queue guidance"</strong>
-                                        <small style="color:#64748b;">{admin_user_role_guidance(&selected_role)}</small>
-                                    </section>
-                                    {screen_data.notes.into_iter().map(|note| view! { <p style="margin:0;">{note}</p> }).collect_view()}
                                     {filtered_users.into_iter().map(|user| {
                                         let role_options = role_options.clone();
                                         let status_options = status_options.clone();
@@ -250,118 +246,6 @@ pub fn AdminUsersPage() -> impl IntoView {
                 }.into_any()
             }
         }}
-    }
-}
-
-fn render_admin_user_attention_summary(
-    role_filter: String,
-    users: Vec<AdminUserDirectoryUser>,
-) -> impl IntoView {
-    let pending_review = users
-        .iter()
-        .filter(|user| user.status_key == "pending_review")
-        .count();
-    let pending_otp = users
-        .iter()
-        .filter(|user| user.status_key == "pending_otp")
-        .count();
-    let revision_requested = users
-        .iter()
-        .filter(|user| user.status_key == "revision_requested")
-        .count();
-    let doc_gaps = users.iter().filter(|user| user.document_count == 0).count();
-    let approved = users
-        .iter()
-        .filter(|user| user.status_key == "approved")
-        .count();
-
-    let cards = vec![
-        (
-            "Visible accounts",
-            users.len().to_string(),
-            "dark",
-            "Accounts matching the current role filter and search query.",
-        ),
-        (
-            "Pending review",
-            pending_review.to_string(),
-            if pending_review > 0 {
-                "warning"
-            } else {
-                "success"
-            },
-            "Accounts that still need approve, reject, or revision action.",
-        ),
-        (
-            "Pending OTP",
-            pending_otp.to_string(),
-            if pending_otp > 0 { "info" } else { "success" },
-            "Accounts that have not completed OTP verification yet.",
-        ),
-        (
-            "Needs revision",
-            revision_requested.to_string(),
-            if revision_requested > 0 {
-                "warning"
-            } else {
-                "success"
-            },
-            "Profiles that were sent back to the user for updates.",
-        ),
-        (
-            "No KYC docs",
-            doc_gaps.to_string(),
-            if doc_gaps > 0 { "danger" } else { "success" },
-            "Accounts still missing uploaded KYC support files.",
-        ),
-        (
-            "Approved",
-            approved.to_string(),
-            "primary",
-            "Accounts already clear to use the Rust product surface.",
-        ),
-    ];
-
-    view! {
-        <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;">
-            {cards.into_iter().map(|(label, value, tone, note)| {
-                let badge_text = if role_filter == "all" && label == "Visible accounts" {
-                    "all roles".to_string()
-                } else {
-                    tone.replace('_', " ")
-                };
-                view! {
-                    <div style="padding:0.9rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#ffffff;display:grid;gap:0.3rem;">
-                        <div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:center;flex-wrap:wrap;">
-                            <strong>{label}</strong>
-                            <span style=tone_style(tone)>{badge_text}</span>
-                        </div>
-                        <div style="font-size:1.3rem;font-weight:700;color:#111827;">{value}</div>
-                        <small style="color:#64748b;">{note}</small>
-                    </div>
-                }
-            }).collect_view()}
-        </section>
-    }
-}
-
-fn admin_user_role_guidance(role_filter: &str) -> &'static str {
-    match role_filter {
-        "carrier" => {
-            "Carrier accounts usually need DOT, MC, and KYC detail the most. Start with Pending Review and No KYC Docs before approving new carriers."
-        }
-        "shipper" => {
-            "Shipper accounts should be checked for company detail and onboarding completeness first, then moved through approval or revision from the same Rust screen."
-        }
-        "broker" | "freight_forwarder" => {
-            "Broker and freight-forwarder accounts typically need the most careful compliance review. Use the profile panel to inspect facts and KYC before approving."
-        }
-        "admin" => {
-            "Admin accounts deserve the most caution. Confirm status, role, and password-related changes deliberately before saving directory edits."
-        }
-        _ => {
-            "Start with Pending Review and Pending OTP, then work through revision-requested accounts and profiles that still have no KYC uploads."
-        }
     }
 }
 
@@ -645,6 +529,8 @@ fn render_user_card(
     let detail_password = RwSignal::new(String::new());
     let detail_password_confirmation = RwSignal::new(String::new());
     let detail_remarks = RwSignal::new(String::new());
+    let card_notice = RwSignal::new(None::<String>);
+    let account_user_name = user.name.clone();
     let can_run_review = matches!(
         user.status_key.as_str(),
         "pending_review" | "revision_requested"
@@ -661,6 +547,10 @@ fn render_user_card(
     let submit_account = move |ev: SubmitEvent| {
         ev.prevent_default();
         action_loading_user_id.set(Some(user.user_id));
+        card_notice.set(Some(format!(
+            "Saving role or status changes for {} inside the Rust directory...",
+            account_user_name
+        )));
         let payload = AdminUpdateUserRequest {
             role_key: role_value.get(),
             status_key: status_value.get(),
@@ -669,45 +559,16 @@ fn render_user_card(
         spawn_local(async move {
             match api::update_admin_user_account(user.user_id, &payload).await {
                 Ok(response) => {
-                    feedback.set(Some(response.message));
+                    feedback.set(Some(response.message.clone()));
+                    card_notice.set(Some(response.message));
                     if response.success {
                         refresh_nonce.update(|value| *value += 1);
                     }
                 }
-                Err(error) => feedback.set(Some(error)),
-            }
-            action_loading_user_id.set(None);
-        });
-    };
-
-    let save_details = move |ev: SubmitEvent| {
-        ev.prevent_default();
-        action_loading_user_id.set(Some(user.user_id));
-        let payload = AdminUpdateUserProfileRequest {
-            name: detail_name.get(),
-            email: detail_email.get(),
-            password: optional_string(detail_password.get()),
-            password_confirmation: optional_string(detail_password_confirmation.get()),
-            phone_no: optional_string(detail_phone.get()),
-            address: optional_string(detail_address.get()),
-            remarks: optional_string(detail_remarks.get()),
-        };
-        spawn_local(async move {
-            match api::update_admin_user_profile(user.user_id, &payload).await {
-                Ok(response) => {
-                    feedback.set(Some(response.message));
-                    if response.success {
-                        active_edit_user_id.set(None);
-                        refresh_nonce.update(|value| *value += 1);
-                        profile_loading.set(true);
-                        match api::fetch_admin_user_profile(user.user_id).await {
-                            Ok(profile) => selected_profile.set(Some(profile)),
-                            Err(error) => feedback.set(Some(error)),
-                        }
-                        profile_loading.set(false);
-                    }
+                Err(error) => {
+                    feedback.set(Some(error.clone()));
+                    card_notice.set(Some(error));
                 }
-                Err(error) => feedback.set(Some(error)),
             }
             action_loading_user_id.set(None);
         });
@@ -732,13 +593,25 @@ fn render_user_card(
                         on:click=move |_| {
                             action_loading_user_id.set(Some(user.user_id));
                             profile_loading.set(true);
+                            card_notice.set(Some(format!(
+                                "Loading the full profile for {} in the Rust admin directory...",
+                                user.name
+                            )));
                             spawn_local(async move {
                                 match api::fetch_admin_user_profile(user.user_id).await {
                                     Ok(profile) => {
                                         detail_address.set(profile.address.clone().unwrap_or_default());
                                         selected_profile.set(Some(profile));
+                                        scroll_to_top_of_page();
+                                        card_notice.set(Some(
+                                            "Profile opened in the detail panel at the top of the page. The Rust directory keeps review inline instead of routing to a separate screen."
+                                                .into(),
+                                        ));
                                     }
-                                    Err(error) => feedback.set(Some(error)),
+                                    Err(error) => {
+                                        feedback.set(Some(error.clone()));
+                                        card_notice.set(Some(error));
+                                    }
                                 }
                                 action_loading_user_id.set(None);
                                 profile_loading.set(false);
@@ -750,11 +623,20 @@ fn render_user_card(
                     <button type="button" on:click=move |_| {
                         if active_edit_user_id.get() == Some(user.user_id) {
                             active_edit_user_id.set(None);
+                            card_notice.set(Some(
+                                "Edit form closed. Use Edit details again to reopen the inline profile editor."
+                                    .into(),
+                            ));
                         } else {
                             active_edit_user_id.set(Some(user.user_id));
+                            scroll_to_top_of_page();
+                            card_notice.set(Some(
+                                "Edit form opened in this user card. Profile detail review stays in the top panel, while editing stays inline here."
+                                    .into(),
+                            ));
                         }
                     }>
-                        {move || if active_edit_user_id.get() == Some(user.user_id) { "Close edit" } else { "Edit details" }}
+                        {move || if active_edit_user_id.get() == Some(user.user_id) { "Hide edit form" } else { "Edit details" }}
                     </button>
                     {can_resend_otp.then(|| view! {
                         <button
@@ -865,6 +747,12 @@ fn render_user_card(
                 </div>
             </section>
 
+            {move || card_notice.get().map(|message| view! {
+                <section style="padding:0.8rem 0.95rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">
+                    {message}
+                </section>
+            })}
+
             {can_run_review.then(|| view! {
                 <section style="display:grid;gap:0.55rem;padding-top:0.75rem;border-top:1px solid #e7e5e4;">
                     <strong>"Review shortcuts"</strong>
@@ -947,8 +835,49 @@ fn render_user_card(
 
             {move || if active_edit_user_id.get() == Some(user.user_id) {
                 view! {
-                    <form on:submit=save_details style="display:grid;gap:0.75rem;padding-top:0.75rem;border-top:1px solid #e7e5e4;">
+                    <form on:submit=move |ev: SubmitEvent| {
+                        ev.prevent_default();
+                        action_loading_user_id.set(Some(user.user_id));
+                        card_notice.set(Some(
+                            "Saving profile details from the inline Rust edit form...".into(),
+                        ));
+                        let payload = AdminUpdateUserProfileRequest {
+                            name: detail_name.get(),
+                            email: detail_email.get(),
+                            password: optional_string(detail_password.get()),
+                            password_confirmation: optional_string(detail_password_confirmation.get()),
+                            phone_no: optional_string(detail_phone.get()),
+                            address: optional_string(detail_address.get()),
+                            remarks: optional_string(detail_remarks.get()),
+                        };
+                        spawn_local(async move {
+                            match api::update_admin_user_profile(user.user_id, &payload).await {
+                                Ok(response) => {
+                                    feedback.set(Some(response.message.clone()));
+                                    card_notice.set(Some(response.message));
+                                    if response.success {
+                                        active_edit_user_id.set(None);
+                                        refresh_nonce.update(|value| *value += 1);
+                                        profile_loading.set(true);
+                                        match api::fetch_admin_user_profile(user.user_id).await {
+                                            Ok(profile) => selected_profile.set(Some(profile)),
+                                            Err(error) => feedback.set(Some(error)),
+                                        }
+                                        profile_loading.set(false);
+                                    }
+                                }
+                                Err(error) => {
+                                    feedback.set(Some(error.clone()));
+                                    card_notice.set(Some(error));
+                                }
+                            }
+                            action_loading_user_id.set(None);
+                        });
+                    } style="display:grid;gap:0.75rem;padding:0.95rem 1rem;border:1px solid #bfdbfe;border-radius:1rem;background:#f8fbff;">
                         <strong>"Profile details"</strong>
+                        <small style="color:#475569;">
+                            "The inline editor opens below the user card. Save profile keeps you on this page and refreshes the selected profile panel."
+                        </small>
                         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem;">
                             <input type="text" placeholder="Name" prop:value=move || detail_name.get() on:input=move |ev| detail_name.set(event_target_value(&ev)) />
                             <input type="email" placeholder="Email" prop:value=move || detail_email.get() on:input=move |ev| detail_email.set(event_target_value(&ev)) />
@@ -995,7 +924,7 @@ fn render_profile_panel(
         "pending_review" | "revision_requested"
     );
     let can_resend_otp = profile.status_key == "pending_otp";
-    let action_plan = admin_profile_action_plan(
+    let _action_plan = admin_profile_action_plan(
         &profile.role_key,
         &profile.status_key,
         &readiness_items,
@@ -1011,72 +940,42 @@ fn render_profile_panel(
                 <p style="margin:0.2rem 0;">{format!("{} | {} | Joined {}", profile.email, profile.role_label, profile.joined_at_label)}</p>
                 <small>{profile.status_label.clone()}</small>
             </div>
-            <section style="padding:0.85rem 1rem;border:1px solid #e7e5e4;border-radius:0.9rem;background:#ffffff;display:grid;gap:0.35rem;">
-                <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                    <strong>"Account next step"</strong>
-                    <span style=tone_style(admin_status_tone(&profile.status_key))>{profile.status_label.clone()}</span>
-                </div>
-                <small style="color:#64748b;">{admin_profile_next_step(&profile.status_key)}</small>
-            </section>
-            {(!readiness_items.is_empty()).then(|| view! {
-                <section style="display:grid;gap:0.55rem;padding:0.85rem 1rem;border:1px solid #fde68a;border-radius:0.9rem;background:#fffbeb;">
-                    <strong>"Readiness gaps"</strong>
-                    <small style="color:#92400e;">"These are the account details that still look incomplete from the Rust admin profile."</small>
-                    <ul style="margin:0;padding-left:1.1rem;display:grid;gap:0.3rem;color:#92400e;">
-                        {readiness_items.into_iter().map(|item| view! { <li>{item}</li> }).collect_view()}
-                    </ul>
-                </section>
-            })}
             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;">
                 <div style="padding:0.85rem 0.95rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#ffffff;display:grid;gap:0.2rem;">
                     <strong>"Personal facts"</strong>
                     <span style=tone_style(if personal_facts.is_empty() { "warning" } else { "success" })>{personal_facts.len().to_string()}</span>
-                    <small style="color:#64748b;">"Visible personal profile entries."</small>
                 </div>
                 <div style="padding:0.85rem 0.95rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#ffffff;display:grid;gap:0.2rem;">
                     <strong>"Company facts"</strong>
                     <span style=tone_style(if company_facts.is_empty() && profile.role_key != "admin" { "warning" } else { "success" })>{company_facts.len().to_string()}</span>
-                    <small style="color:#64748b;">"Business and compliance fields visible here."</small>
                 </div>
                 <div style="padding:0.85rem 0.95rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#ffffff;display:grid;gap:0.2rem;">
                     <strong>"KYC docs"</strong>
                     <span style=tone_style(if documents.is_empty() { "danger" } else { "success" })>{documents.len().to_string()}</span>
-                    <small style="color:#64748b;">"Protected documents available to admin review."</small>
                 </div>
                 <div style="padding:0.85rem 0.95rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#ffffff;display:grid;gap:0.2rem;">
                     <strong>"History entries"</strong>
                     <span style=tone_style(if history_count == 0 { "warning" } else { "dark" })>{history_count.to_string()}</span>
-                    <small style="color:#64748b;">"Recorded lifecycle and admin changes for this account."</small>
                 </div>
             </section>
-            <section style="display:grid;gap:0.55rem;padding:0.85rem 1rem;border:1px solid #e7e5e4;border-radius:0.9rem;background:#ffffff;">
-                <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                    <strong>"Admin action plan"</strong>
-                    <span style=tone_style(admin_status_tone(&profile.status_key))>{profile.role_label.clone()}</span>
-                </div>
-                <ul style="margin:0;padding-left:1.1rem;display:grid;gap:0.3rem;color:#475569;">
-                    {action_plan.into_iter().map(|item| view! { <li>{item}</li> }).collect_view()}
-                </ul>
-                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                    {matches!(profile.status_key.as_str(), "pending_otp" | "pending_review" | "revision_requested" | "rejected").then(|| view! {
-                        <A href="/admin/account-lifecycle" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#eff6ff;color:#1d4ed8;text-decoration:none;">
-                            "Lifecycle workspace"
-                        </A>
-                    })}
-                    {can_run_review.then(|| view! {
-                        <A href="/admin/onboarding-reviews" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
-                            "Review queue"
-                        </A>
-                    })}
-                    <A href=format!("/admin/users/role/{}", profile.role_key) attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#f8fafc;color:#0f172a;text-decoration:none;">
-                        "Role page"
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                {matches!(profile.status_key.as_str(), "pending_otp" | "pending_review" | "revision_requested" | "rejected").then(|| view! {
+                    <A href="/admin/account-lifecycle" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#eff6ff;color:#1d4ed8;text-decoration:none;">
+                        "Lifecycle workspace"
                     </A>
-                </div>
-            </section>
+                })}
+                {can_run_review.then(|| view! {
+                    <A href="/admin/onboarding-reviews" attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
+                        "Review queue"
+                    </A>
+                })}
+                <A href=format!("/admin/users/role/{}", profile.role_key) attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#f8fafc;color:#0f172a;text-decoration:none;">
+                    "Role page"
+                </A>
+            </div>
             {can_run_review.then(|| view! {
                 <section style="display:grid;gap:0.55rem;padding:0.85rem 1rem;border:1px solid #e7e5e4;border-radius:0.9rem;background:#ffffff;">
                     <strong>"Review account"</strong>
-                    <small style="color:#64748b;">"The selected user is still in an onboarding review state. These shortcuts mirror the dedicated review queue without leaving this profile."</small>
                     <textarea
                         rows="2"
                         placeholder="Review note"

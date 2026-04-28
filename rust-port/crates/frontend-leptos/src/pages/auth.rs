@@ -1,5 +1,8 @@
 use leptos::{ev, prelude::*, task::spawn_local};
-use leptos_router::{components::A, hooks::use_navigate};
+use leptos_router::{
+    components::A,
+    hooks::{use_navigate, use_query_map},
+};
 
 use crate::{
     api, document_upload,
@@ -11,12 +14,104 @@ use shared::{
 };
 
 #[component]
+pub fn PortalLandingPage() -> impl IntoView {
+    view! {
+        <section class="portal-home">
+            <div class="portal-topbar">
+                <img
+                    class="portal-logo"
+                    src="https://portal.stloads.com/assets/images/stloads/logo-bg_none-small.png"
+                    alt="LoadBoard Logo"
+                />
+                <nav class="portal-nav">
+                    <A href="/" attr:class="portal-nav-link is-active">"Home"</A>
+                    <A href="https://stloads.com/about-us" attr:class="portal-nav-link">"About"</A>
+                    <A href="https://stloads.com/services" attr:class="portal-nav-link">"Services"</A>
+                    <A href="https://stloads.com/contact-us" attr:class="portal-nav-link">"Contact"</A>
+                    <A href="/auth/login?portal=admin" attr:class="portal-nav-link portal-admin-link">"Admin Portal"</A>
+                </nav>
+            </div>
+
+            <div class="portal-heading">
+                <h2 class="portal-title">"Welcome to LoadBoard - Where Smart Logistics Begin."</h2>
+                <h5 class="portal-subtitle">"Select your role"</h5>
+                <p class="portal-description">"To start your project we need to customize your preferences."</p>
+            </div>
+
+            <section class="portal-role-grid">
+                <RoleSignupCard
+                    href="/auth/register?role=shipper"
+                    icon_class="fas fa-boxes"
+                    title="Shipper"
+                    role_count="Count 7"
+                    description="Get your shipper account set up"
+                />
+                <RoleSignupCard
+                    href="/auth/register?role=carrier"
+                    icon_class="fas fa-truck-fast"
+                    title="Carrier"
+                    role_count="Count 4"
+                    description="Start carrier signup"
+                />
+                <RoleSignupCard
+                    href="/auth/register?role=broker"
+                    icon_class="fas fa-handshake-angle"
+                    title="Broker"
+                    role_count="Count 5"
+                    description="Start broker signup"
+                />
+                <RoleSignupCard
+                    href="/auth/register?role=freight_forwarder"
+                    icon_class="fas fa-ship"
+                    title="Freight Forwarder"
+                    role_count="Count 3"
+                    description="Start forwarder signup"
+                />
+            </section>
+        </section>
+    }
+}
+
+#[component]
 pub fn LoginPage() -> impl IntoView {
     let navigate = use_navigate();
+    let query = use_query_map();
     let auth = use_auth();
     let email = RwSignal::new(String::new());
     let password = RwSignal::new(String::new());
     let is_submitting = RwSignal::new(false);
+    let is_admin_portal = Memo::new(move |_| {
+        query.with(|params| {
+            params
+                .get("portal")
+                .map(|value| value == "admin")
+                .unwrap_or(false)
+        })
+    });
+    let title = Signal::derive(move || {
+        if is_admin_portal.get() {
+            "Admin Portal Login".to_string()
+        } else {
+            "Welcome back".to_string()
+        }
+    });
+    let subtitle = Signal::derive(move || {
+        if is_admin_portal.get() {
+            "Use the separate admin access lane for operations, onboarding review, and internal control screens.".to_string()
+        } else {
+            "Sign in to continue from the public portal into your dashboard, onboarding flow, and account workspace.".to_string()
+        }
+    });
+
+    Effect::new(move |_| {
+        query.with(|params| {
+            if email.get_untracked().is_empty() {
+                if let Some(prefill) = params.get("email") {
+                    email.set(prefill.clone());
+                }
+            }
+        });
+    });
 
     let on_submit = move |ev: ev::SubmitEvent| {
         let navigate = navigate.clone();
@@ -62,27 +157,20 @@ pub fn LoginPage() -> impl IntoView {
 
     view! {
         <AuthArticle
-            title="Rust Login"
-            subtitle="The Rust session context is now shared across the app shell, load board, chat, and admin screens."
+            title=title
+            subtitle=subtitle
         >
             <SharedNotice />
 
-            {move || auth.session.get().user.map(|user| view! {
-                <section style="padding:0.85rem 1rem;border:1px solid #dcfce7;border-radius:0.9rem;background:#f0fdf4;color:#166534;display:grid;gap:0.35rem;">
-                    <strong>{format!("Authenticated as {}", user.name)}</strong>
-                    <span>{format!("{} | {}", user.role_label, user.email)}</span>
-                    <small>{user.account_status_label}</small>
-                </section>
-            })}
-
-            <form on:submit=on_submit style="display:grid;gap:0.85rem;">
+            <form on:submit=on_submit class="auth-form">
                 <TextField label="Email" value=email input_type="email" placeholder="name@example.com" />
                 <TextField label="Password" value=password input_type="password" placeholder="Enter your password" />
 
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-                    <nav style="display:flex;gap:0.8rem;flex-wrap:wrap;font-size:0.95rem;">
-                        <A href="/auth/register">"Create account"</A>
-                        <A href="/auth/forgot-password">"Forgot password"</A>
+                <div class="auth-actions">
+                    <nav class="auth-links">
+                        <A href="/" attr:class="auth-link">"Back to portal"</A>
+                        <A href="/auth/register" attr:class="auth-link">"Create account"</A>
+                        <A href="/auth/forgot-password" attr:class="auth-link">"Forgot password"</A>
                     </nav>
                     <button
                         type="submit"
@@ -100,6 +188,7 @@ pub fn LoginPage() -> impl IntoView {
 #[component]
 pub fn RegisterPage() -> impl IntoView {
     let navigate = use_navigate();
+    let query = use_query_map();
     let auth = use_auth();
     let name = RwSignal::new(String::new());
     let email = RwSignal::new(String::new());
@@ -110,6 +199,29 @@ pub fn RegisterPage() -> impl IntoView {
     let role = RwSignal::new("shipper".to_string());
     let feedback = RwSignal::new(None::<String>);
     let is_submitting = RwSignal::new(false);
+    let selected_role_label = Memo::new(move |_| role_label(role.get()));
+    let title = Signal::derive(move || format!("{} Signup", selected_role_label.get()));
+    let subtitle = Signal::derive(move || {
+        format!(
+            "Create a {} account from the public STLoads portal, then continue into OTP verification and onboarding.",
+            selected_role_label.get().to_lowercase()
+        )
+    });
+
+    Effect::new(move |_| {
+        query.with(|params| {
+            if let Some(role_key) = params.get("role") {
+                if is_supported_role(role_key.as_str()) {
+                    role.set(role_key.clone());
+                }
+            }
+            if email.get_untracked().is_empty() {
+                if let Some(prefill) = params.get("email") {
+                    email.set(prefill.clone());
+                }
+            }
+        });
+    });
 
     let on_submit = move |ev: ev::SubmitEvent| {
         let navigate = navigate.clone();
@@ -159,11 +271,11 @@ pub fn RegisterPage() -> impl IntoView {
 
     view! {
         <AuthArticle
-            title="Rust Registration"
-            subtitle="This is the first self-serve replacement for the Laravel register plus OTP flow."
+            title=title
+            subtitle=subtitle
         >
             <LocalNotice message=feedback />
-            <form on:submit=on_submit style="display:grid;gap:0.85rem;">
+            <form on:submit=on_submit class="auth-form">
                 <TextField label="Full name" value=name input_type="text" placeholder="Your full name" />
                 <TextField label="Email" value=email input_type="email" placeholder="name@example.com" />
                 <TextField label="Phone" value=phone input_type="tel" placeholder="Optional contact number" />
@@ -176,10 +288,12 @@ pub fn RegisterPage() -> impl IntoView {
                     input_type="password"
                     placeholder="Repeat the password"
                 />
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-                    <nav style="display:flex;gap:0.8rem;flex-wrap:wrap;font-size:0.95rem;">
-                        <A href="/auth/login">"Back to login"</A>
-                        <A href="/auth/verify-otp">"Already have an OTP?"</A>
+                <div class="auth-actions">
+                    <nav class="auth-links">
+                        <A href="/" attr:class="auth-link">"Back to portal"</A>
+                        <A href="/auth/login" attr:class="auth-link">"Back to login"</A>
+                        <A href="/auth/forgot-password" attr:class="auth-link">"Forgot password"</A>
+                        <A href="/auth/verify-otp" attr:class="auth-link">"Already have an OTP?"</A>
                     </nav>
                     <button type="submit" style=button_style("#0f766e") disabled=move || is_submitting.get()>
                         {move || if is_submitting.get() { "Creating account..." } else { "Create account" }}
@@ -193,6 +307,7 @@ pub fn RegisterPage() -> impl IntoView {
 #[component]
 pub fn VerifyOtpPage() -> impl IntoView {
     let navigate = use_navigate();
+    let query = use_query_map();
     let auth = use_auth();
     let email = RwSignal::new(String::new());
     let otp = RwSignal::new(String::new());
@@ -201,6 +316,26 @@ pub fn VerifyOtpPage() -> impl IntoView {
     let feedback = RwSignal::new(None::<String>);
     let is_submitting = RwSignal::new(false);
     let is_resending = RwSignal::new(false);
+
+    Effect::new(move |_| {
+        query.with(|params| {
+            if email.get_untracked().is_empty() {
+                if let Some(prefill) = params.get("email") {
+                    email.set(prefill.clone());
+                }
+            }
+            if reset_token.get_untracked().is_empty() {
+                if let Some(token) = params.get("token") {
+                    reset_token.set(token.clone());
+                }
+            }
+            if let Some(value) = params.get("purpose") {
+                if let Some(next_purpose) = otp_purpose_from_query(&value) {
+                    purpose.set(next_purpose);
+                }
+            }
+        });
+    });
 
     let on_submit = move |ev: ev::SubmitEvent| {
         let navigate = navigate.clone();
@@ -226,7 +361,8 @@ pub fn VerifyOtpPage() -> impl IntoView {
             match api::verify_otp(&payload).await {
                 Ok(response) => {
                     let mut message = response.message;
-                    if let Some(token) = response.reset_token.clone() {
+                    let reset_token_from_response = response.reset_token.clone();
+                    if let Some(token) = reset_token_from_response.clone() {
                         reset_token.set(token.clone());
                         message.push_str(&format!(" Reset token: {}", token));
                     }
@@ -237,7 +373,17 @@ pub fn VerifyOtpPage() -> impl IntoView {
                         auth.session_ready.set(true);
                     }
                     if response.success {
-                        navigate(&response.next_step, Default::default());
+                        let destination = match response.purpose {
+                            OtpPurpose::PasswordReset => {
+                                if let Some(token) = reset_token_from_response {
+                                    build_reset_password_path(&response.email, &token)
+                                } else {
+                                    build_reset_password_path(&response.email, &reset_token.get())
+                                }
+                            }
+                            OtpPurpose::Registration => response.next_step,
+                        };
+                        navigate(&destination, Default::default());
                     }
                 }
                 Err(error) => {
@@ -287,11 +433,13 @@ pub fn VerifyOtpPage() -> impl IntoView {
 
     view! {
         <AuthArticle
-            title="Verify OTP"
-            subtitle="Use the same screen for new-account OTP verification and password-reset OTP verification."
+            title=Signal::derive(|| "Verify OTP".to_string())
+            subtitle=Signal::derive(|| {
+                "Use the same screen for new-account OTP verification and password-reset OTP verification.".to_string()
+            })
         >
             <LocalNotice message=feedback />
-            <form on:submit=on_submit style="display:grid;gap:0.85rem;">
+            <form on:submit=on_submit class="auth-form">
                 <TextField label="Email" value=email input_type="email" placeholder="name@example.com" />
                 <OtpPurposeField value=purpose />
                 <TextField label="OTP" value=otp input_type="text" placeholder="6-digit code" />
@@ -299,18 +447,19 @@ pub fn VerifyOtpPage() -> impl IntoView {
                     view! { <></> }.into_any()
                 } else {
                     view! {
-                        <section style="padding:0.75rem 0.9rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;display:grid;gap:0.25rem;">
+                        <section class="auth-notice" style="display:grid;gap:0.25rem;">
                             <strong>"Development reset token"</strong>
                             <code style="font-size:0.9rem;word-break:break-all;">{move || reset_token.get()}</code>
                         </section>
                     }.into_any()
                 }}
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-                    <nav style="display:flex;gap:0.8rem;flex-wrap:wrap;font-size:0.95rem;">
-                        <A href="/auth/register">"Create account"</A>
-                        <A href="/auth/forgot-password">"Forgot password"</A>
+                <div class="auth-actions">
+                    <nav class="auth-links">
+                        <A href="/auth/login" attr:class="auth-link">"Back to login"</A>
+                        <A href="/auth/register" attr:class="auth-link">"Create account"</A>
+                        <A href="/auth/forgot-password" attr:class="auth-link">"Forgot password"</A>
                     </nav>
-                    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+                    <div class="auth-inline-actions">
                         <button type="button" on:click=on_resend style=button_style("#475569") disabled=move || is_resending.get()>
                             {move || if is_resending.get() { "Resending..." } else { "Resend OTP" }}
                         </button>
@@ -327,10 +476,21 @@ pub fn VerifyOtpPage() -> impl IntoView {
 #[component]
 pub fn ForgotPasswordPage() -> impl IntoView {
     let navigate = use_navigate();
+    let query = use_query_map();
     let auth = use_auth();
     let email = RwSignal::new(String::new());
     let feedback = RwSignal::new(None::<String>);
     let is_submitting = RwSignal::new(false);
+
+    Effect::new(move |_| {
+        query.with(|params| {
+            if email.get_untracked().is_empty() {
+                if let Some(prefill) = params.get("email") {
+                    email.set(prefill.clone());
+                }
+            }
+        });
+    });
 
     let on_submit = move |ev: ev::SubmitEvent| {
         let navigate = navigate.clone();
@@ -359,7 +519,10 @@ pub fn ForgotPasswordPage() -> impl IntoView {
                     auth.notice.set(Some(message.clone()));
                     feedback.set(Some(message));
                     if response.success {
-                        navigate("/auth/verify-otp", Default::default());
+                        navigate(
+                            &build_verify_otp_path(&response.email, OtpPurpose::PasswordReset),
+                            Default::default(),
+                        );
                     }
                 }
                 Err(error) => {
@@ -373,16 +536,18 @@ pub fn ForgotPasswordPage() -> impl IntoView {
 
     view! {
         <AuthArticle
-            title="Forgot Password"
-            subtitle="This replaces the legacy forgot-password entry point with the Rust OTP-first reset flow."
+            title=Signal::derive(|| "Forgot Password".to_string())
+            subtitle=Signal::derive(|| {
+                "This replaces the legacy forgot-password entry point with the Rust OTP-first reset flow.".to_string()
+            })
         >
             <LocalNotice message=feedback />
-            <form on:submit=on_submit style="display:grid;gap:0.85rem;">
+            <form on:submit=on_submit class="auth-form">
                 <TextField label="Email" value=email input_type="email" placeholder="name@example.com" />
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-                    <nav style="display:flex;gap:0.8rem;flex-wrap:wrap;font-size:0.95rem;">
-                        <A href="/auth/login">"Back to login"</A>
-                        <A href="/auth/verify-otp">"Already have an OTP?"</A>
+                <div class="auth-actions">
+                    <nav class="auth-links">
+                        <A href="/auth/login" attr:class="auth-link">"Back to login"</A>
+                        <A href="/auth/verify-otp" attr:class="auth-link">"Already have an OTP?"</A>
                     </nav>
                     <button type="submit" style=button_style("#7c3aed") disabled=move || is_submitting.get()>
                         {move || if is_submitting.get() { "Sending OTP..." } else { "Send reset OTP" }}
@@ -396,6 +561,7 @@ pub fn ForgotPasswordPage() -> impl IntoView {
 #[component]
 pub fn ResetPasswordPage() -> impl IntoView {
     let navigate = use_navigate();
+    let query = use_query_map();
     let auth = use_auth();
     let email = RwSignal::new(String::new());
     let reset_token = RwSignal::new(String::new());
@@ -403,6 +569,21 @@ pub fn ResetPasswordPage() -> impl IntoView {
     let password_confirmation = RwSignal::new(String::new());
     let feedback = RwSignal::new(None::<String>);
     let is_submitting = RwSignal::new(false);
+
+    Effect::new(move |_| {
+        query.with(|params| {
+            if email.get_untracked().is_empty() {
+                if let Some(prefill) = params.get("email") {
+                    email.set(prefill.clone());
+                }
+            }
+            if reset_token.get_untracked().is_empty() {
+                if let Some(prefill) = params.get("token") {
+                    reset_token.set(prefill.clone());
+                }
+            }
+        });
+    });
 
     let on_submit = move |ev: ev::SubmitEvent| {
         let navigate = navigate.clone();
@@ -430,7 +611,10 @@ pub fn ResetPasswordPage() -> impl IntoView {
                     auth.notice.set(Some(response.message.clone()));
                     feedback.set(Some(response.message.clone()));
                     if response.success {
-                        navigate("/auth/login", Default::default());
+                        navigate(
+                            &format!("/auth/login?email={}", encode_query_value(&response.email)),
+                            Default::default(),
+                        );
                     }
                 }
                 Err(error) => {
@@ -444,19 +628,21 @@ pub fn ResetPasswordPage() -> impl IntoView {
 
     view! {
         <AuthArticle
-            title="Reset Password"
-            subtitle="Complete the Rust password reset after OTP verification by setting a fresh password here."
+            title=Signal::derive(|| "Reset Password".to_string())
+            subtitle=Signal::derive(|| {
+                "Complete the Rust password reset after OTP verification by setting a fresh password here.".to_string()
+            })
         >
             <LocalNotice message=feedback />
-            <form on:submit=on_submit style="display:grid;gap:0.85rem;">
+            <form on:submit=on_submit class="auth-form">
                 <TextField label="Email" value=email input_type="email" placeholder="name@example.com" />
                 <TextAreaField label="Reset token" value=reset_token placeholder="Paste the reset token from the verification step" />
                 <TextField label="New password" value=password input_type="password" placeholder="New password" />
                 <TextField label="Confirm new password" value=password_confirmation input_type="password" placeholder="Repeat the new password" />
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-                    <nav style="display:flex;gap:0.8rem;flex-wrap:wrap;font-size:0.95rem;">
-                        <A href="/auth/verify-otp">"Back to OTP verify"</A>
-                        <A href="/auth/login">"Back to login"</A>
+                <div class="auth-actions">
+                    <nav class="auth-links">
+                        <A href="/auth/verify-otp" attr:class="auth-link">"Back to OTP verify"</A>
+                        <A href="/auth/login" attr:class="auth-link">"Back to login"</A>
                     </nav>
                     <button type="submit" style=button_style("#111827") disabled=move || is_submitting.get()>
                         {move || if is_submitting.get() { "Updating..." } else { "Update password" }}
@@ -569,8 +755,10 @@ pub fn OnboardingPage() -> impl IntoView {
 
     view! {
         <AuthArticle
-            title="Rust Onboarding"
-            subtitle="OTP-complete accounts continue here until the company profile is submitted for review."
+            title=Signal::derive(|| "Rust Onboarding".to_string())
+            subtitle=Signal::derive(|| {
+                "OTP-complete accounts continue here until the company profile is submitted for review.".to_string()
+            })
         >
             <LocalNotice message=feedback />
             {move || if !auth.session_ready.get() || loading.get() {
@@ -770,14 +958,43 @@ pub fn OnboardingPage() -> impl IntoView {
     }
 }
 #[component]
-fn AuthArticle(title: &'static str, subtitle: &'static str, children: Children) -> impl IntoView {
+fn AuthArticle(
+    #[prop(into)] title: Signal<String>,
+    #[prop(into)] subtitle: Signal<String>,
+    children: Children,
+) -> impl IntoView {
     view! {
-        <article style="display:grid;gap:1rem;max-width:640px;">
-            <section style="display:grid;gap:0.45rem;">
-                <h2>{title}</h2>
-                <p>{subtitle}</p>
+        <article class="auth-article">
+            <section class="auth-title-block">
+                <span class="auth-kicker">"STLoads Portal"</span>
+                <h2 class="auth-title">{move || title.get()}</h2>
+                <p class="auth-subtitle">{move || subtitle.get()}</p>
             </section>
-            {children()}
+            <div class="auth-surface">{children()}</div>
+        </article>
+    }
+}
+
+#[component]
+fn RoleSignupCard(
+    href: &'static str,
+    icon_class: &'static str,
+    title: &'static str,
+    role_count: &'static str,
+    description: &'static str,
+) -> impl IntoView {
+    view! {
+        <article class="portal-role-card">
+            <div class="portal-role-content">
+                <i class=format!("{icon_class} portal-role-icon")></i>
+                <h3 class="portal-role-title">{title}</h3>
+                <p class="portal-role-count">{role_count}</p>
+                <p class="portal-role-copy">{description}</p>
+                <A href=href attr:class="portal-role-cta">
+                    "Sign up"
+                    <i class="fas fa-arrow-right"></i>
+                </A>
+            </div>
         </article>
     }
 }
@@ -787,7 +1004,7 @@ fn SharedNotice() -> impl IntoView {
     let auth = use_auth();
     view! {
         {move || auth.notice.get().map(|message| view! {
-            <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">
+            <section class="auth-notice">
                 {message}
             </section>
         })}
@@ -798,7 +1015,7 @@ fn SharedNotice() -> impl IntoView {
 fn LocalNotice(message: RwSignal<Option<String>>) -> impl IntoView {
     view! {
         {move || message.get().map(|message| view! {
-            <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;white-space:pre-wrap;">
+            <section class="auth-notice" style="white-space:pre-wrap;">
                 {message}
             </section>
         })}
@@ -813,14 +1030,14 @@ fn TextField(
     placeholder: &'static str,
 ) -> impl IntoView {
     view! {
-        <label style="display:grid;gap:0.35rem;">
-            <span>{label}</span>
+        <label class="auth-field">
+            <span class="auth-label">{label}</span>
             <input
                 type=input_type
                 prop:value=move || value.get()
                 on:input=move |ev| value.set(event_target_value(&ev))
                 placeholder=placeholder
-                style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;"
+                class="auth-input"
             />
         </label>
     }
@@ -833,14 +1050,14 @@ fn TextAreaField(
     placeholder: &'static str,
 ) -> impl IntoView {
     view! {
-        <label style="display:grid;gap:0.35rem;">
-            <span>{label}</span>
+        <label class="auth-field">
+            <span class="auth-label">{label}</span>
             <textarea
                 prop:value=move || value.get()
                 on:input=move |ev| value.set(event_target_value(&ev))
                 placeholder=placeholder
                 rows="3"
-                style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;resize:vertical;"
+                class="auth-textarea"
             ></textarea>
         </label>
     }
@@ -849,41 +1066,70 @@ fn TextAreaField(
 #[component]
 fn RoleField(value: RwSignal<String>) -> impl IntoView {
     view! {
-        <label style="display:grid;gap:0.35rem;">
-            <span>"Role"</span>
-            <select
-                prop:value=move || value.get()
-                on:change=move |ev| value.set(event_target_value(&ev))
-                style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;background:white;"
-            >
-                <option value="shipper">"Shipper"</option>
-                <option value="carrier">"Carrier"</option>
-                <option value="broker">"Broker"</option>
-                <option value="freight_forwarder">"Freight Forwarder"</option>
-            </select>
-        </label>
+        <section class="auth-field">
+            <span class="auth-label">"Role"</span>
+            <div class="auth-role-picker">
+                <button
+                    type="button"
+                    class=move || selection_option_class(value.get() == "shipper")
+                    on:click=move |_| value.set("shipper".to_string())
+                >
+                    <span class="auth-role-option-title">"Shipper"</span>
+                    <span class="auth-role-option-copy">"Post freight and coordinate fulfillment."</span>
+                </button>
+                <button
+                    type="button"
+                    class=move || selection_option_class(value.get() == "carrier")
+                    on:click=move |_| value.set("carrier".to_string())
+                >
+                    <span class="auth-role-option-title">"Carrier"</span>
+                    <span class="auth-role-option-copy">"Manage trucks, drivers, and available capacity."</span>
+                </button>
+                <button
+                    type="button"
+                    class=move || selection_option_class(value.get() == "broker")
+                    on:click=move |_| value.set("broker".to_string())
+                >
+                    <span class="auth-role-option-title">"Broker"</span>
+                    <span class="auth-role-option-copy">"Match loads, coordinate shippers, and oversee moves."</span>
+                </button>
+                <button
+                    type="button"
+                    class=move || selection_option_class(value.get() == "freight_forwarder")
+                    on:click=move |_| value.set("freight_forwarder".to_string())
+                >
+                    <span class="auth-role-option-title">"Freight Forwarder"</span>
+                    <span class="auth-role-option-copy">"Handle forwarding, customs, and cross-border flow."</span>
+                </button>
+            </div>
+        </section>
     }
 }
 
 #[component]
 fn OtpPurposeField(value: RwSignal<OtpPurpose>) -> impl IntoView {
     view! {
-        <label style="display:grid;gap:0.35rem;">
-            <span>"OTP purpose"</span>
-            <select
-                on:change=move |ev| {
-                    let next = match event_target_value(&ev).as_str() {
-                        "password_reset" => OtpPurpose::PasswordReset,
-                        _ => OtpPurpose::Registration,
-                    };
-                    value.set(next);
-                }
-                style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;background:white;"
-            >
-                <option value="registration">"Registration"</option>
-                <option value="password_reset">"Password reset"</option>
-            </select>
-        </label>
+        <section class="auth-field">
+            <span class="auth-label">"OTP purpose"</span>
+            <div class="auth-role-picker">
+                <button
+                    type="button"
+                    class=move || selection_option_class(matches!(value.get(), OtpPurpose::Registration))
+                    on:click=move |_| value.set(OtpPurpose::Registration)
+                >
+                    <span class="auth-role-option-title">"Registration"</span>
+                    <span class="auth-role-option-copy">"Verify a newly created account and continue onboarding."</span>
+                </button>
+                <button
+                    type="button"
+                    class=move || selection_option_class(matches!(value.get(), OtpPurpose::PasswordReset))
+                    on:click=move |_| value.set(OtpPurpose::PasswordReset)
+                >
+                    <span class="auth-role-option-title">"Password reset"</span>
+                    <span class="auth-role-option-copy">"Use OTP to recover access and set a new password."</span>
+                </button>
+            </div>
+        </section>
     }
 }
 
@@ -898,7 +1144,66 @@ fn optional_string(value: String) -> Option<String> {
 
 fn button_style(color: &'static str) -> String {
     format!(
-        "padding:0.7rem 1rem;border:none;border-radius:0.85rem;background:{};color:white;cursor:pointer;",
+        "padding:0.7rem 1rem;border:none;border-radius:0.85rem;background:{};color:white;cursor:pointer;font-weight:700;box-shadow:0 14px 32px rgba(15,23,42,0.08);",
         color
     )
+}
+
+fn selection_option_class(active: bool) -> &'static str {
+    if active {
+        "auth-role-option is-active"
+    } else {
+        "auth-role-option"
+    }
+}
+
+fn is_supported_role(value: &str) -> bool {
+    matches!(
+        value,
+        "shipper" | "carrier" | "broker" | "freight_forwarder"
+    )
+}
+
+fn role_label(value: String) -> &'static str {
+    match value.as_str() {
+        "carrier" => "Carrier",
+        "broker" => "Broker",
+        "freight_forwarder" => "Freight Forwarder",
+        _ => "Shipper",
+    }
+}
+
+fn encode_query_value(value: &str) -> String {
+    urlencoding::encode(value).into_owned()
+}
+
+fn build_verify_otp_path(email: &str, purpose: OtpPurpose) -> String {
+    format!(
+        "/auth/verify-otp?email={}&purpose={}",
+        encode_query_value(email),
+        otp_purpose_query_value(purpose)
+    )
+}
+
+fn build_reset_password_path(email: &str, token: &str) -> String {
+    format!(
+        "/auth/reset-password?email={}&token={}",
+        encode_query_value(email),
+        encode_query_value(token)
+    )
+}
+
+fn otp_purpose_query_value(purpose: OtpPurpose) -> &'static str {
+    match purpose {
+        OtpPurpose::Registration => "registration",
+        OtpPurpose::PasswordReset => "password_reset",
+    }
+}
+
+fn otp_purpose_from_query(value: &str) -> Option<OtpPurpose> {
+    match value {
+        "registration" => Some(OtpPurpose::Registration),
+        "password_reset" | "reset" => Some(OtpPurpose::PasswordReset),
+        _ => None,
+    }
 }

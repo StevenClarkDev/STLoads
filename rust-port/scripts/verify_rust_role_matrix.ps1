@@ -107,7 +107,17 @@ function Test-FrontendRoute {
         [Parameter(Mandatory = $true)][string]$Path
     )
 
-    Invoke-JsonRequest -Client $Client -Method Get -Url "$FrontendUrl$Path"
+    $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, "$FrontendUrl$Path")
+    $request.Headers.Accept.ParseAdd('text/html')
+    $response = $Client.SendAsync($request).GetAwaiter().GetResult()
+    $rawBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+
+    [pscustomobject]@{
+        StatusCode = [int]$response.StatusCode
+        IsSuccessStatusCode = $response.IsSuccessStatusCode
+        Body = $rawBody
+        Json = $null
+    }
 }
 
 function Login-RustUser {
@@ -164,6 +174,9 @@ try {
 
     $backendHealth = Invoke-JsonRequest -Client $client -Method Get -Url "$BaseUrl/health"
     Add-Result -Results $results -Account 'backend' -Check 'health' -Passed ($backendHealth.StatusCode -eq 200) -Detail "HTTP $($backendHealth.StatusCode)"
+
+    Write-Step 'Refreshing lifecycle-state QA accounts'
+    & (Join-Path $PSScriptRoot 'seed_operator_qa_accounts.ps1') -BaseUrl $BaseUrl -AdminEmail $AdminEmail -AdminPassword $AdminPassword
 
     Write-Step 'Checking approved role accounts against hosted Rust routes'
     $approvedAccounts = @(

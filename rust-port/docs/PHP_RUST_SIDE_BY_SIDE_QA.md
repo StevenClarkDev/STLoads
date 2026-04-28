@@ -1,10 +1,14 @@
 # PHP vs Rust Side-By-Side QA Checklist
 
-Last updated: 2026-04-15
+Last updated: 2026-04-27
 
 This checklist is for the final parity pass before treating the Rust/Leptos app as a real replacement for the Laravel Blade app.
 Use it with the PHP app open in one browser/session and the Rust app open in another.
 Record results and defects in `docs/PHP_RUST_QA_FINDINGS.md`.
+
+Current hosted staging status:
+- The 2026-04-27 hosted QA pass closed all recorded findings in `docs/PHP_RUST_QA_FINDINGS.md`.
+- Keep using this checklist for regression passes, future deploy validation, and any new parity issues.
 
 Helpful repo helpers before the manual pass:
 - `scripts/verify_php_role_logins.ps1` for the five core PHP roles

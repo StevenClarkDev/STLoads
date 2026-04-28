@@ -54,6 +54,106 @@ function Resolve-DatabaseUrl {
     throw 'DATABASE_URL was not provided and could not be resolved from env files.'
 }
 
+function Add-DatabaseHostaddrFallback {
+    param([string]$DbUrl)
+
+    if ([string]::IsNullOrWhiteSpace($DbUrl) -or $DbUrl -match '(^|[?&])hostaddr=') {
+        return $DbUrl
+    }
+
+    try {
+        $uri = [System.Uri]$DbUrl
+        $resolved = Resolve-DnsName $uri.Host -Type A -ErrorAction Stop |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_.IPAddress) } |
+            Select-Object -First 1 -ExpandProperty IPAddress
+
+        if ([string]::IsNullOrWhiteSpace($resolved)) {
+            return $DbUrl
+        }
+
+        if ($DbUrl.Contains('?')) {
+            return "$DbUrl&hostaddr=$resolved"
+        }
+
+        return "$DbUrl?hostaddr=$resolved"
+    }
+    catch {
+        return $DbUrl
+    }
+}
+
+function Resolve-PsqlExecutable {
+    $candidate = Get-Command psql -ErrorAction SilentlyContinue
+    if ($null -ne $candidate) {
+        return $candidate.Source
+    }
+
+    foreach ($path in @(
+        'C:\Program Files\PostgreSQL\18\bin\psql.exe',
+        'C:\Program Files\PostgreSQL\17\bin\psql.exe',
+        'C:\Program Files\PostgreSQL\16\bin\psql.exe',
+        'C:\Program Files\PostgreSQL\15\bin\psql.exe',
+        'C:\Program Files\PostgreSQL\14\bin\psql.exe',
+        'C:\Program Files\PostgreSQL\13\bin\psql.exe'
+    )) {
+        if (Test-Path $path) {
+            return $path
+        }
+    }
+
+    return $null
+}
+
+function Test-DockerPsqlAvailable {
+    $docker = Get-Command docker -ErrorAction SilentlyContinue
+    if ($null -eq $docker) {
+        return $false
+    }
+
+    & $docker.Source version --format '{{.Server.Version}}' *> $null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Escape-PsqlConninfoValue {
+    param([string]$Value)
+
+    if ($null -eq $Value) {
+        return ''
+    }
+
+    return $Value.Replace("'", "''")
+}
+
+function Convert-DbUrlToPsqlConninfo {
+    param([Parameter(Mandatory = $true)][string]$DbUrl)
+
+    $uri = [System.Uri]$DbUrl
+    $query = [System.Web.HttpUtility]::ParseQueryString($uri.Query)
+    $userInfo = $uri.UserInfo.Split(':', 2)
+    $username = [System.Uri]::UnescapeDataString($userInfo[0])
+    $password = if ($userInfo.Count -gt 1) { [System.Uri]::UnescapeDataString($userInfo[1]) } else { '' }
+    $dbName = $uri.AbsolutePath.TrimStart('/')
+    $parts = @(
+        "host='$(Escape-PsqlConninfoValue $uri.Host)'"
+        "port='$($uri.Port)'"
+        "dbname='$(Escape-PsqlConninfoValue $dbName)'"
+        "user='$(Escape-PsqlConninfoValue $username)'"
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($password)) {
+        $parts += "password='$(Escape-PsqlConninfoValue $password)'"
+    }
+
+    foreach ($key in @('sslmode', 'hostaddr')) {
+        $value = $query[$key]
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            $parts += "$key='$(Escape-PsqlConninfoValue $value)'"
+        }
+    }
+
+    return ($parts -join ' ')
+}
+
 function Invoke-StloadsApi {
     param(
         [Parameter(Mandatory = $true)][string]$Method,
@@ -120,11 +220,25 @@ function Invoke-DbScalar {
         [Parameter(Mandatory = $true)][string]$Sql
     )
 
-    $result = docker run --rm postgres:16-alpine psql "$DbUrl" -At -F "|" -v ON_ERROR_STOP=1 -c "$Sql"
-    if ($LASTEXITCODE -ne 0) {
-        throw "psql query failed: $Sql"
+    $psql = Resolve-PsqlExecutable
+    if (-not [string]::IsNullOrWhiteSpace($psql)) {
+        $conninfo = Convert-DbUrlToPsqlConninfo -DbUrl $DbUrl
+        $result = & $psql $conninfo -At -F "|" -v ON_ERROR_STOP=1 -c "$Sql"
+        if ($LASTEXITCODE -ne 0) {
+            throw "psql query failed: $Sql"
+        }
+        return ($result | Out-String).Trim()
     }
-    return ($result | Out-String).Trim()
+
+    if (Test-DockerPsqlAvailable) {
+        $result = docker run --rm postgres:16-alpine psql "$DbUrl" -At -F "|" -v ON_ERROR_STOP=1 -c "$Sql"
+        if ($LASTEXITCODE -ne 0) {
+            throw "psql query failed: $Sql"
+        }
+        return ($result | Out-String).Trim()
+    }
+
+    throw 'Neither a local psql client nor a reachable Docker daemon is available for database checks.'
 }
 
 function Invoke-DbNonQuery {
@@ -133,10 +247,25 @@ function Invoke-DbNonQuery {
         [Parameter(Mandatory = $true)][string]$Sql
     )
 
-    $null = docker run --rm postgres:16-alpine psql "$DbUrl" -v ON_ERROR_STOP=1 -c "$Sql"
-    if ($LASTEXITCODE -ne 0) {
-        throw "psql command failed: $Sql"
+    $psql = Resolve-PsqlExecutable
+    if (-not [string]::IsNullOrWhiteSpace($psql)) {
+        $conninfo = Convert-DbUrlToPsqlConninfo -DbUrl $DbUrl
+        $null = & $psql $conninfo -v ON_ERROR_STOP=1 -c "$Sql"
+        if ($LASTEXITCODE -ne 0) {
+            throw "psql command failed: $Sql"
+        }
+        return
     }
+
+    if (Test-DockerPsqlAvailable) {
+        $null = docker run --rm postgres:16-alpine psql "$DbUrl" -v ON_ERROR_STOP=1 -c "$Sql"
+        if ($LASTEXITCODE -ne 0) {
+            throw "psql command failed: $Sql"
+        }
+        return
+    }
+
+    throw 'Neither a local psql client nor a reachable Docker daemon is available for database writes.'
 }
 
 function Get-HandoffState {
@@ -177,7 +306,16 @@ function Get-LoadDeletedAt {
         [Parameter(Mandatory = $true)][long]$LoadId
     )
 
-    $value = Invoke-DbScalar -DbUrl $DbUrl -Sql "SELECT COALESCE(to_char(deleted_at, 'YYYY-MM-DD\"T\"HH24:MI:SS'), '') FROM loads WHERE id = $LoadId LIMIT 1;"
+    $value = Invoke-DbScalar -DbUrl $DbUrl -Sql @"
+SELECT
+    COALESCE(
+        to_char(deleted_at, 'YYYY-MM-DD') || 'T' || to_char(deleted_at, 'HH24:MI:SS'),
+        ''
+    )
+FROM loads
+WHERE id = $LoadId
+LIMIT 1;
+"@
     if ([string]::IsNullOrWhiteSpace($value)) {
         return $null
     }
@@ -331,7 +469,7 @@ function Wait-ForReconciliationWorker {
     }
 }
 
-$DatabaseUrl = Resolve-DatabaseUrl -Value $DatabaseUrl
+$DatabaseUrl = Add-DatabaseHostaddrFallback -DbUrl (Resolve-DatabaseUrl -Value $DatabaseUrl)
 $timestamp = Get-Date -Format 'yyyyMMddHHmmss'
 $retryTmsLoadId = "TMS-WORKER-RETRY-$timestamp"
 $retryExternalId = "worker-retry-$timestamp"
@@ -353,8 +491,11 @@ $queued = Assert-Envelope -Response (Invoke-StloadsApi -Method Post -Path '/tms/
 Assert-Flag -Condition ($queued.success) -Message "Queued handoff creation failed: $($queued.message)"
 $queuedHandoffId = [long]$queued.handoff_id
 $queuedInitial = Get-HandoffState -DbUrl $DatabaseUrl -HandoffId $queuedHandoffId
-Assert-Flag -Condition ($null -ne $queuedInitial -and $queuedInitial.status -eq 'queued') -Message 'Queued handoff was not persisted in queued state.'
-Write-Host ("Queued handoff #{0} created for {1}." -f $queuedHandoffId, $retryTmsLoadId)
+Assert-Flag -Condition (
+    $null -ne $queuedInitial -and
+    $queuedInitial.status -in @('queued', 'published')
+) -Message 'Queued handoff was not persisted before retry validation started.'
+Write-Host ("Queued handoff #{0} created for {1} with initial status {2}." -f $queuedHandoffId, $retryTmsLoadId, $queuedInitial.status)
 
 Write-Step 'Waiting for the hosted retry worker to publish the queued handoff'
 $queuedFinal = Wait-ForRetryWorker -DbUrl $DatabaseUrl -HandoffId $queuedHandoffId

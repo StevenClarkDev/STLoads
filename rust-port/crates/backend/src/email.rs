@@ -564,12 +564,7 @@ fn send_smtp_message(
         .body(html_body.to_string())
         .map_err(|error| format!("Email message build failed: {}", error))?;
 
-    let mut builder = if uses_plain_smtp(config.encryption.as_deref()) {
-        SmtpTransport::builder_dangerous(host)
-    } else {
-        SmtpTransport::relay(host).map_err(|error| format!("SMTP relay setup failed: {}", error))?
-    }
-    .port(config.port);
+    let mut builder = smtp_transport_builder(config, host)?;
 
     if let (Some(username), Some(password)) = (&config.username, &config.password) {
         builder = builder.credentials(Credentials::new(username.clone(), password.clone()));
@@ -583,14 +578,54 @@ fn send_smtp_message(
     Ok(())
 }
 
-fn uses_plain_smtp(encryption: Option<&str>) -> bool {
-    matches!(
-        encryption
-            .map(str::trim)
-            .map(str::to_ascii_lowercase)
-            .as_deref(),
-        Some("none" | "plain" | "false")
-    )
+fn smtp_transport_builder(
+    config: &EmailConfig,
+    host: &str,
+) -> Result<lettre::transport::smtp::SmtpTransportBuilder, String> {
+    let mode = smtp_encryption_mode(config.encryption.as_deref(), config.port);
+
+    let builder = match mode {
+        SmtpEncryptionMode::Plain => SmtpTransport::builder_dangerous(host),
+        SmtpEncryptionMode::StartTls => SmtpTransport::starttls_relay(host)
+            .map_err(|error| format!("SMTP STARTTLS relay setup failed: {}", error))?,
+        SmtpEncryptionMode::ImplicitTls => SmtpTransport::relay(host)
+            .map_err(|error| format!("SMTP relay setup failed: {}", error))?,
+    };
+
+    Ok(builder.port(config.port))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SmtpEncryptionMode {
+    Plain,
+    StartTls,
+    ImplicitTls,
+}
+
+fn smtp_encryption_mode(encryption: Option<&str>, port: u16) -> SmtpEncryptionMode {
+    match encryption
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("none" | "plain" | "false") => SmtpEncryptionMode::Plain,
+        Some("ssl" | "smtps") => SmtpEncryptionMode::ImplicitTls,
+        Some("tls" | "starttls" | "true") => SmtpEncryptionMode::StartTls,
+        Some(_) => {
+            if port == 465 {
+                SmtpEncryptionMode::ImplicitTls
+            } else {
+                SmtpEncryptionMode::StartTls
+            }
+        }
+        None => {
+            if port == 465 {
+                SmtpEncryptionMode::ImplicitTls
+            } else {
+                SmtpEncryptionMode::Plain
+            }
+        }
+    }
 }
 
 fn otp_template(title: &str, context: &str, otp: &str, portal_url: &str) -> String {
@@ -809,6 +844,35 @@ mod tests {
             .expect_err("smtp without host should fail closed");
 
         assert!(error.contains("MAIL_HOST is required"));
+    }
+
+    #[test]
+    fn smtp_treats_tls_on_submission_port_as_starttls() {
+        assert_eq!(
+            smtp_encryption_mode(Some("tls"), 587),
+            SmtpEncryptionMode::StartTls
+        );
+    }
+
+    #[test]
+    fn smtp_treats_ssl_as_implicit_tls() {
+        assert_eq!(
+            smtp_encryption_mode(Some("ssl"), 465),
+            SmtpEncryptionMode::ImplicitTls
+        );
+    }
+
+    #[test]
+    fn smtp_defaults_to_implicit_tls_on_smtps_port() {
+        assert_eq!(
+            smtp_encryption_mode(None, 465),
+            SmtpEncryptionMode::ImplicitTls
+        );
+    }
+
+    #[test]
+    fn smtp_defaults_to_plain_when_no_encryption_is_configured() {
+        assert_eq!(smtp_encryption_mode(None, 25), SmtpEncryptionMode::Plain);
     }
 
     fn test_config(mailer: &str, fail_open: bool) -> RuntimeConfig {

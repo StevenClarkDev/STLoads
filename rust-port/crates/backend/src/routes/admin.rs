@@ -44,6 +44,12 @@ use crate::{
 struct AdminOverview {
     screen_routes: Vec<&'static str>,
     operational_views: usize,
+    user_total: usize,
+    shipper_total: usize,
+    carrier_total: usize,
+    broker_total: usize,
+    freight_forwarder_total: usize,
+    admin_total: usize,
     notes: Vec<&'static str>,
 }
 
@@ -112,6 +118,25 @@ async fn index(
     )
     .await?;
 
+    let mut shipper_total = 0_usize;
+    let mut carrier_total = 0_usize;
+    let mut broker_total = 0_usize;
+    let mut freight_forwarder_total = 0_usize;
+    let mut admin_total = 0_usize;
+
+    if let Some(pool) = state.pool.as_ref() {
+        for row in list_admin_users(pool).await.unwrap_or_default() {
+            match row.role_id.and_then(UserRole::from_legacy_id) {
+                Some(UserRole::Shipper) => shipper_total += 1,
+                Some(UserRole::Carrier) => carrier_total += 1,
+                Some(UserRole::Broker) => broker_total += 1,
+                Some(UserRole::FreightForwarder) => freight_forwarder_total += 1,
+                Some(UserRole::Admin) => admin_total += 1,
+                None => {}
+            }
+        }
+    }
+
     Ok(Json(ApiResponse::ok(AdminOverview {
         screen_routes: vec![
             "/admin/users",
@@ -124,6 +149,16 @@ async fn index(
             "/admin/loads",
         ],
         operational_views: 8,
+        user_total: shipper_total
+            + carrier_total
+            + broker_total
+            + freight_forwarder_total
+            + admin_total,
+        shipper_total,
+        carrier_total,
+        broker_total,
+        freight_forwarder_total,
+        admin_total,
         notes: vec![
             "Admin is now the route home for ops dashboards rather than a single placeholder.",
             "Master-data visibility now lives alongside payments and TMS so load-builder dependencies can be migrated in sequence.",

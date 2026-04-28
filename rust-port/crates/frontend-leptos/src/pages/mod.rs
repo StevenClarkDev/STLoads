@@ -31,7 +31,8 @@ pub use admin_roles::AdminRolesPage;
 pub use admin_users::AdminUsersPage;
 pub use admin_users_by_role::AdminUsersByRolePage;
 pub use auth::{
-    ForgotPasswordPage, LoginPage, OnboardingPage, RegisterPage, ResetPasswordPage, VerifyOtpPage,
+    ForgotPasswordPage, LoginPage, OnboardingPage, PortalLandingPage, RegisterPage,
+    ResetPasswordPage, VerifyOtpPage,
 };
 pub use chat::ChatWorkspacePage;
 pub use dashboard::DashboardPage;

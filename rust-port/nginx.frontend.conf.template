@@ -5,28 +5,47 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    proxy_http_version 1.1;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+
     location = /health {
         access_log off;
         default_type application/json;
         return 200 '{"service":"stloads-frontend","status":"ok"}';
     }
 
-    location = /backend-health {
-        proxy_pass ${BACKEND_UPSTREAM}/health;
-        proxy_http_version 1.1;
+    location @backend_api {
         proxy_set_header Host $proxy_host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass ${BACKEND_UPSTREAM};
     }
 
-    location ~ ^/(auth|dispatch|marketplace|execution|payments|tms|api|admin|master-data|realtime)(/|$) {
-        proxy_pass ${BACKEND_UPSTREAM};
-        proxy_http_version 1.1;
+    location ~ ^/(auth|dispatch|marketplace|execution|payments|tms|admin|master-data)(/|$) {
+        error_page 418 = @backend_api;
+
+        if ($request_method !~ ^(GET|HEAD)$) {
+            return 418;
+        }
+
+        if ($http_accept !~* "text/html") {
+            return 418;
+        }
+
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/stloads/ {
+        rewrite ^/api/stloads/(.*)$ /$1 break;
         proxy_set_header Host $proxy_host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass ${BACKEND_UPSTREAM};
+    }
+
+    location /realtime/ {
+        proxy_set_header Host $proxy_host;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
+        proxy_pass ${BACKEND_UPSTREAM};
     }
 
     location / {

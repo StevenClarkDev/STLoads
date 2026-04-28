@@ -135,20 +135,11 @@ pub fn StloadsReconciliationPage() -> impl IntoView {
                         <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
                             <div>
                                 <h2>{move || screen.get().map(|value| value.title).unwrap_or_else(|| "STLOADS Reconciliation".into())}</h2>
-                                <p>
-                                    "This reconciliation view now loads from the Rust backend and refreshes only for reconciliation-specific realtime events."
-                                </p>
                             </div>
                             <span style=tone_style(if ws_connected.get() { "success" } else { "secondary" })>
                                 {move || if ws_connected.get() { "Realtime connected" } else { "Realtime reconnecting" }}
                             </span>
                         </section>
-
-                        {move || action_message.get().map(|message| view! {
-                            <section style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">
-                                {message}
-                            </section>
-                        })}
 
                         {move || error_message.get().map(|message| view! {
                             <section style="padding:0.85rem 1rem;border:1px solid #fecaca;border-radius:0.9rem;background:#fff1f2;color:#be123c;">
@@ -165,7 +156,6 @@ pub fn StloadsReconciliationPage() -> impl IntoView {
                                             <div style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.35rem;">
                                                 <span style=tone_style(&card.tone)>{card.label}</span>
                                                 <strong style="font-size:1.3rem;">{card.value}</strong>
-                                                <small>{card.note}</small>
                                             </div>
                                         }
                                     })
@@ -304,14 +294,6 @@ pub fn StloadsReconciliationPage() -> impl IntoView {
                             </div>
                         </section>
 
-                        <section style="display:grid;gap:0.35rem;">
-                            {move || screen.get().map(|value| {
-                                value.callouts
-                                    .into_iter()
-                                    .map(|note| view! { <p style="margin:0;">{note}</p> })
-                                    .collect_view()
-                            })}
-                        </section>
                     </article>
                 }
                 .into_any()
