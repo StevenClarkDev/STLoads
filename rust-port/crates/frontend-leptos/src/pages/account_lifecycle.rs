@@ -245,11 +245,7 @@ fn render_workspace(
 }
 
 #[component]
-fn LifecycleSummaryCard(
-    title: &'static str,
-    value: String,
-    tone: &'static str,
-) -> impl IntoView {
+fn LifecycleSummaryCard(title: &'static str, value: String, tone: &'static str) -> impl IntoView {
     view! {
         <div style="padding:0.95rem 1rem;border:1px solid #e5e7eb;border-radius:1rem;background:white;display:grid;gap:0.35rem;">
             <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;flex-wrap:wrap;">
@@ -262,11 +258,7 @@ fn LifecycleSummaryCard(
 }
 
 #[component]
-fn LifecycleLane(
-    title: &'static str,
-    tone: &'static str,
-    children: Children,
-) -> impl IntoView {
+fn LifecycleLane(title: &'static str, tone: &'static str, children: Children) -> impl IntoView {
     view! {
         <section style="display:grid;gap:0.75rem;padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;">
             <div style="display:grid;gap:0.25rem;">

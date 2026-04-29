@@ -1,6 +1,6 @@
 # PHP vs Rust QA Findings Log
 
-Last updated: 2026-04-27
+Last updated: 2026-04-29
 
 Use this file while running `docs/PHP_RUST_SIDE_BY_SIDE_QA.md`.
 Every side-by-side difference should be logged here, even if it is later marked as expected or accepted.
@@ -9,15 +9,15 @@ Every side-by-side difference should be logged here, even if it is later marked 
 
 | Field | Value |
 | --- | --- |
-| Run status | `verified`: IBM hosted Rust backend cutover validation, COS validation, hosted Stripe release verification, Rust role-and-lifecycle route verification, PHP role login verification, manual browser QA, and hosted PHP lifecycle-state verification all passed. All recorded QA findings QA-001 through QA-010 are now closed as `verified`. |
+| Run status | `verified`: IBM hosted Rust backend cutover validation, COS validation, hosted Stripe release verification, Rust role-and-lifecycle route verification, PHP role login verification, manual browser QA, hosted PHP lifecycle-state verification, and the custom-domain production cutover all passed. All recorded QA findings QA-001 through QA-010 are now closed as `verified`. |
 | PHP app URL | `https://portal.stloads.com` |
-| Rust frontend URL | `https://stloads-rust-frontend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud` |
+| Rust frontend URL | `https://portal.stloads.com` |
 | Rust backend URL | `https://stloads-rust-backend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud` |
-| Database | IBM PostgreSQL staging / disposable staging dataset |
+| Database | IBM PostgreSQL live IBM Code Engine runtime / disposable smoke dataset for verification |
 | Document storage | `ibm_cos`: validated against `stloads-rust-staging-docs` with protected Rust routes |
 | Tester | `Codex automated preflight + manual browser QA operator` |
 | Started at | `2026-04-15 21:29 PKT` |
-| Completed at | `2026-04-27 04:44 PKT`: hosted PHP lifecycle-state verification rerun passed after the live `AuthController.php` upload and Laravel cache clear |
+| Completed at | `2026-04-29 23:55 PKT`: custom-domain production cutover passed, backend reports `environment=production`, and the full hosted verification bundle passed against the live portal runtime |
 
 ## Cutover Gate
 
@@ -110,7 +110,7 @@ None currently recorded.
 | Carrier | `crankin.carrier@yahoo.com` | [x] | [x] | PHP carrier login reached `/dashboard`. Rust backend smoke login, session, booking, execution, and chat flows passed. |
 | Broker | `crankin.broker@yahoo.com` | [x] | [x] | PHP broker login reached `/dashboard`. Disposable Rust staging broker account verified in approved state through register, OTP, onboarding, and admin approval flow. |
 | Freight forwarder | `oglyguy@yahoo.com` | [x] | [x] | PHP freight-forwarder login reached `/dashboard`. Disposable Rust staging freight-forwarder account verified in approved state through register, OTP, onboarding, and admin approval flow. |
-| Pending OTP | `qa.lifecycle.shipper.20260425040645@example.com` | [ ] | [x] | Real hosted PHP pending-OTP shipper account now exists with password `QaPass123!`, but login currently bounces back to `/normal-login` because the live PHP `otp()` route throws before rendering the OTP screen. |
+| Pending OTP | `qa.lifecycle.shipper.20260425040645@example.com` | [x] | [x] | Real hosted PHP pending-OTP shipper account now passes verification after the live `AuthController.php` fix and cache clear. |
 | Pending review | `qa.lifecycle.carrier.20260425040650@example.com` | [x] | [x] | Real hosted PHP carrier lifecycle account now passes pending-review verification; password `QaPass123!`. |
 | Revision requested | `qa.lifecycle.broker.20260425040655@example.com` | [x] | [x] | Real hosted PHP broker lifecycle account now passes revision-requested verification; password `QaPass123!`. |
 | Rejected | `qa.lifecycle.freight-forwarder.20260425040700@example.com` | [x] | [x] | Real hosted PHP freight-forwarder lifecycle account now passes rejected verification; password `QaPass123!`. |
@@ -118,6 +118,13 @@ None currently recorded.
 ## Manual Run Notes
 
 Use this section for observations that are not findings yet.
+
+## Production Launch Notes
+
+- `portal.stloads.com` now maps directly to the Rust frontend on IBM Code Engine.
+- IBM domain mapping status reached `Ready` on 2026-04-29.
+- The backend runtime now reports `environment=production` and `public_base_url=https://portal.stloads.com`.
+- The final hosted verification rerun still passed end to end after the custom-domain cutover.
 
 - Automated backend preflight passed after reseeding the deterministic smoke dataset.
 - Initial smoke attempt failed because the seeded leg had already been mutated to `Paid Out`; reseeding fixed the state and the rerun passed.

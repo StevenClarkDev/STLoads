@@ -12,6 +12,22 @@ export async function stloadsLoadGooglePlaces(apiKey) {
     return true;
   }
 
+  const waitForPlaces = () => new Promise((resolve, reject) => {
+    const deadline = Date.now() + 10000;
+    const poll = () => {
+      if (window.google && window.google.maps && window.google.maps.places) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() > deadline) {
+        reject(new Error('Google Maps Places library is not loaded.'));
+        return;
+      }
+      window.setTimeout(poll, 100);
+    };
+    poll();
+  });
+
   if (window.__stloadsGooglePlacesLoader) {
     return window.__stloadsGooglePlacesLoader;
   }
@@ -19,17 +35,21 @@ export async function stloadsLoadGooglePlaces(apiKey) {
   window.__stloadsGooglePlacesLoader = new Promise((resolve, reject) => {
     const existing = document.querySelector('script[data-stloads-google-places="true"]');
     if (existing) {
-      existing.addEventListener('load', () => resolve(true), { once: true });
+      existing.addEventListener('load', () => {
+        waitForPlaces().then(resolve).catch(reject);
+      }, { once: true });
       existing.addEventListener('error', () => reject(new Error('Google Maps script failed to load.')), { once: true });
       return;
     }
 
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&loading=async`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
     script.async = true;
     script.defer = true;
     script.dataset.stloadsGooglePlaces = 'true';
-    script.onload = () => resolve(true);
+    script.onload = () => {
+      waitForPlaces().then(resolve).catch(reject);
+    };
     script.onerror = () => reject(new Error('Google Maps script failed to load.'));
     document.head.appendChild(script);
   });

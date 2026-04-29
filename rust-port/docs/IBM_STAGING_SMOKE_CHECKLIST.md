@@ -1,6 +1,9 @@
-# IBM Staging Smoke Checklist
+# IBM Hosted Smoke Checklist
 
-Last updated: 2026-04-24
+Last updated: 2026-04-29
+
+This checklist is now primarily a historical and regression runbook.
+The hosted verification flow succeeded again during the live `portal.stloads.com` cutover on 2026-04-29.
 
 This checklist is the operational companion to the Rust backend deployment guide.
 Use it when the backend is deployed on IBM Code Engine with IBM PostgreSQL and IBM Cloud Object Storage.

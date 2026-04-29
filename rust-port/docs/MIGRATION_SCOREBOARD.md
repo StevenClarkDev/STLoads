@@ -1,6 +1,6 @@
 # Migration Scoreboard
 
-Last updated: 2026-04-27
+Last updated: 2026-04-29
 
 This file is the living migration tracker for the Laravel-to-Rust/Leptos port.
 It should be updated after every major implementation milestone so the repo itself shows what is done, what is partial, and what still blocks full PHP retirement.
@@ -14,10 +14,13 @@ It should be updated after every major implementation milestone so the repo itse
 
 ## Overall Snapshot
 
-- Backend/domain migration: `partial`
-- Frontend/Leptos migration: `partial`
+- Backend/domain migration: `done`
+- Frontend/Leptos migration: `done`
 - IBM deployment readiness for backend: `done`
-- Full Laravel retirement readiness: `partial`
+- Full Laravel retirement readiness: `done`
+
+The Rust portal is now live on IBM Code Engine at `https://portal.stloads.com`.
+Remaining differences between PHP and Rust are now post-launch polish items, not cutover blockers.
 
 ## Feature Scoreboard
 
@@ -63,13 +66,19 @@ It should be updated after every major implementation milestone so the repo itse
 - Leptos page modules: 17
 - Rust backend is already meaningful, but frontend parity is still much smaller than the Laravel view surface.
 
-## Current Remaining High-Value Work
+## Current Post-Launch Work
 
-1. Decide which remaining PHP-vs-Rust UI differences are accepted improvements versus parity work still worth doing.
-2. Deepen tracking, execution, admin-load, and dispatch-desk polish only where operators still feel the Rust flow is weaker than PHP.
-3. Keep IBM COS-backed document validation, Stripe release validation, SMTP validation, and TMS worker validation green during future deploys.
-4. Finalize the production cutover plan on IBM now that the staged backend and QA gates are closed.
-5. Expand broader acceptance coverage only if you want stronger pre-cutover confidence than the current verified staging pass.
+1. Keep IBM COS-backed document validation, Stripe release validation, SMTP validation, and TMS worker validation green during future deploys.
+2. Continue UI polish only where operators feel the Rust flow is weaker than PHP.
+3. Add broader automated acceptance coverage only if you want stronger regression protection after launch.
+
+### 2026-04-29 - Production Domain Cutover Complete
+
+- Created the IBM Code Engine TLS secret and domain mapping for `portal.stloads.com`.
+- Updated the live runtime so the backend now reports `environment=production` and `public_base_url=https://portal.stloads.com`.
+- Switched the frontend runtime public URL to `https://portal.stloads.com`.
+- Verified `https://portal.stloads.com` returns `200 OK` over HTTPS and redirects cleanly from HTTP.
+- Reran `scripts/verify_backend_cutover_hosted.ps1` with `-FrontendUrl https://portal.stloads.com`; smoke, role matrix, SMTP, TMS worker, and Stripe release validation all returned `ok`.
 
 ### 2026-04-24 - Hosted Backend Bundle Reverified
 
@@ -114,7 +123,7 @@ It should be updated after every major implementation milestone so the repo itse
 
 ### 2026-04-14 - Dispatch Desk Follow-Up Notes
 
-- Added a frontend completion punch list at `docs/FRONTEND_COMPLETION_TODO.md` so the remaining Blade-to-Leptos work now has a dedicated UI-focused tracker.
+- Added a frontend completion punch list during the migration phase so the remaining Blade-to-Leptos work had a dedicated UI-focused tracker; that temporary tracker has now been retired after launch.
 - Added a real Rust dispatch-desk follow-up note action that can be submitted inline from quote, tender, facility, closeout, and collections rows.
 - Wired desk follow-up notes through shared contracts, a new Rust dispatch route, PostgreSQL load-history persistence, and the Leptos desk page.
 - Surfaced the latest activity note back onto each desk row so the new operator note flow is visible immediately instead of disappearing into backend-only history.

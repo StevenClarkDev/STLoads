@@ -30,8 +30,12 @@ pub async fn connect_with_schema(
             Box::pin(async move {
                 let create_schema = format!(r#"CREATE SCHEMA IF NOT EXISTS "{schema}""#);
                 let set_search_path = format!(r#"SET search_path TO "{schema}", public"#);
-                sqlx::query(&create_schema).execute(&mut *connection).await?;
-                sqlx::query(&set_search_path).execute(&mut *connection).await?;
+                sqlx::query(&create_schema)
+                    .execute(&mut *connection)
+                    .await?;
+                sqlx::query(&set_search_path)
+                    .execute(&mut *connection)
+                    .await?;
                 Ok(())
             })
         })

@@ -350,6 +350,32 @@
             transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
         }
 
+        .auth-input-shell {
+            position: relative;
+            width: 100%;
+        }
+
+        .auth-input-with-action {
+            padding-right: 3rem;
+        }
+
+        .auth-input-action {
+            position: absolute;
+            top: 50%;
+            right: 0.8rem;
+            transform: translateY(-50%);
+            border: none;
+            background: transparent;
+            color: #64748b;
+            cursor: pointer;
+            padding: 0.15rem;
+            font-size: 1rem;
+        }
+
+        .auth-input-action:hover {
+            color: #1F537B;
+        }
+
         .auth-input:focus,
         .auth-textarea:focus,
         .auth-select:focus {
@@ -360,6 +386,12 @@
         .auth-textarea {
             resize: vertical;
             min-height: 108px;
+        }
+
+        .auth-help {
+            color: #64748b;
+            font-size: 0.82rem;
+            line-height: 1.35;
         }
 
         .auth-actions {
