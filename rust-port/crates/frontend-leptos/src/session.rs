@@ -15,7 +15,7 @@ pub struct AuthContext {
 pub fn AuthProvider(children: Children) -> impl IntoView {
     let auth = AuthContext {
         session: RwSignal::new(unauthenticated_session(
-            "Loading Rust session state for this app shell.",
+            "Loading your session for this workspace.",
         )),
         session_ready: RwSignal::new(false),
         session_loading: RwSignal::new(false),
@@ -61,11 +61,11 @@ pub async fn refresh_session(auth: AuthContext) -> Result<AuthSessionState, Stri
             if error.contains("returned 401") {
                 api::clear_auth_token();
                 auth.session.set(unauthenticated_session(
-                    "The Rust session expired. Sign in again.",
+                    "Your session expired. Sign in again.",
                 ));
             } else {
                 auth.session.set(unauthenticated_session(
-                    "Unable to load Rust session state from the backend.",
+                    "Unable to load your session right now.",
                 ));
             }
             auth.notice.set(Some(error.clone()));
@@ -102,9 +102,8 @@ pub async fn sign_out(auth: AuthContext) -> Result<LogoutResponse, String> {
     match result {
         Ok(response) => {
             if response.success {
-                auth.session.set(unauthenticated_session(
-                    "Signed out from the Rust session layer.",
-                ));
+                auth.session
+                    .set(unauthenticated_session("Signed out successfully."));
             }
             auth.notice.set(Some(response.message.clone()));
             Ok(response)

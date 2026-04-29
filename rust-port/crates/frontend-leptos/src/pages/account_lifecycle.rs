@@ -41,10 +41,7 @@ pub fn AccountLifecyclePage() -> impl IntoView {
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
                     }
                     feedback.set(Some(error));
                 }
@@ -68,7 +65,7 @@ pub fn AccountLifecyclePage() -> impl IntoView {
 
                         <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
                             <div style="max-width:760px;color:#475569;">
-                                "Search by name, email, role, company, or lifecycle status to narrow the QA workspace before resending OTPs or taking review actions."
+                                "Search by name, email, role, company, or lifecycle status before resending OTPs or taking review actions."
                             </div>
                             <div style="min-width:280px;">
                                 <input
@@ -82,7 +79,7 @@ pub fn AccountLifecyclePage() -> impl IntoView {
                         </section>
 
                         {move || if loading.get() && screen.get().is_none() {
-                            view! { <p>"Loading lifecycle data from the Rust admin backend..."</p> }.into_any()
+                            view! { <p>"Loading account lifecycle data..."</p> }.into_any()
                         } else if let Some(screen_data) = screen.get() {
                             render_workspace(
                                 screen_data,
@@ -215,7 +212,7 @@ fn render_workspace(
                     tone="primary"
                 >
                     {if revision_users.is_empty() {
-                        view! { <p style="margin:0;color:#64748b;">"No revision-requested accounts are in the Rust queue yet."</p> }.into_any()
+                        view! { <p style="margin:0;color:#64748b;">"No revision-requested accounts are in this queue right now."</p> }.into_any()
                     } else {
                         revision_users
                             .into_iter()
@@ -230,7 +227,7 @@ fn render_workspace(
                     tone="danger"
                 >
                     {if rejected_users.is_empty() {
-                        view! { <p style="margin:0;color:#64748b;">"No rejected accounts are in the Rust queue yet."</p> }.into_any()
+                        view! { <p style="margin:0;color:#64748b;">"No rejected accounts are in this queue right now."</p> }.into_any()
                     } else {
                         rejected_users
                             .into_iter()
@@ -377,7 +374,7 @@ fn PendingOtpRow(
                 </div>
                 <span style=badge_style("info")>{user.status_label}</span>
             </div>
-            <small style="color:#475569;">"This user is blocked at verification. Resend the registration OTP from here, then compare the blocked-login and post-resend experience during QA."</small>
+            <small style="color:#475569;">"This user is still waiting on verification. Resend the registration OTP from here to help them continue."</small>
             <div style="display:flex;justify-content:flex-end;">
                 <button
                     type="button"
@@ -427,7 +424,7 @@ fn PendingReviewRow(
                 </div>
                 <span style=badge_style("warning")>{user.status_label}</span>
             </div>
-            <small style="color:#92400e;">"This user is in the decision stage. Use one account for revision-requested QA and another for rejected QA, keeping the review note visible for side-by-side comparison."</small>
+            <small style="color:#92400e;">"This user is in the review decision stage. Keep the review note visible so the next action is clear."</small>
             <textarea
                 rows="2"
                 placeholder="Admin review note"
@@ -460,7 +457,7 @@ fn PendingReviewRow(
                         run_review_action(
                             user.user_id,
                             "revision",
-                            optional_string(remarks.get()).or_else(|| Some("Please revise and resubmit from the Rust lifecycle workspace.".into())),
+                            optional_string(remarks.get()).or_else(|| Some("Please revise and resubmit from the account lifecycle workspace.".into())),
                             feedback,
                             action_loading_user_id,
                             refresh_nonce,
@@ -476,7 +473,7 @@ fn PendingReviewRow(
                         run_review_action(
                             user.user_id,
                             "reject",
-                            optional_string(remarks.get()).or_else(|| Some("Rejected from the Rust lifecycle workspace.".into())),
+                            optional_string(remarks.get()).or_else(|| Some("Rejected from the account lifecycle workspace.".into())),
                             feedback,
                             action_loading_user_id,
                             refresh_nonce,

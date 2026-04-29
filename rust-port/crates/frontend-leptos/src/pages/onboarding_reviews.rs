@@ -39,10 +39,7 @@ pub fn OnboardingReviewPage() -> impl IntoView {
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
                     }
                     feedback.set(Some(error));
                 }
@@ -81,7 +78,7 @@ pub fn OnboardingReviewPage() -> impl IntoView {
                         })}
 
                         {move || if loading.get() && screen.get().is_none() {
-                            view! { <p>"Loading onboarding review queue from the Rust backend..."</p> }.into_any()
+                            view! { <p>"Loading onboarding review queue..."</p> }.into_any()
                         } else if let Some(screen_data) = screen.get() {
                             let filtered_users = screen_data
                                 .users
@@ -141,7 +138,7 @@ pub fn OnboardingReviewPage() -> impl IntoView {
                                                                     let user_id = user.user_id;
                                                                     move |_| {
                                                                         card_notice.set(Some(format!("Submitting revision request for {}...", revision_name)));
-                                                                        run_review_action(user_id, "revision", Some("Please revise and resubmit from the Rust onboarding flow.".into()), feedback, action_loading_user_id, refresh_nonce)
+                                                                        run_review_action(user_id, "revision", Some("Please revise and resubmit from onboarding.".into()), feedback, action_loading_user_id, refresh_nonce)
                                                                     }
                                                                 }
                                                                 style="padding:0.55rem 0.8rem;border:none;border-radius:0.75rem;background:#b45309;color:white;cursor:pointer;"
@@ -153,7 +150,7 @@ pub fn OnboardingReviewPage() -> impl IntoView {
                                                                     let user_id = user.user_id;
                                                                     move |_| {
                                                                         card_notice.set(Some(format!("Submitting reject for {}...", reject_name)));
-                                                                        run_review_action(user_id, "reject", Some("Rejected from the Rust admin review queue.".into()), feedback, action_loading_user_id, refresh_nonce)
+                                                                        run_review_action(user_id, "reject", Some("Rejected from the admin review queue.".into()), feedback, action_loading_user_id, refresh_nonce)
                                                                     }
                                                                 }
                                                                 style="padding:0.55rem 0.8rem;border:none;border-radius:0.75rem;background:#be123c;color:white;cursor:pointer;"

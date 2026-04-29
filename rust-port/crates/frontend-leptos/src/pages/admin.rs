@@ -51,10 +51,7 @@ pub fn AdminDashboardPage() -> impl IntoView {
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
                     }
                     error_message.set(Some(error));
                 }
@@ -99,7 +96,7 @@ pub fn AdminDashboardPage() -> impl IntoView {
                         }
                         session::invalidate_session(
                             &auth,
-                            "The current Rust session was invalidated; sign in again.",
+                            "Your session was refreshed elsewhere. Sign in again.",
                         );
                         ws_connected.set(false);
                     }
@@ -210,12 +207,12 @@ pub fn AdminDashboardPage() -> impl IntoView {
                                         <div class="dashboard-card">
                                             <span class="status-pill warning">"Admin"</span>
                                             <strong class="dashboard-card-title">{move || admin_total.to_string()}</strong>
-                                            <p class="dashboard-card-copy">"Admin accounts in the current Rust directory"</p>
+                                            <p class="dashboard-card-copy">"Admin accounts in the current directory"</p>
                                         </div>
                                         <div class="dashboard-card">
                                             <span class="status-pill warning">"Ops Surfaces"</span>
                                             <strong class="dashboard-card-title">{move || operational_views.to_string()}</strong>
-                                            <p class="dashboard-card-copy">"Operational workspaces currently wired through Rust admin"</p>
+                                            <p class="dashboard-card-copy">"Operational workspaces currently available to admin"</p>
                                         </div>
                                     </div>
                                 </div>
@@ -228,7 +225,7 @@ pub fn AdminDashboardPage() -> impl IntoView {
                                     <h5 style="margin:0 0 1rem;">"Admin Workspaces"</h5>
                                     {move || {
                                         if is_loading.get() && overview.get().is_none() {
-                                            view! { <p style="margin:0;color:#64748b;">"Loading admin route inventory from the Rust backend..."</p> }.into_any()
+                                            view! { <p style="margin:0;color:#64748b;">"Loading admin workspaces..."</p> }.into_any()
                                         } else {
                                             overview
                                                 .get()

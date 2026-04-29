@@ -202,7 +202,7 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
                                     <A href="/admin/account-lifecycle" attr:class=sidebar_link_class(pathname() == "/admin/account-lifecycle")>
                                         <span class="php-sidebar-link-main">
                                             <i class="fas fa-route"></i>
-                                            <span>"Lifecycle QA"</span>
+                                            <span>"Account Lifecycle"</span>
                                         </span>
                                         <i class="fas fa-chevron-right"></i>
                                     </A>

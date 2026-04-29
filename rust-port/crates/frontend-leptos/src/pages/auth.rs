@@ -329,9 +329,9 @@ pub fn RegisterPage() -> impl IntoView {
         spawn_local(async move {
             match api::register(&payload).await {
                 Ok(response) => {
-                    let mut message = response.message;
+                    let message = response.message;
                     if let Some(dev_otp) = response.dev_otp {
-                        message.push_str(&format!(" Dev OTP: {}", dev_otp));
+                        let _ = dev_otp;
                     }
                     auth.notice.set(Some(message.clone()));
                     feedback.set(Some(message));
@@ -563,7 +563,7 @@ pub fn VerifyOtpPage() -> impl IntoView {
         let email_value = email.get().trim().to_string();
         if email_value.is_empty() {
             feedback.set(Some(
-                "Enter the email address first so Rust knows where to resend the OTP.".into(),
+                "Enter the email address first so we know where to resend the OTP.".into(),
             ));
             return;
         }
@@ -578,9 +578,9 @@ pub fn VerifyOtpPage() -> impl IntoView {
             .await
             {
                 Ok(response) => {
-                    let mut message = response.message;
+                    let message = response.message;
                     if let Some(dev_otp) = response.dev_otp {
-                        message.push_str(&format!(" Dev OTP: {}", dev_otp));
+                        let _ = dev_otp;
                     }
                     auth.notice.set(Some(message.clone()));
                     feedback.set(Some(message));
@@ -606,16 +606,6 @@ pub fn VerifyOtpPage() -> impl IntoView {
                 <TextField label="Email" value=email input_type="email" placeholder="name@example.com" />
                 <OtpPurposeField value=purpose />
                 <TextField label="OTP" value=otp input_type="text" placeholder="6-digit code" />
-                {move || if reset_token.get().is_empty() {
-                    view! { <></> }.into_any()
-                } else {
-                    view! {
-                        <section class="auth-notice" style="display:grid;gap:0.25rem;">
-                            <strong>"Development reset token"</strong>
-                            <code style="font-size:0.9rem;word-break:break-all;">{move || reset_token.get()}</code>
-                        </section>
-                    }.into_any()
-                }}
                 <div class="auth-actions">
                     <nav class="auth-links">
                         <A href="/auth/login" attr:class="auth-link">"Back to login"</A>
@@ -675,9 +665,9 @@ pub fn ForgotPasswordPage() -> impl IntoView {
         spawn_local(async move {
             match api::forgot_password(&payload).await {
                 Ok(response) => {
-                    let mut message = response.message;
+                    let message = response.message;
                     if let Some(dev_otp) = response.dev_otp {
-                        message.push_str(&format!(" Dev OTP: {}", dev_otp));
+                        let _ = dev_otp;
                     }
                     auth.notice.set(Some(message.clone()));
                     feedback.set(Some(message));
@@ -701,7 +691,7 @@ pub fn ForgotPasswordPage() -> impl IntoView {
         <AuthArticle
             title=Signal::derive(|| "Forgot Password".to_string())
             subtitle=Signal::derive(|| {
-                "This replaces the legacy forgot-password entry point with the Rust OTP-first reset flow.".to_string()
+                "Use OTP verification first, then set a new password.".to_string()
             })
         >
             <LocalNotice message=feedback />
@@ -793,7 +783,7 @@ pub fn ResetPasswordPage() -> impl IntoView {
         <AuthArticle
             title=Signal::derive(|| "Reset Password".to_string())
             subtitle=Signal::derive(|| {
-                "Complete the Rust password reset after OTP verification by setting a fresh password here.".to_string()
+                "Complete your password reset after OTP verification by setting a fresh password here.".to_string()
             })
         >
             <LocalNotice message=feedback />
@@ -945,14 +935,14 @@ pub fn OnboardingPage() -> impl IntoView {
 
     view! {
         <AuthArticle
-            title=Signal::derive(|| "Rust Onboarding".to_string())
+            title=Signal::derive(|| "Onboarding".to_string())
             subtitle=Signal::derive(|| {
                 "OTP-complete accounts continue here until the company profile is submitted for review.".to_string()
             })
         >
             <LocalNotice message=feedback />
             {move || if !auth.session_ready.get() || loading.get() {
-                view! { <p>"Loading Rust onboarding..."</p> }.into_any()
+                view! { <p>"Loading onboarding..."</p> }.into_any()
             } else if !auth.session.get().authenticated {
                 view! {
                     <section style="display:grid;gap:0.75rem;">
@@ -1008,7 +998,7 @@ pub fn OnboardingPage() -> impl IntoView {
                                         spawn_local(async move {
                                             match document_upload::upload_kyc_document(&document_name, &document_type, document_upload::kyc_upload_input_id()).await {
                                                 Ok(document) => {
-                                                    auth.notice.set(Some(format!("Uploaded {} to the Rust KYC intake flow.", document.document_name)));
+                                                    auth.notice.set(Some(format!("Uploaded {} successfully.", document.document_name)));
                                                     feedback.set(Some("KYC document uploaded. The onboarding screen is refreshing now.".into()));
                                                     kyc_document_name.set(String::new());
                                                     screen.set(None);
@@ -1153,7 +1143,7 @@ pub fn OnboardingPage() -> impl IntoView {
                     </>
                 }.into_any()
             } else {
-                view! { <p>"Unable to load the onboarding screen."</p> }.into_any()
+                view! { <p>"Unable to load onboarding right now."</p> }.into_any()
             }}
         </AuthArticle>
     }
@@ -1408,8 +1398,7 @@ fn AddressAutocompleteField(
                 }
                 None => {
                     google_status.set(Some(
-                        "Google Maps suggestions are unavailable because GOOGLE_MAPS_API_KEY is missing."
-                            .into(),
+                        "Address suggestions are temporarily unavailable.".into(),
                     ));
                 }
             }

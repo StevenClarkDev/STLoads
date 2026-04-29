@@ -329,7 +329,7 @@ fn DashboardRoutePage() -> impl IntoView {
                                 <span class="auth-kicker">"Checking session"</span>
                                 <h1>"Opening the correct workspace"</h1>
                                 <p>
-                                    "The Rust app is resolving whether this session belongs in the admin portal or the user workspace before loading the dashboard."
+                                    "We are opening the correct workspace for this account before loading the dashboard."
                                 </p>
                             </div>
                         </section>

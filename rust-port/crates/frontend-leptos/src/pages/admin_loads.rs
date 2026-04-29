@@ -63,10 +63,7 @@ pub fn AdminLoadsPage() -> impl IntoView {
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
                     }
                     feedback.set(Some(error));
                 }
@@ -85,7 +82,7 @@ pub fn AdminLoadsPage() -> impl IntoView {
                         <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
                             <div>
                                 <h2>"Admin Loads"</h2>
-                                <p>"Rust mirror of the Laravel admin load list, with approval-stage, active, completion, and fund-release tabs."</p>
+                                <p>"Manage approval-stage, active, completed, and fund-release loads from one place."</p>
                             </div>
                             <div style="min-width:280px;">
                                 <input
@@ -155,7 +152,7 @@ pub fn AdminLoadsPage() -> impl IntoView {
                                         if loading.get() && screen.get().is_none() {
                                             view! {
                                                 <tr>
-                                                    <td colspan="8" style="padding:1rem;">"Loading admin loads from the Rust backend..."</td>
+                                                    <td colspan="8" style="padding:1rem;">"Loading admin loads..."</td>
                                                 </tr>
                                             }.into_any()
                                         } else if let Some(screen_data) = screen.get() {
@@ -182,7 +179,7 @@ pub fn AdminLoadsPage() -> impl IntoView {
                                         } else {
                                             view! {
                                                 <tr>
-                                                    <td colspan="8" style="padding:1rem;">"No Rust admin load data is available yet."</td>
+                                                    <td colspan="8" style="padding:1rem;">"No admin load data is available yet."</td>
                                                 </tr>
                                             }.into_any()
                                         }
@@ -220,7 +217,7 @@ fn render_admin_load_row(
     let run_review = move |decision: &'static str| {
         action_loading_load_id.set(Some(load_id));
         row_notice.set(Some(format!(
-            "Submitting {} for load #{} from the inline Rust queue...",
+            "Submitting {} for load #{}...",
             decision, load_id
         )));
         let remarks = {
@@ -228,10 +225,8 @@ fn render_admin_load_row(
             let trimmed = value.trim().to_string();
             if trimmed.is_empty() {
                 match decision {
-                    "revision" => {
-                        Some("Returned for revision from the Rust admin loads board.".into())
-                    }
-                    "reject" => Some("Rejected from the Rust admin loads board.".into()),
+                    "revision" => Some("Returned for revision from the admin loads board.".into()),
+                    "reject" => Some("Rejected from the admin loads board.".into()),
                     _ => None,
                 }
             } else {
