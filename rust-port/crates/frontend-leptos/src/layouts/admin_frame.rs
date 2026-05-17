@@ -54,7 +54,7 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
         spawn_local(async move {
             if let Ok(response) = session::sign_out(auth).await {
                 if response.success {
-                    navigate("/auth/login?portal=admin", Default::default());
+                    navigate("/admin-login", Default::default());
                 }
             }
         });
@@ -74,12 +74,12 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
     };
 
     view! {
-        <main class="php-app-shell admin-frame" style="background:url('https://portal.stloads.com/assets/images/login/texture-bg.jpg') no-repeat center center / cover;">
+        <main class="php-app-shell admin-frame" style="background:url('/assets/images/login/texture-bg.jpg') no-repeat center center / cover;">
             <div class="php-page-wrapper">
                 <header class="php-page-header">
                     <div class="php-header-left">
                         <div class="php-logo-badge">
-                            <img src="https://portal.stloads.com/assets/images/stloads/logo-bg_none-small.png" alt="LoadBoard" />
+                            <img src="/assets/images/stloads/logo-bg_none-small.png" alt="LoadBoard" />
                         </div>
                         <form class="php-searchbar" on:submit=on_search>
                             <i class="fas fa-search"></i>
@@ -129,7 +129,7 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
                 <div class="php-page-body-wrapper">
                     <aside class="php-sidebar">
                         <div class="php-sidebar-logo">
-                            <img src="https://portal.stloads.com/assets/images/stloads/logo-bg_none-small.png" alt="LoadBoard" />
+                            <img src="/assets/images/stloads/logo-bg_none-small.png" alt="LoadBoard" />
                         </div>
 
                         <section class="php-sidebar-section">

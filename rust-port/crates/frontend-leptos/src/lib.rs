@@ -112,6 +112,14 @@ pub fn App() -> impl IntoView {
                         }
                     />
                     <Route
+                        path=path!("admin-login")
+                        view=|| view! {
+                            <AuthFrame>
+                                <LoginPage />
+                            </AuthFrame>
+                        }
+                    />
+                    <Route
                         path=path!("auth/register")
                         view=|| view! {
                             <AuthFrame>

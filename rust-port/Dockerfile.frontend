@@ -25,7 +25,9 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates ./crates
 
 WORKDIR /app/crates/frontend-leptos
-RUN trunk build --release
+RUN trunk build --release \
+    && mkdir -p dist/assets \
+    && cp -R assets/images dist/assets/
 
 FROM nginx:1.27-alpine AS runtime
 RUN apk add --no-cache gettext

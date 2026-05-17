@@ -78,6 +78,14 @@ pub struct RegisterResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortalRoleCountsResponse {
+    pub shipper_total: u64,
+    pub carrier_total: u64,
+    pub broker_total: u64,
+    pub freight_forwarder_total: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerifyOtpRequest {
     pub email: String,
     pub otp: String,

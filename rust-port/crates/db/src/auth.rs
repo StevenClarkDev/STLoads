@@ -209,6 +209,12 @@ pub struct RolePermissionRecord {
     pub permission_name: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct RoleTotalRecord {
+    pub role_id: Option<i16>,
+    pub total: i64,
+}
+
 pub async fn find_user_by_email(
     pool: &DbPool,
     email: &str,
@@ -263,6 +269,19 @@ pub async fn list_permission_names_for_role(
          ORDER BY p.name",
     )
     .bind(role_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn count_users_grouped_by_role(
+    pool: &DbPool,
+) -> Result<Vec<RoleTotalRecord>, sqlx::Error> {
+    sqlx::query_as::<_, RoleTotalRecord>(
+        "SELECT role_id, COUNT(*)::bigint AS total
+         FROM users
+         WHERE role_id IS NOT NULL
+         GROUP BY role_id",
+    )
     .fetch_all(pool)
     .await
 }

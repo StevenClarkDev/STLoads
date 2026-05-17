@@ -16,17 +16,18 @@ use shared::{
     ExecutionLocationPingResponse, ForgotPasswordRequest, ForgotPasswordResponse, LoadBoardScreen,
     LoadBuilderScreen, LoadProfileScreen, LocationUpsertRequest, LoginRequest, LoginResponse,
     LogoutResponse, MasterDataDeleteRequest, MasterDataMutationResponse, MasterDataScreen,
-    OfferReviewRequest, OfferReviewResponse, RealtimeTopic, RegisterRequest, RegisterResponse,
-    ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest, ResetPasswordResponse,
-    ResolveSyncErrorRequest, ResolveSyncErrorResponse, ReviewOnboardingRequest,
-    ReviewOnboardingResponse, SelfProfileScreen, SimpleCatalogUpsertRequest,
-    StloadsOperationsScreen, StloadsReconciliationScreen, StripeWebhookRequest,
-    StripeWebhookResponse, SubmitOnboardingRequest, SubmitOnboardingResponse, TmsCloseRequest,
-    TmsHandoffPayload, TmsHandoffResponse, TmsRequeueRequest, TmsStatusWebhookRequest,
-    TmsWebhookResponse, TmsWithdrawRequest, UpdateSelfProfileRequest, UpdateSelfProfileResponse,
-    UpsertKycDocumentRequest, UpsertKycDocumentResponse, UpsertLoadDocumentRequest,
-    UpsertLoadDocumentResponse, VerifyKycDocumentRequest, VerifyKycDocumentResponse,
-    VerifyLoadDocumentRequest, VerifyLoadDocumentResponse, VerifyOtpRequest, VerifyOtpResponse,
+    OfferReviewRequest, OfferReviewResponse, PortalRoleCountsResponse, RealtimeTopic,
+    RegisterRequest, RegisterResponse, ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest,
+    ResetPasswordResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
+    ReviewOnboardingRequest, ReviewOnboardingResponse, SelfProfileScreen,
+    SimpleCatalogUpsertRequest, StloadsOperationsScreen, StloadsReconciliationScreen,
+    StripeWebhookRequest, StripeWebhookResponse, SubmitOnboardingRequest, SubmitOnboardingResponse,
+    TmsCloseRequest, TmsHandoffPayload, TmsHandoffResponse, TmsRequeueRequest,
+    TmsStatusWebhookRequest, TmsWebhookResponse, TmsWithdrawRequest, UpdateSelfProfileRequest,
+    UpdateSelfProfileResponse, UpsertKycDocumentRequest, UpsertKycDocumentResponse,
+    UpsertLoadDocumentRequest, UpsertLoadDocumentResponse, VerifyKycDocumentRequest,
+    VerifyKycDocumentResponse, VerifyLoadDocumentRequest, VerifyLoadDocumentResponse,
+    VerifyOtpRequest, VerifyOtpResponse,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -92,6 +93,10 @@ pub async fn logout() -> Result<LogoutResponse, String> {
 
 pub async fn register(payload: &RegisterRequest) -> Result<RegisterResponse, String> {
     post_api("/auth/register", payload).await
+}
+
+pub async fn fetch_portal_role_counts() -> Result<PortalRoleCountsResponse, String> {
+    get_api("/auth/public-role-counts").await
 }
 
 pub async fn verify_otp(payload: &VerifyOtpRequest) -> Result<VerifyOtpResponse, String> {

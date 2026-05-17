@@ -1,7 +1,7 @@
 use leptos::{ev, prelude::*, task::spawn_local};
 use leptos_router::{
     components::A,
-    hooks::{use_navigate, use_query_map},
+    hooks::{use_location, use_navigate, use_query_map},
 };
 use serde::{Deserialize, Serialize};
 
@@ -16,12 +16,28 @@ use shared::{
 
 #[component]
 pub fn PortalLandingPage() -> impl IntoView {
+    let shipper_count = RwSignal::new("Count --".to_string());
+    let carrier_count = RwSignal::new("Count --".to_string());
+    let broker_count = RwSignal::new("Count --".to_string());
+    let freight_forwarder_count = RwSignal::new("Count --".to_string());
+
+    Effect::new(move |_| {
+        spawn_local(async move {
+            if let Ok(counts) = api::fetch_portal_role_counts().await {
+                shipper_count.set(format!("Count {}", counts.shipper_total));
+                carrier_count.set(format!("Count {}", counts.carrier_total));
+                broker_count.set(format!("Count {}", counts.broker_total));
+                freight_forwarder_count.set(format!("Count {}", counts.freight_forwarder_total));
+            }
+        });
+    });
+
     view! {
         <section class="portal-home">
             <div class="portal-topbar">
                 <img
                     class="portal-logo"
-                    src="https://portal.stloads.com/assets/images/stloads/logo-bg_none-small.png"
+                    src="/assets/images/stloads/logo-bg_none-small.png"
                     alt="LoadBoard Logo"
                 />
                 <nav class="portal-nav">
@@ -29,7 +45,7 @@ pub fn PortalLandingPage() -> impl IntoView {
                     <A href="https://stloads.com/about-us" attr:class="portal-nav-link">"About"</A>
                     <A href="https://stloads.com/services" attr:class="portal-nav-link">"Services"</A>
                     <A href="https://stloads.com/contact-us" attr:class="portal-nav-link">"Contact"</A>
-                    <A href="/auth/login?portal=admin" attr:class="portal-nav-link portal-admin-link">"Admin Portal"</A>
+                    <A href="/auth/login" attr:class="portal-nav-link portal-admin-link">"Customer Login"</A>
                 </nav>
             </div>
 
@@ -41,31 +57,31 @@ pub fn PortalLandingPage() -> impl IntoView {
 
             <section class="portal-role-grid">
                 <RoleSignupCard
-                    href="/auth/register?role=shipper"
+                    signup_href="/auth/register?role=shipper"
                     icon_class="fas fa-boxes"
                     title="Shipper"
-                    role_count="Count 7"
+                    role_count=Signal::derive(move || shipper_count.get())
                     description="Get your shipper account set up"
                 />
                 <RoleSignupCard
-                    href="/auth/register?role=carrier"
+                    signup_href="/auth/register?role=carrier"
                     icon_class="fas fa-truck-fast"
                     title="Carrier"
-                    role_count="Count 4"
+                    role_count=Signal::derive(move || carrier_count.get())
                     description="Start carrier signup"
                 />
                 <RoleSignupCard
-                    href="/auth/register?role=broker"
+                    signup_href="/auth/register?role=broker"
                     icon_class="fas fa-handshake-angle"
                     title="Broker"
-                    role_count="Count 5"
+                    role_count=Signal::derive(move || broker_count.get())
                     description="Start broker signup"
                 />
                 <RoleSignupCard
-                    href="/auth/register?role=freight_forwarder"
+                    signup_href="/auth/register?role=freight_forwarder"
                     icon_class="fas fa-ship"
                     title="Freight Forwarder"
-                    role_count="Count 3"
+                    role_count=Signal::derive(move || freight_forwarder_count.get())
                     description="Start forwarder signup"
                 />
             </section>
@@ -76,18 +92,20 @@ pub fn PortalLandingPage() -> impl IntoView {
 #[component]
 pub fn LoginPage() -> impl IntoView {
     let navigate = use_navigate();
+    let location = use_location();
     let query = use_query_map();
     let auth = use_auth();
     let email = RwSignal::new(String::new());
     let password = RwSignal::new(String::new());
     let is_submitting = RwSignal::new(false);
     let is_admin_portal = Memo::new(move |_| {
-        query.with(|params| {
+        let admin_from_query = query.with(|params| {
             params
                 .get("portal")
                 .map(|value| value == "admin")
                 .unwrap_or(false)
-        })
+        });
+        admin_from_query || location.pathname.get() == "/admin-login"
     });
     let title = Signal::derive(move || {
         if is_admin_portal.get() {
@@ -1168,10 +1186,10 @@ fn AuthArticle(
 
 #[component]
 fn RoleSignupCard(
-    href: &'static str,
+    signup_href: &'static str,
     icon_class: &'static str,
     title: &'static str,
-    role_count: &'static str,
+    role_count: Signal<String>,
     description: &'static str,
 ) -> impl IntoView {
     view! {
@@ -1179,12 +1197,13 @@ fn RoleSignupCard(
             <div class="portal-role-content">
                 <i class=format!("{icon_class} portal-role-icon")></i>
                 <h3 class="portal-role-title">{title}</h3>
-                <p class="portal-role-count">{role_count}</p>
+                <p class="portal-role-count">{move || role_count.get()}</p>
                 <p class="portal-role-copy">{description}</p>
-                <A href=href attr:class="portal-role-cta">
-                    "Sign up"
-                    <i class="fas fa-arrow-right"></i>
-                </A>
+                <div class="portal-role-actions">
+                    <A href=signup_href attr:class="portal-role-cta">
+                        "Signup"
+                    </A>
+                </div>
             </div>
         </article>
     }

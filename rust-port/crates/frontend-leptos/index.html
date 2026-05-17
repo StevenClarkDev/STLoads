@@ -8,8 +8,8 @@
         name="description"
         content="STLoads logistics portal for onboarding, load management, tracking, payments, and operations."
     />
-    <link rel="icon" href="https://portal.stloads.com/assets/images/favicon.png" type="image/x-icon" />
-    <link rel="shortcut icon" href="https://portal.stloads.com/assets/images/favicon.png" type="image/x-icon" />
+    <link rel="icon" href="/assets/images/favicon.png" type="image/x-icon" />
+    <link rel="shortcut icon" href="/assets/images/favicon.png" type="image/x-icon" />
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Rubik:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet" />
     <script src="/runtime-config.js"></script>
@@ -28,7 +28,7 @@
             margin: 0;
             padding: 0;
             min-height: 100%;
-            background-image: url('https://portal.stloads.com/assets/images/login/texture-bg.jpg');
+            background-image: url('/assets/images/login/texture-bg.jpg');
             background-size: cover;
             background-position: center;
             color: var(--stl-ink);
@@ -37,6 +37,7 @@
 
         body {
             line-height: 1.45;
+            overflow-x: hidden;
         }
 
         * {
@@ -49,15 +50,17 @@
 
         .auth-shell {
             min-height: 100vh;
-            padding: 2rem 0;
+            padding: 2rem 1rem;
             display: flex;
             align-items: center;
             justify-content: center;
+            width: 100%;
+            overflow-x: clip;
         }
 
         .auth-card {
-            width: min(1400px, 95%);
-            margin: 3rem auto;
+            width: min(1400px, 100%);
+            margin: 2rem auto;
             padding: 4rem 2rem;
             min-height: 600px;
             border-radius: 16px;
@@ -81,7 +84,7 @@
         }
 
         .portal-logo {
-            max-width: 130px;
+            max-width: 182px;
             height: auto;
             display: block;
         }
@@ -249,19 +252,27 @@
             font-weight: 500;
         }
 
-        .portal-role-cta {
+        .portal-role-actions {
             margin-top: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            flex-wrap: nowrap;
+            width: 100%;
+        }
+
+        .portal-role-cta {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 0.55rem;
-            min-width: 140px;
-            padding: 0.78rem 1rem;
+            min-width: 104px;
+            padding: 0.58rem 0.9rem;
             border-radius: 999px;
             background: linear-gradient(135deg, var(--primary-blue), var(--light-blue));
             color: #fff;
             text-decoration: none;
-            font-size: 0.95rem;
+            font-size: 0.82rem;
             font-weight: 600;
             box-shadow: 0 12px 22px rgba(31, 83, 123, 0.18);
         }
@@ -1054,7 +1065,7 @@
             color: #fff;
             background:
                 linear-gradient(135deg, rgba(31, 83, 123, 0.97), rgba(0, 173, 240, 0.90)),
-                url('https://portal.stloads.com/assets/images/login/texture-bg.jpg') center/cover;
+                url('/assets/images/login/texture-bg.jpg') center/cover;
             display: flex;
             align-items: stretch;
         }
@@ -1257,17 +1268,39 @@
         }
 
         @media (max-width: 768px) {
+            .auth-shell {
+                min-height: auto;
+                padding: 0.75rem;
+                align-items: flex-start;
+            }
+
             .auth-card {
-                padding: 2rem 1.25rem;
-                margin: 1rem auto;
+                width: 100%;
+                min-height: auto;
+                padding: 1.35rem 0.85rem;
+                margin: 0;
+                border-radius: 14px;
             }
 
             .portal-topbar {
                 justify-content: center;
+                gap: 0.75rem;
+            }
+
+            .portal-logo {
+                max-width: 164px;
             }
 
             .portal-nav {
                 justify-content: center;
+            }
+
+            .portal-home {
+                gap: 1.35rem;
+            }
+
+            .portal-heading {
+                margin: 1rem 0 0.5rem;
             }
 
             .portal-role-grid {

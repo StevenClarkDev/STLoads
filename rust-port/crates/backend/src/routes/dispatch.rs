@@ -43,6 +43,7 @@ use shared::{
     UpsertLoadDocumentResponse, VerifyLoadDocumentRequest, VerifyLoadDocumentResponse,
 };
 use std::collections::HashMap;
+use tracing::{info, warn};
 #[derive(Debug, Serialize)]
 struct DispatchOverview {
     contract: LoadModuleContract,
@@ -54,6 +55,32 @@ struct DispatchOverview {
 struct LoadBoardQuery {
     tab: Option<String>,
 }
+
+fn log_dispatch_failure(
+    action: &str,
+    user_id: Option<i64>,
+    load_id: Option<i64>,
+    leg_id: Option<i64>,
+    reason: &str,
+) {
+    warn!(
+        action,
+        user_id, load_id, leg_id, reason, "dispatch action failed"
+    );
+}
+
+fn log_dispatch_success(
+    action: &str,
+    user_id: Option<i64>,
+    load_id: Option<i64>,
+    leg_id: Option<i64>,
+) {
+    info!(
+        action,
+        user_id, load_id, leg_id, "dispatch action succeeded"
+    );
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(index))
@@ -345,6 +372,7 @@ async fn create_load(
         .ok()
         .flatten()
     else {
+        log_dispatch_failure("create_load", None, None, None, "unauthenticated request");
         return Json(ApiResponse::ok(CreateLoadResponse {
             success: false,
             load_id: None,
@@ -355,6 +383,13 @@ async fn create_load(
     };
 
     if !can_manage_loads(&session) {
+        log_dispatch_failure(
+            "create_load",
+            Some(session.user.id),
+            None,
+            None,
+            "user lacks load creation access",
+        );
         return Json(ApiResponse::ok(CreateLoadResponse {
             success: false,
             load_id: None,
@@ -367,6 +402,13 @@ async fn create_load(
     }
 
     let Some(pool) = state.pool.as_ref() else {
+        log_dispatch_failure(
+            "create_load",
+            Some(session.user.id),
+            None,
+            None,
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(CreateLoadResponse {
             success: false,
             load_id: None,
@@ -584,23 +626,40 @@ async fn create_load(
     };
 
     match create_load_with_legs(pool, &params, &leg_params, Some(session.user.id)).await {
-        Ok(created) => Json(ApiResponse::ok(CreateLoadResponse {
-            success: true,
-            load_id: Some(created.load_id),
-            load_number: Some(created.load_number.clone()),
-            leg_count: created.leg_count,
-            message: format!(
-                "{} created load {} with {} leg(s) from the Rust builder. Continue in the Rust load profile for document and follow-up workflow.",
-                session.user.name, created.load_number, created.leg_count
-            ),
-        })),
-        Err(error) => Json(ApiResponse::ok(CreateLoadResponse {
-            success: false,
-            load_id: None,
-            load_number: None,
-            leg_count: 0,
-            message: format!("Load creation failed: {}", error),
-        })),
+        Ok(created) => {
+            log_dispatch_success(
+                "create_load",
+                Some(session.user.id),
+                Some(created.load_id),
+                None,
+            );
+            Json(ApiResponse::ok(CreateLoadResponse {
+                success: true,
+                load_id: Some(created.load_id),
+                load_number: Some(created.load_number.clone()),
+                leg_count: created.leg_count,
+                message: format!(
+                    "{} created load {} with {} leg(s) from the Rust builder. Continue in the Rust load profile for document and follow-up workflow.",
+                    session.user.name, created.load_number, created.leg_count
+                ),
+            }))
+        }
+        Err(error) => {
+            log_dispatch_failure(
+                "create_load",
+                Some(session.user.id),
+                None,
+                None,
+                &format!("load creation failed: {error}"),
+            );
+            Json(ApiResponse::ok(CreateLoadResponse {
+                success: false,
+                load_id: None,
+                load_number: None,
+                leg_count: 0,
+                message: format!("Load creation failed: {}", error),
+            }))
+        }
     }
 }
 
@@ -615,6 +674,13 @@ async fn update_load(
         .ok()
         .flatten()
     else {
+        log_dispatch_failure(
+            "update_load",
+            None,
+            Some(load_id),
+            None,
+            "unauthenticated request",
+        );
         return Json(ApiResponse::ok(CreateLoadResponse {
             success: false,
             load_id: Some(load_id),
@@ -625,6 +691,13 @@ async fn update_load(
     };
 
     if !can_manage_loads(&session) {
+        log_dispatch_failure(
+            "update_load",
+            Some(session.user.id),
+            Some(load_id),
+            None,
+            "user lacks load update access",
+        );
         return Json(ApiResponse::ok(CreateLoadResponse {
             success: false,
             load_id: Some(load_id),
@@ -637,6 +710,13 @@ async fn update_load(
     }
 
     let Some(pool) = state.pool.as_ref() else {
+        log_dispatch_failure(
+            "update_load",
+            Some(session.user.id),
+            Some(load_id),
+            None,
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(CreateLoadResponse {
             success: false,
             load_id: Some(load_id),
@@ -700,33 +780,59 @@ async fn update_load(
         };
 
     match update_load_with_legs(pool, load_id, &params, &leg_params, Some(session.user.id)).await {
-        Ok(Some(updated)) => Json(ApiResponse::ok(CreateLoadResponse {
-            success: true,
-            load_id: Some(updated.load_id),
-            load_number: Some(updated.load_number.clone()),
-            leg_count: updated.leg_count,
-            message: format!(
-                "{} updated load {} from the Rust builder. Continue in the Rust load profile for documents and follow-up workflow.",
-                session.user.name, updated.load_number
-            ),
-        })),
-        Ok(None) => Json(ApiResponse::ok(CreateLoadResponse {
-            success: false,
-            load_id: Some(load_id),
-            load_number: existing_load.load_number,
-            leg_count: 0,
-            message: format!(
-                "Load #{} was not found while applying the Rust builder update.",
-                load_id
-            ),
-        })),
-        Err(error) => Json(ApiResponse::ok(CreateLoadResponse {
-            success: false,
-            load_id: Some(load_id),
-            load_number: existing_load.load_number,
-            leg_count: 0,
-            message: format!("Load update failed: {}", error),
-        })),
+        Ok(Some(updated)) => {
+            log_dispatch_success(
+                "update_load",
+                Some(session.user.id),
+                Some(updated.load_id),
+                None,
+            );
+            Json(ApiResponse::ok(CreateLoadResponse {
+                success: true,
+                load_id: Some(updated.load_id),
+                load_number: Some(updated.load_number.clone()),
+                leg_count: updated.leg_count,
+                message: format!(
+                    "{} updated load {} from the Rust builder. Continue in the Rust load profile for documents and follow-up workflow.",
+                    session.user.name, updated.load_number
+                ),
+            }))
+        }
+        Ok(None) => {
+            log_dispatch_failure(
+                "update_load",
+                Some(session.user.id),
+                Some(load_id),
+                None,
+                "load disappeared during update",
+            );
+            Json(ApiResponse::ok(CreateLoadResponse {
+                success: false,
+                load_id: Some(load_id),
+                load_number: existing_load.load_number,
+                leg_count: 0,
+                message: format!(
+                    "Load #{} was not found while applying the Rust builder update.",
+                    load_id
+                ),
+            }))
+        }
+        Err(error) => {
+            log_dispatch_failure(
+                "update_load",
+                Some(session.user.id),
+                Some(load_id),
+                None,
+                &format!("load update failed: {error}"),
+            );
+            Json(ApiResponse::ok(CreateLoadResponse {
+                success: false,
+                load_id: Some(load_id),
+                load_number: existing_load.load_number,
+                leg_count: 0,
+                message: format!("Load update failed: {}", error),
+            }))
+        }
     }
 }
 #[derive(Debug)]
@@ -749,6 +855,13 @@ async fn upload_load_document_handler(
         .ok()
         .flatten()
     else {
+        log_dispatch_failure(
+            "upload_load_document",
+            None,
+            Some(load_id),
+            None,
+            "unauthenticated request",
+        );
         return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
             success: false,
             load_id,
@@ -758,6 +871,13 @@ async fn upload_load_document_handler(
     };
 
     let Some(pool) = state.pool.as_ref() else {
+        log_dispatch_failure(
+            "upload_load_document",
+            None,
+            Some(load_id),
+            None,
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
             success: false,
             load_id,
@@ -771,6 +891,13 @@ async fn upload_load_document_handler(
     };
 
     let Some(load) = find_load_by_id(pool, load_id).await.unwrap_or_default() else {
+        log_dispatch_failure(
+            "upload_load_document",
+            Some(session.user.id),
+            Some(load_id),
+            None,
+            "load not found",
+        );
         return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
             success: false,
             load_id,
@@ -783,6 +910,13 @@ async fn upload_load_document_handler(
     };
 
     if !can_manage_load_documents(&session, load.user_id) {
+        log_dispatch_failure(
+            "upload_load_document",
+            Some(session.user.id),
+            Some(load_id),
+            None,
+            "user cannot manage load documents",
+        );
         return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
             success: false,
             load_id,
@@ -794,6 +928,13 @@ async fn upload_load_document_handler(
     let upload = match parse_document_upload(multipart).await {
         Ok(value) => value,
         Err(message) => {
+            log_dispatch_failure(
+                "upload_load_document",
+                Some(session.user.id),
+                Some(load_id),
+                None,
+                &message,
+            );
             return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
                 success: false,
                 load_id,
@@ -810,6 +951,13 @@ async fn upload_load_document_handler(
     {
         Ok(value) => value,
         Err(error) => {
+            log_dispatch_failure(
+                "upload_load_document",
+                Some(session.user.id),
+                Some(load_id),
+                None,
+                &format!("document storage failed: {error}"),
+            );
             return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
                 success: false,
                 load_id,
@@ -830,32 +978,58 @@ async fn upload_load_document_handler(
     };
 
     match insert_load_document(pool, load_id, &params, Some(session.user.id)).await {
-        Ok(Some(document)) => Json(ApiResponse::ok(UpsertLoadDocumentResponse {
-            success: true,
-            load_id,
-            document_id: Some(document.id),
-            message: format!(
-                "{} uploaded document {} to load {}. The binary file is now viewable by admin and the uploader profile in this Rust slice.",
-                session.user.name,
-                document.document_name,
-                load.load_number
-                    .clone()
-                    .unwrap_or_else(|| format!("#{}", load.id))
-            ),
-        })),
-        Ok(None) => Json(ApiResponse::ok(UpsertLoadDocumentResponse {
-            success: false,
-            load_id,
-            document_id: None,
-            message: "The target load could not be found while saving the uploaded document."
-                .into(),
-        })),
-        Err(error) => Json(ApiResponse::ok(UpsertLoadDocumentResponse {
-            success: false,
-            load_id,
-            document_id: None,
-            message: format!("Document upload create failed: {}", error),
-        })),
+        Ok(Some(document)) => {
+            log_dispatch_success(
+                "upload_load_document",
+                Some(session.user.id),
+                Some(load_id),
+                None,
+            );
+            Json(ApiResponse::ok(UpsertLoadDocumentResponse {
+                success: true,
+                load_id,
+                document_id: Some(document.id),
+                message: format!(
+                    "{} uploaded document {} to load {}. The binary file is now viewable by admin and the uploader profile in this Rust slice.",
+                    session.user.name,
+                    document.document_name,
+                    load.load_number
+                        .clone()
+                        .unwrap_or_else(|| format!("#{}", load.id))
+                ),
+            }))
+        }
+        Ok(None) => {
+            log_dispatch_failure(
+                "upload_load_document",
+                Some(session.user.id),
+                Some(load_id),
+                None,
+                "load disappeared during uploaded document save",
+            );
+            Json(ApiResponse::ok(UpsertLoadDocumentResponse {
+                success: false,
+                load_id,
+                document_id: None,
+                message: "The target load could not be found while saving the uploaded document."
+                    .into(),
+            }))
+        }
+        Err(error) => {
+            log_dispatch_failure(
+                "upload_load_document",
+                Some(session.user.id),
+                Some(load_id),
+                None,
+                &format!("document create failed after upload: {error}"),
+            );
+            Json(ApiResponse::ok(UpsertLoadDocumentResponse {
+                success: false,
+                load_id,
+                document_id: None,
+                message: format!("Document upload create failed: {}", error),
+            }))
+        }
     }
 }
 
@@ -963,6 +1137,13 @@ async fn create_load_document_handler(
         .ok()
         .flatten()
     else {
+        log_dispatch_failure(
+            "create_load_document",
+            None,
+            Some(load_id),
+            None,
+            "unauthenticated request",
+        );
         return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
             success: false,
             load_id,
@@ -972,6 +1153,13 @@ async fn create_load_document_handler(
     };
 
     let Some(pool) = state.pool.as_ref() else {
+        log_dispatch_failure(
+            "create_load_document",
+            None,
+            Some(load_id),
+            None,
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
             success: false,
             load_id,
@@ -985,6 +1173,13 @@ async fn create_load_document_handler(
     };
 
     let Some(load) = find_load_by_id(pool, load_id).await.unwrap_or_default() else {
+        log_dispatch_failure(
+            "create_load_document",
+            Some(session.user.id),
+            Some(load_id),
+            None,
+            "load not found",
+        );
         return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
             success: false,
             load_id,
@@ -997,6 +1192,13 @@ async fn create_load_document_handler(
     };
 
     if !can_manage_load_documents(&session, load.user_id) {
+        log_dispatch_failure(
+            "create_load_document",
+            Some(session.user.id),
+            Some(load_id),
+            None,
+            "user cannot manage load documents",
+        );
         return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
             success: false,
             load_id,
@@ -1008,6 +1210,13 @@ async fn create_load_document_handler(
     let params = match validate_load_document_payload(&payload) {
         Ok(value) => value,
         Err(message) => {
+            log_dispatch_failure(
+                "create_load_document",
+                Some(session.user.id),
+                Some(load_id),
+                None,
+                &message,
+            );
             return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
                 success: false,
                 load_id,
@@ -1018,31 +1227,57 @@ async fn create_load_document_handler(
     };
 
     match insert_load_document(pool, load_id, &params, Some(session.user.id)).await {
-        Ok(Some(document)) => Json(ApiResponse::ok(UpsertLoadDocumentResponse {
-            success: true,
-            load_id,
-            document_id: Some(document.id),
-            message: format!(
-                "{} added document {} to load {}. Binary upload transport will move to IBM object storage next.",
-                session.user.name,
-                document.document_name,
-                load.load_number
-                    .clone()
-                    .unwrap_or_else(|| format!("#{}", load.id))
-            ),
-        })),
-        Ok(None) => Json(ApiResponse::ok(UpsertLoadDocumentResponse {
-            success: false,
-            load_id,
-            document_id: None,
-            message: "The target load could not be found while saving the document.".into(),
-        })),
-        Err(error) => Json(ApiResponse::ok(UpsertLoadDocumentResponse {
-            success: false,
-            load_id,
-            document_id: None,
-            message: format!("Document create failed: {}", error),
-        })),
+        Ok(Some(document)) => {
+            log_dispatch_success(
+                "create_load_document",
+                Some(session.user.id),
+                Some(load_id),
+                None,
+            );
+            Json(ApiResponse::ok(UpsertLoadDocumentResponse {
+                success: true,
+                load_id,
+                document_id: Some(document.id),
+                message: format!(
+                    "{} added document {} to load {}. Binary upload transport will move to IBM object storage next.",
+                    session.user.name,
+                    document.document_name,
+                    load.load_number
+                        .clone()
+                        .unwrap_or_else(|| format!("#{}", load.id))
+                ),
+            }))
+        }
+        Ok(None) => {
+            log_dispatch_failure(
+                "create_load_document",
+                Some(session.user.id),
+                Some(load_id),
+                None,
+                "load disappeared during document create",
+            );
+            Json(ApiResponse::ok(UpsertLoadDocumentResponse {
+                success: false,
+                load_id,
+                document_id: None,
+                message: "The target load could not be found while saving the document.".into(),
+            }))
+        }
+        Err(error) => {
+            log_dispatch_failure(
+                "create_load_document",
+                Some(session.user.id),
+                Some(load_id),
+                None,
+                &format!("document create failed: {error}"),
+            );
+            Json(ApiResponse::ok(UpsertLoadDocumentResponse {
+                success: false,
+                load_id,
+                document_id: None,
+                message: format!("Document create failed: {}", error),
+            }))
+        }
     }
 }
 
@@ -1057,6 +1292,13 @@ async fn update_load_document_handler(
         .ok()
         .flatten()
     else {
+        log_dispatch_failure(
+            "update_load_document",
+            None,
+            None,
+            None,
+            "unauthenticated request",
+        );
         return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
             success: false,
             load_id: 0,
@@ -1066,6 +1308,13 @@ async fn update_load_document_handler(
     };
 
     let Some(pool) = state.pool.as_ref() else {
+        log_dispatch_failure(
+            "update_load_document",
+            None,
+            None,
+            None,
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
             success: false,
             load_id: 0,
@@ -1082,6 +1331,13 @@ async fn update_load_document_handler(
         .await
         .unwrap_or_default()
     else {
+        log_dispatch_failure(
+            "update_load_document",
+            Some(session.user.id),
+            None,
+            None,
+            "document not found",
+        );
         return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
             success: false,
             load_id: 0,
@@ -1094,6 +1350,13 @@ async fn update_load_document_handler(
     };
 
     if !can_manage_load_documents(&session, scope.load_owner_user_id) {
+        log_dispatch_failure(
+            "update_load_document",
+            Some(session.user.id),
+            Some(scope.load_id),
+            None,
+            "user cannot manage load documents",
+        );
         return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
             success: false,
             load_id: scope.load_id,
@@ -1105,6 +1368,13 @@ async fn update_load_document_handler(
     let params = match validate_load_document_payload(&payload) {
         Ok(value) => value,
         Err(message) => {
+            log_dispatch_failure(
+                "update_load_document",
+                Some(session.user.id),
+                Some(scope.load_id),
+                None,
+                &message,
+            );
             return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
                 success: false,
                 load_id: scope.load_id,
@@ -1115,27 +1385,53 @@ async fn update_load_document_handler(
     };
 
     match persist_load_document_updates(pool, document_id, &params, Some(session.user.id)).await {
-        Ok(Some(document)) => Json(ApiResponse::ok(UpsertLoadDocumentResponse {
-            success: true,
-            load_id: document.load_id,
-            document_id: Some(document.id),
-            message: format!(
-                "{} updated document {} from the Rust load profile.",
-                session.user.name, document.document_name
-            ),
-        })),
-        Ok(None) => Json(ApiResponse::ok(UpsertLoadDocumentResponse {
-            success: false,
-            load_id: scope.load_id,
-            document_id: Some(document_id),
-            message: "The requested document disappeared before the update completed.".into(),
-        })),
-        Err(error) => Json(ApiResponse::ok(UpsertLoadDocumentResponse {
-            success: false,
-            load_id: scope.load_id,
-            document_id: Some(document_id),
-            message: format!("Document update failed: {}", error),
-        })),
+        Ok(Some(document)) => {
+            log_dispatch_success(
+                "update_load_document",
+                Some(session.user.id),
+                Some(document.load_id),
+                None,
+            );
+            Json(ApiResponse::ok(UpsertLoadDocumentResponse {
+                success: true,
+                load_id: document.load_id,
+                document_id: Some(document.id),
+                message: format!(
+                    "{} updated document {} from the Rust load profile.",
+                    session.user.name, document.document_name
+                ),
+            }))
+        }
+        Ok(None) => {
+            log_dispatch_failure(
+                "update_load_document",
+                Some(session.user.id),
+                Some(scope.load_id),
+                None,
+                "document disappeared during update",
+            );
+            Json(ApiResponse::ok(UpsertLoadDocumentResponse {
+                success: false,
+                load_id: scope.load_id,
+                document_id: Some(document_id),
+                message: "The requested document disappeared before the update completed.".into(),
+            }))
+        }
+        Err(error) => {
+            log_dispatch_failure(
+                "update_load_document",
+                Some(session.user.id),
+                Some(scope.load_id),
+                None,
+                &format!("document update failed: {error}"),
+            );
+            Json(ApiResponse::ok(UpsertLoadDocumentResponse {
+                success: false,
+                load_id: scope.load_id,
+                document_id: Some(document_id),
+                message: format!("Document update failed: {}", error),
+            }))
+        }
     }
 }
 
@@ -1150,6 +1446,13 @@ async fn verify_load_document_handler(
         .ok()
         .flatten()
     else {
+        log_dispatch_failure(
+            "verify_load_document",
+            None,
+            None,
+            None,
+            "unauthenticated request",
+        );
         return Json(ApiResponse::ok(VerifyLoadDocumentResponse {
             success: false,
             load_id: 0,
@@ -1160,6 +1463,13 @@ async fn verify_load_document_handler(
     };
 
     let Some(pool) = state.pool.as_ref() else {
+        log_dispatch_failure(
+            "verify_load_document",
+            None,
+            None,
+            None,
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(VerifyLoadDocumentResponse {
             success: false,
             load_id: 0,
@@ -1177,6 +1487,13 @@ async fn verify_load_document_handler(
         .await
         .unwrap_or_default()
     else {
+        log_dispatch_failure(
+            "verify_load_document",
+            Some(session.user.id),
+            None,
+            None,
+            "document not found",
+        );
         return Json(ApiResponse::ok(VerifyLoadDocumentResponse {
             success: false,
             load_id: 0,
@@ -1190,6 +1507,13 @@ async fn verify_load_document_handler(
     };
 
     if !can_manage_load_documents(&session, scope.load_owner_user_id) {
+        log_dispatch_failure(
+            "verify_load_document",
+            Some(session.user.id),
+            Some(scope.load_id),
+            None,
+            "user cannot manage load documents",
+        );
         return Json(ApiResponse::ok(VerifyLoadDocumentResponse {
             success: false,
             load_id: scope.load_id,
@@ -1203,6 +1527,12 @@ async fn verify_load_document_handler(
 
     if let Ok(Some(document)) = find_load_document_by_id(pool, document_id).await {
         if let Some(existing_hash) = document.hash.clone() {
+            log_dispatch_success(
+                "verify_load_document",
+                Some(session.user.id),
+                Some(document.load_id),
+                None,
+            );
             return Json(ApiResponse::ok(VerifyLoadDocumentResponse {
                 success: true,
                 load_id: document.load_id,
@@ -1229,31 +1559,58 @@ async fn verify_load_document_handler(
     )
     .await
     {
-        Ok(Some(document)) => Json(ApiResponse::ok(VerifyLoadDocumentResponse {
-            success: true,
-            load_id: document.load_id,
-            document_id: document.id,
-            hash: document.hash,
-            message: format!(
-                "{} anchored document {} with a mock blockchain proof for the Rust migration slice.",
-                session.user.name, document.document_name
-            ),
-        })),
-        Ok(None) => Json(ApiResponse::ok(VerifyLoadDocumentResponse {
-            success: false,
-            load_id: scope.load_id,
-            document_id,
-            hash: None,
-            message: "The requested document disappeared before blockchain verification completed."
-                .into(),
-        })),
-        Err(error) => Json(ApiResponse::ok(VerifyLoadDocumentResponse {
-            success: false,
-            load_id: scope.load_id,
-            document_id,
-            hash: None,
-            message: format!("Blockchain verification failed: {}", error),
-        })),
+        Ok(Some(document)) => {
+            log_dispatch_success(
+                "verify_load_document",
+                Some(session.user.id),
+                Some(document.load_id),
+                None,
+            );
+            Json(ApiResponse::ok(VerifyLoadDocumentResponse {
+                success: true,
+                load_id: document.load_id,
+                document_id: document.id,
+                hash: document.hash,
+                message: format!(
+                    "{} anchored document {} with a mock blockchain proof for the Rust migration slice.",
+                    session.user.name, document.document_name
+                ),
+            }))
+        }
+        Ok(None) => {
+            log_dispatch_failure(
+                "verify_load_document",
+                Some(session.user.id),
+                Some(scope.load_id),
+                None,
+                "document disappeared during verification",
+            );
+            Json(ApiResponse::ok(VerifyLoadDocumentResponse {
+                success: false,
+                load_id: scope.load_id,
+                document_id,
+                hash: None,
+                message:
+                    "The requested document disappeared before blockchain verification completed."
+                        .into(),
+            }))
+        }
+        Err(error) => {
+            log_dispatch_failure(
+                "verify_load_document",
+                Some(session.user.id),
+                Some(scope.load_id),
+                None,
+                &format!("blockchain verification failed: {error}"),
+            );
+            Json(ApiResponse::ok(VerifyLoadDocumentResponse {
+                success: false,
+                load_id: scope.load_id,
+                document_id,
+                hash: None,
+                message: format!("Blockchain verification failed: {}", error),
+            }))
+        }
     }
 }
 async fn book_leg(
@@ -1263,6 +1620,13 @@ async fn book_leg(
     Json(payload): Json<BookLoadLegRequest>,
 ) -> Json<ApiResponse<BookLoadLegResponse>> {
     let Some(pool) = state.pool.as_ref() else {
+        log_dispatch_failure(
+            "book_leg",
+            None,
+            None,
+            Some(leg_id),
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(BookLoadLegResponse {
             success: false,
             leg_id,
@@ -1277,6 +1641,13 @@ async fn book_leg(
 
     let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
     else {
+        log_dispatch_failure(
+            "book_leg",
+            None,
+            None,
+            Some(leg_id),
+            "unauthenticated request",
+        );
         return Json(ApiResponse::ok(BookLoadLegResponse {
             success: false,
             leg_id,
@@ -1286,6 +1657,13 @@ async fn book_leg(
     };
 
     if session.user.primary_role() != Some(UserRole::Carrier) {
+        log_dispatch_failure(
+            "book_leg",
+            Some(session.user.id),
+            None,
+            Some(leg_id),
+            "user is not a carrier",
+        );
         return Json(ApiResponse::ok(BookLoadLegResponse {
             success: false,
             leg_id,
@@ -1297,6 +1675,13 @@ async fn book_leg(
     }
 
     let Ok(Some(existing_leg)) = find_load_leg_by_id(pool, leg_id).await else {
+        log_dispatch_failure(
+            "book_leg",
+            Some(session.user.id),
+            None,
+            Some(leg_id),
+            "leg not found",
+        );
         return Json(ApiResponse::ok(BookLoadLegResponse {
             success: false,
             leg_id,
@@ -1306,6 +1691,12 @@ async fn book_leg(
     };
 
     if existing_leg.booked_carrier_id == Some(session.user.id) {
+        log_dispatch_success(
+            "book_leg",
+            Some(session.user.id),
+            Some(existing_leg.load_id),
+            Some(leg_id),
+        );
         return Json(ApiResponse::ok(BookLoadLegResponse {
             success: true,
             leg_id,
@@ -1315,6 +1706,13 @@ async fn book_leg(
     }
 
     if existing_leg.booked_carrier_id.is_some() || existing_leg.status_id >= 4 {
+        log_dispatch_failure(
+            "book_leg",
+            Some(session.user.id),
+            Some(existing_leg.load_id),
+            Some(leg_id),
+            "leg is no longer open for booking",
+        );
         return Json(ApiResponse::ok(BookLoadLegResponse {
             success: false,
             leg_id,
@@ -1333,6 +1731,12 @@ async fn book_leg(
     .await
     {
         Ok(Some(updated_leg)) => {
+            log_dispatch_success(
+                "book_leg",
+                Some(session.user.id),
+                Some(updated_leg.load_id),
+                Some(leg_id),
+            );
             let mut target_user_ids = vec![session.user.id.max(0) as u64];
             if let Ok(Some(scope)) = find_load_leg_scope(pool, leg_id).await {
                 if let Some(owner_id) = scope.load_owner_user_id {
@@ -1398,18 +1802,36 @@ async fn book_leg(
                 message: "Load leg booked from the authenticated Rust dispatch route; the board will refresh through scoped realtime updates.".into(),
             }))
         }
-        Ok(None) => Json(ApiResponse::ok(BookLoadLegResponse {
-            success: false,
-            leg_id,
-            status_label: "Missing".into(),
-            message: "The requested load leg was not found.".into(),
-        })),
-        Err(error) => Json(ApiResponse::ok(BookLoadLegResponse {
-            success: false,
-            leg_id,
-            status_label: "Error".into(),
-            message: format!("Booking action failed: {}", error),
-        })),
+        Ok(None) => {
+            log_dispatch_failure(
+                "book_leg",
+                Some(session.user.id),
+                None,
+                Some(leg_id),
+                "leg disappeared during booking",
+            );
+            Json(ApiResponse::ok(BookLoadLegResponse {
+                success: false,
+                leg_id,
+                status_label: "Missing".into(),
+                message: "The requested load leg was not found.".into(),
+            }))
+        }
+        Err(error) => {
+            log_dispatch_failure(
+                "book_leg",
+                Some(session.user.id),
+                None,
+                Some(leg_id),
+                &format!("booking action failed: {error}"),
+            );
+            Json(ApiResponse::ok(BookLoadLegResponse {
+                success: false,
+                leg_id,
+                status_label: "Error".into(),
+                message: format!("Booking action failed: {}", error),
+            }))
+        }
     }
 }
 

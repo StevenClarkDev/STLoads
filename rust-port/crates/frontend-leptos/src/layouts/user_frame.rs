@@ -75,7 +75,7 @@ pub fn UserFrame(children: Children) -> impl IntoView {
                 <header class="php-page-header">
                     <div class="php-header-left">
                         <div class="php-logo-badge">
-                            <img src="https://portal.stloads.com/assets/images/stloads/logo-bg_none-small.png" alt="LoadBoard" />
+                            <img src="/assets/images/stloads/logo-bg_none-small.png" alt="LoadBoard" />
                         </div>
                         <form class="php-searchbar" on:submit=on_search>
                             <i class="fas fa-search"></i>
@@ -125,7 +125,7 @@ pub fn UserFrame(children: Children) -> impl IntoView {
                 <div class="php-page-body-wrapper">
                     <aside class="php-sidebar">
                         <div class="php-sidebar-logo">
-                            <img src="https://portal.stloads.com/assets/images/stloads/logo-bg_none-small.png" alt="LoadBoard" />
+                            <img src="/assets/images/stloads/logo-bg_none-small.png" alt="LoadBoard" />
                         </div>
 
                         <section class="php-sidebar-section">

@@ -12,8 +12,8 @@ use db::auth::{
     ChangeSelfPasswordInput, CreateKycDocumentInput, CreateUserInput, UpdateKycDocumentInput,
     UpdateSelfProfileInput, UpsertUserOnboardingInput, change_self_password,
     consume_password_reset_otp, consume_password_reset_token, consume_registration_otp,
-    create_kyc_document, create_registered_user, delete_kyc_document, find_kyc_document_by_id,
-    find_user_by_email, find_user_by_id, find_user_detail_by_user_id,
+    count_users_grouped_by_role, create_kyc_document, create_registered_user, delete_kyc_document,
+    find_kyc_document_by_id, find_user_by_email, find_user_by_id, find_user_detail_by_user_id,
     list_kyc_documents_by_user_id, refresh_user_otp, store_password_reset_token,
     update_kyc_document, update_self_profile, upsert_user_onboarding_details,
     verify_kyc_document_blockchain,
@@ -28,13 +28,14 @@ use shared::{
     ApiResponse, AuthOnboardingDraft, AuthOnboardingScreen, AuthSessionState,
     ChangePasswordRequest, ChangePasswordResponse, DeleteKycDocumentResponse,
     ForgotPasswordRequest, ForgotPasswordResponse, KycDocumentItem, LoginRequest, LoginResponse,
-    LogoutResponse, OtpPurpose, RealtimeEvent, RealtimeEventKind, RegisterRequest,
-    RegisterResponse, ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest,
+    LogoutResponse, OtpPurpose, PortalRoleCountsResponse, RealtimeEvent, RealtimeEventKind,
+    RegisterRequest, RegisterResponse, ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest,
     ResetPasswordResponse, SelfProfileDraft, SelfProfileFact, SelfProfileScreen,
     SubmitOnboardingRequest, SubmitOnboardingResponse, UpdateSelfProfileRequest,
     UpdateSelfProfileResponse, UpsertKycDocumentRequest, UpsertKycDocumentResponse,
     VerifyKycDocumentRequest, VerifyKycDocumentResponse, VerifyOtpRequest, VerifyOtpResponse,
 };
+use tracing::{info, warn};
 
 use crate::{auth_session, email::MailOutcome, realtime_bus::RoutedRealtimeEvent, state::AppState};
 
@@ -47,6 +48,14 @@ struct AuthOverview {
     role_permission_sets: usize,
 }
 
+fn log_auth_failure(action: &str, email: &str, reason: &str) {
+    warn!(action, email = %email, reason, "auth flow failed");
+}
+
+fn log_auth_success(action: &str, email: &str, user_id: Option<i64>) {
+    info!(action, email = %email, user_id, "auth flow succeeded");
+}
+
 pub fn router() -> Router<crate::state::AppState> {
     Router::new()
         .route("/", get(index))
@@ -56,6 +65,7 @@ pub fn router() -> Router<crate::state::AppState> {
         .route("/account-statuses", get(account_statuses))
         .route("/session-contract", get(session_contract))
         .route("/rbac-contract", get(rbac_contract))
+        .route("/public-role-counts", get(public_role_counts))
         .route("/session", get(session))
         .route("/login", post(login))
         .route("/logout", post(logout))
@@ -135,6 +145,35 @@ async fn rbac_contract() -> Json<ApiResponse<Vec<RolePermissionContract>>> {
     Json(ApiResponse::ok(role_permission_contracts().to_vec()))
 }
 
+async fn public_role_counts(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<PortalRoleCountsResponse>> {
+    let mut shipper_total = 0_u64;
+    let mut carrier_total = 0_u64;
+    let mut broker_total = 0_u64;
+    let mut freight_forwarder_total = 0_u64;
+
+    if let Some(pool) = state.pool.as_ref() {
+        for row in count_users_grouped_by_role(pool).await.unwrap_or_default() {
+            let total = row.total.max(0) as u64;
+            match row.role_id.and_then(UserRole::from_legacy_id) {
+                Some(UserRole::Shipper) => shipper_total = total,
+                Some(UserRole::Carrier) => carrier_total = total,
+                Some(UserRole::Broker) => broker_total = total,
+                Some(UserRole::FreightForwarder) => freight_forwarder_total = total,
+                _ => {}
+            }
+        }
+    }
+
+    Json(ApiResponse::ok(PortalRoleCountsResponse {
+        shipper_total,
+        carrier_total,
+        broker_total,
+        freight_forwarder_total,
+    }))
+}
+
 async fn session(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -158,6 +197,11 @@ async fn login(
     Json(payload): Json<LoginRequest>,
 ) -> Json<ApiResponse<LoginResponse>> {
     let Some(pool) = state.pool.as_ref() else {
+        log_auth_failure(
+            "login",
+            payload.email.trim(),
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(LoginResponse {
             success: false,
             token: None,
@@ -174,6 +218,7 @@ async fn login(
 
     let email = payload.email.trim().to_lowercase();
     let Some(user) = find_user_by_email(pool, &email).await.unwrap_or(None) else {
+        log_auth_failure("login", &email, "user not found");
         return Json(ApiResponse::ok(LoginResponse {
             success: false,
             token: None,
@@ -188,6 +233,7 @@ async fn login(
         .unwrap_or_else(|_| payload.password == user.password);
 
     if !password_matches {
+        log_auth_failure("login", &email, "password verification failed");
         return Json(ApiResponse::ok(LoginResponse {
             success: false,
             token: None,
@@ -200,6 +246,7 @@ async fn login(
 
     match auth_session::issue_session_token(&state, &user).await {
         Ok(token) => {
+            log_auth_success("login", &email, Some(user.id));
             let session = auth_session::build_session_state(&state, &user).await;
             Json(ApiResponse::ok(LoginResponse {
                 success: true,
@@ -208,12 +255,19 @@ async fn login(
                 message: login_message_for_status(user.account_status()),
             }))
         }
-        Err(error) => Json(ApiResponse::ok(LoginResponse {
-            success: false,
-            token: None,
-            session: auth_session::unauthenticated_session_state(&error),
-            message: format!("Login failed: {}", error),
-        })),
+        Err(error) => {
+            log_auth_failure(
+                "login",
+                &email,
+                &format!("session issuance failed: {error}"),
+            );
+            Json(ApiResponse::ok(LoginResponse {
+                success: false,
+                token: None,
+                session: auth_session::unauthenticated_session_state(&error),
+                message: format!("Login failed: {}", error),
+            }))
+        }
     }
 }
 
@@ -222,6 +276,11 @@ async fn logout(
     headers: HeaderMap,
 ) -> Json<ApiResponse<LogoutResponse>> {
     let Some(token) = auth_session::bearer_token_from_headers(&headers) else {
+        warn!(
+            action = "logout",
+            reason = "missing bearer token",
+            "auth flow failed"
+        );
         return Json(ApiResponse::ok(LogoutResponse {
             success: false,
             message: "No bearer token was supplied for logout.".into(),
@@ -236,6 +295,7 @@ async fn logout(
 
     match auth_session::revoke_session_token(&state, &token).await {
         Ok(_) => {
+            info!(action = "logout", actor_user_id, "auth flow succeeded");
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
                     kind: RealtimeEventKind::SessionInvalidated,
@@ -257,10 +317,13 @@ async fn logout(
                 message: "Logged out from the Rust session layer.".into(),
             }))
         }
-        Err(error) => Json(ApiResponse::ok(LogoutResponse {
-            success: false,
-            message: format!("Logout failed: {}", error),
-        })),
+        Err(error) => {
+            warn!(action = "logout", actor_user_id, error = %error, "auth flow failed");
+            Json(ApiResponse::ok(LogoutResponse {
+                success: false,
+                message: format!("Logout failed: {}", error),
+            }))
+        }
     }
 }
 
@@ -269,6 +332,11 @@ async fn register(
     Json(payload): Json<RegisterRequest>,
 ) -> Json<ApiResponse<RegisterResponse>> {
     let Some(pool) = state.pool.as_ref() else {
+        log_auth_failure(
+            "register",
+            payload.email.trim(),
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(RegisterResponse {
             success: false,
             email: payload.email,
@@ -340,6 +408,7 @@ async fn register(
         .unwrap_or(None)
         .is_some()
     {
+        log_auth_failure("register", &email, "email already exists");
         return Json(ApiResponse::ok(RegisterResponse {
             success: false,
             email: email.clone(),
@@ -354,6 +423,11 @@ async fn register(
     let password_hash = match hash(&payload.password, 12) {
         Ok(value) => value,
         Err(error) => {
+            log_auth_failure(
+                "register",
+                &email,
+                &format!("password hashing failed: {error}"),
+            );
             return Json(ApiResponse::ok(RegisterResponse {
                 success: false,
                 email,
@@ -387,6 +461,11 @@ async fn register(
     {
         Ok(outcome) => outcome,
         Err(error) => {
+            log_auth_failure(
+                "register",
+                &email,
+                &format!("registration otp email failed: {error}"),
+            );
             return Json(ApiResponse::ok(RegisterResponse {
                 success: false,
                 email,
@@ -400,31 +479,46 @@ async fn register(
     };
 
     match create_registered_user(pool, &input).await {
-        Ok(_) => Json(ApiResponse::ok(RegisterResponse {
-            success: true,
-            email: email.clone(),
-            role_key: role_key(role).into(),
-            next_step: format!(
-                "/auth/verify-otp?email={}&purpose={}",
+        Ok(_) => {
+            info!(
+                action = "register",
+                email = %email,
+                role = role_key(role),
+                "auth flow succeeded"
+            );
+            Json(ApiResponse::ok(RegisterResponse {
+                success: true,
+                email: email.clone(),
+                role_key: role_key(role).into(),
+                next_step: format!(
+                    "/auth/verify-otp?email={}&purpose={}",
+                    email,
+                    OtpPurpose::Registration.as_key()
+                ),
+                message: mail_outcome.append_to_message(format!(
+                    "Rust registration created. Verify the 6-digit OTP for {} to continue.",
+                    email
+                )),
+                otp_expires_at: Some(otp_expires_at.to_rfc3339()),
+                dev_otp: exposed_secret(&state, &otp),
+            }))
+        }
+        Err(error) => {
+            log_auth_failure(
+                "register",
+                &email,
+                &format!("user creation failed: {error}"),
+            );
+            Json(ApiResponse::ok(RegisterResponse {
+                success: false,
                 email,
-                OtpPurpose::Registration.as_key()
-            ),
-            message: mail_outcome.append_to_message(format!(
-                "Rust registration created. Verify the 6-digit OTP for {} to continue.",
-                email
-            )),
-            otp_expires_at: Some(otp_expires_at.to_rfc3339()),
-            dev_otp: exposed_secret(&state, &otp),
-        })),
-        Err(error) => Json(ApiResponse::ok(RegisterResponse {
-            success: false,
-            email,
-            role_key: role_key(role).into(),
-            next_step: "/auth/register".into(),
-            message: format!("Registration failed: {}", error),
-            otp_expires_at: None,
-            dev_otp: None,
-        })),
+                role_key: role_key(role).into(),
+                next_step: "/auth/register".into(),
+                message: format!("Registration failed: {}", error),
+                otp_expires_at: None,
+                dev_otp: None,
+            }))
+        }
     }
 }
 
@@ -433,6 +527,11 @@ async fn verify_otp(
     Json(payload): Json<VerifyOtpRequest>,
 ) -> Json<ApiResponse<VerifyOtpResponse>> {
     let Some(pool) = state.pool.as_ref() else {
+        log_auth_failure(
+            "verify_otp",
+            payload.email.trim(),
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(VerifyOtpResponse {
             success: false,
             email: payload.email,
@@ -450,6 +549,7 @@ async fn verify_otp(
     let email = payload.email.trim().to_lowercase();
     let otp = payload.otp.trim().to_string();
     if otp.len() != 6 || !otp.chars().all(|ch| ch.is_ascii_digit()) {
+        log_auth_failure("verify_otp", &email, "invalid otp format");
         return Json(ApiResponse::ok(VerifyOtpResponse {
             success: false,
             email,
@@ -477,6 +577,7 @@ async fn verify_otp(
         {
             Ok(Some(user)) => match auth_session::issue_session_token(&state, &user).await {
                 Ok(token) => {
+                    log_auth_success("verify_registration_otp", &email, Some(user.id));
                     let session = auth_session::build_session_state(&state, &user).await;
                     Json(ApiResponse::ok(VerifyOtpResponse {
                         success: true,
@@ -493,95 +594,137 @@ async fn verify_otp(
                         reset_token: None,
                     }))
                 }
-                Err(error) => Json(ApiResponse::ok(VerifyOtpResponse {
+                Err(error) => {
+                    log_auth_failure(
+                        "verify_registration_otp",
+                        &email,
+                        &format!("session issuance failed: {error}"),
+                    );
+                    Json(ApiResponse::ok(VerifyOtpResponse {
+                        success: false,
+                        email,
+                        purpose: OtpPurpose::Registration,
+                        next_step: "/auth/login".into(),
+                        message: format!("OTP verified, but session issuance failed: {}", error),
+                        token: None,
+                        session: None,
+                        reset_token: None,
+                    }))
+                }
+            },
+            Ok(None) => {
+                log_auth_failure("verify_registration_otp", &email, "invalid or expired otp");
+                Json(ApiResponse::ok(VerifyOtpResponse {
                     success: false,
                     email,
                     purpose: OtpPurpose::Registration,
-                    next_step: "/auth/login".into(),
-                    message: format!("OTP verified, but session issuance failed: {}", error),
+                    next_step: format!(
+                        "/auth/verify-otp?email={}&purpose={}",
+                        payload.email.trim().to_lowercase(),
+                        OtpPurpose::Registration.as_key()
+                    ),
+                    message: "Invalid or expired OTP.".into(),
                     token: None,
                     session: None,
                     reset_token: None,
-                })),
-            },
-            Ok(None) => Json(ApiResponse::ok(VerifyOtpResponse {
-                success: false,
-                email,
-                purpose: OtpPurpose::Registration,
-                next_step: format!(
-                    "/auth/verify-otp?email={}&purpose={}",
-                    payload.email.trim().to_lowercase(),
-                    OtpPurpose::Registration.as_key()
-                ),
-                message: "Invalid or expired OTP.".into(),
-                token: None,
-                session: None,
-                reset_token: None,
-            })),
-            Err(error) => Json(ApiResponse::ok(VerifyOtpResponse {
-                success: false,
-                email,
-                purpose: OtpPurpose::Registration,
-                next_step: "/auth/register".into(),
-                message: format!("OTP verification failed: {}", error),
-                token: None,
-                session: None,
-                reset_token: None,
-            })),
+                }))
+            }
+            Err(error) => {
+                log_auth_failure(
+                    "verify_registration_otp",
+                    &email,
+                    &format!("otp verification failed: {error}"),
+                );
+                Json(ApiResponse::ok(VerifyOtpResponse {
+                    success: false,
+                    email,
+                    purpose: OtpPurpose::Registration,
+                    next_step: "/auth/register".into(),
+                    message: format!("OTP verification failed: {}", error),
+                    token: None,
+                    session: None,
+                    reset_token: None,
+                }))
+            }
         },
         OtpPurpose::PasswordReset => match consume_password_reset_otp(pool, &email, &otp).await {
             Ok(Some(_)) => {
                 let reset_token = uuid::Uuid::new_v4().to_string();
                 match store_password_reset_token(pool, &email, &reset_token).await {
-                    Ok(_) => Json(ApiResponse::ok(VerifyOtpResponse {
-                        success: true,
-                        email,
-                        purpose: OtpPurpose::PasswordReset,
-                        next_step: format!(
-                            "/auth/reset-password?email={}",
-                            payload.email.trim().to_lowercase()
-                        ),
-                        message: "OTP verified. Set a new password in the Rust reset form.".into(),
-                        token: None,
-                        session: None,
-                        reset_token: exposed_secret(&state, &reset_token),
-                    })),
-                    Err(error) => Json(ApiResponse::ok(VerifyOtpResponse {
-                        success: false,
-                        email,
-                        purpose: OtpPurpose::PasswordReset,
-                        next_step: "/auth/forgot-password".into(),
-                        message: format!("Failed to issue password reset token: {}", error),
-                        token: None,
-                        session: None,
-                        reset_token: None,
-                    })),
+                    Ok(_) => {
+                        log_auth_success("verify_password_reset_otp", &email, None);
+                        Json(ApiResponse::ok(VerifyOtpResponse {
+                            success: true,
+                            email,
+                            purpose: OtpPurpose::PasswordReset,
+                            next_step: format!(
+                                "/auth/reset-password?email={}",
+                                payload.email.trim().to_lowercase()
+                            ),
+                            message: "OTP verified. Set a new password in the Rust reset form."
+                                .into(),
+                            token: None,
+                            session: None,
+                            reset_token: exposed_secret(&state, &reset_token),
+                        }))
+                    }
+                    Err(error) => {
+                        log_auth_failure(
+                            "verify_password_reset_otp",
+                            &email,
+                            &format!("failed to issue password reset token: {error}"),
+                        );
+                        Json(ApiResponse::ok(VerifyOtpResponse {
+                            success: false,
+                            email,
+                            purpose: OtpPurpose::PasswordReset,
+                            next_step: "/auth/forgot-password".into(),
+                            message: format!("Failed to issue password reset token: {}", error),
+                            token: None,
+                            session: None,
+                            reset_token: None,
+                        }))
+                    }
                 }
             }
-            Ok(None) => Json(ApiResponse::ok(VerifyOtpResponse {
-                success: false,
-                email,
-                purpose: OtpPurpose::PasswordReset,
-                next_step: format!(
-                    "/auth/verify-otp?email={}&purpose={}",
-                    payload.email.trim().to_lowercase(),
-                    OtpPurpose::PasswordReset.as_key()
-                ),
-                message: "Invalid or expired OTP.".into(),
-                token: None,
-                session: None,
-                reset_token: None,
-            })),
-            Err(error) => Json(ApiResponse::ok(VerifyOtpResponse {
-                success: false,
-                email,
-                purpose: OtpPurpose::PasswordReset,
-                next_step: "/auth/forgot-password".into(),
-                message: format!("OTP verification failed: {}", error),
-                token: None,
-                session: None,
-                reset_token: None,
-            })),
+            Ok(None) => {
+                log_auth_failure(
+                    "verify_password_reset_otp",
+                    &email,
+                    "invalid or expired otp",
+                );
+                Json(ApiResponse::ok(VerifyOtpResponse {
+                    success: false,
+                    email,
+                    purpose: OtpPurpose::PasswordReset,
+                    next_step: format!(
+                        "/auth/verify-otp?email={}&purpose={}",
+                        payload.email.trim().to_lowercase(),
+                        OtpPurpose::PasswordReset.as_key()
+                    ),
+                    message: "Invalid or expired OTP.".into(),
+                    token: None,
+                    session: None,
+                    reset_token: None,
+                }))
+            }
+            Err(error) => {
+                log_auth_failure(
+                    "verify_password_reset_otp",
+                    &email,
+                    &format!("otp verification failed: {error}"),
+                );
+                Json(ApiResponse::ok(VerifyOtpResponse {
+                    success: false,
+                    email,
+                    purpose: OtpPurpose::PasswordReset,
+                    next_step: "/auth/forgot-password".into(),
+                    message: format!("OTP verification failed: {}", error),
+                    token: None,
+                    session: None,
+                    reset_token: None,
+                }))
+            }
         },
     }
 }
@@ -591,6 +734,11 @@ async fn resend_otp(
     Json(payload): Json<ResendOtpRequest>,
 ) -> Json<ApiResponse<ResendOtpResponse>> {
     let Some(pool) = state.pool.as_ref() else {
+        log_auth_failure(
+            "resend_otp",
+            payload.email.trim(),
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(ResendOtpResponse {
             success: false,
             email: payload.email,
@@ -604,6 +752,7 @@ async fn resend_otp(
 
     let email = payload.email.trim().to_lowercase();
     let Some(user) = find_user_by_email(pool, &email).await.unwrap_or(None) else {
+        log_auth_failure("resend_otp", &email, "user not found");
         return Json(ApiResponse::ok(ResendOtpResponse {
             success: false,
             email,
@@ -639,6 +788,11 @@ async fn resend_otp(
                     {
                         Ok(outcome) => outcome,
                         Err(error) => {
+                            log_auth_failure(
+                                "resend_otp",
+                                &email,
+                                &format!("otp refreshed but email delivery failed: {error}"),
+                            );
                             return Json(ApiResponse::ok(ResendOtpResponse {
                                 success: false,
                                 email,
@@ -653,6 +807,7 @@ async fn resend_otp(
                         }
                     };
 
+                    log_auth_success("resend_otp", &email, Some(user.id));
                     Json(ApiResponse::ok(ResendOtpResponse {
                         success: true,
                         email,
@@ -662,24 +817,30 @@ async fn resend_otp(
                         dev_otp: exposed_secret(&state, &otp),
                     }))
                 }
-                Err(error) => Json(ApiResponse::ok(ResendOtpResponse {
-                    success: false,
-                    email,
-                    purpose: payload.purpose,
-                    message: format!("OTP resend failed: {}", error),
-                    otp_expires_at: None,
-                    dev_otp: None,
-                })),
+                Err(error) => {
+                    log_auth_failure("resend_otp", &email, &format!("otp resend failed: {error}"));
+                    Json(ApiResponse::ok(ResendOtpResponse {
+                        success: false,
+                        email,
+                        purpose: payload.purpose,
+                        message: format!("OTP resend failed: {}", error),
+                        otp_expires_at: None,
+                        dev_otp: None,
+                    }))
+                }
             }
         }
-        Err(message) => Json(ApiResponse::ok(ResendOtpResponse {
-            success: false,
-            email,
-            purpose: payload.purpose,
-            message,
-            otp_expires_at: None,
-            dev_otp: None,
-        })),
+        Err(message) => {
+            log_auth_failure("resend_otp", &email, &message);
+            Json(ApiResponse::ok(ResendOtpResponse {
+                success: false,
+                email,
+                purpose: payload.purpose,
+                message,
+                otp_expires_at: None,
+                dev_otp: None,
+            }))
+        }
     }
 }
 
@@ -688,6 +849,11 @@ async fn forgot_password(
     Json(payload): Json<ForgotPasswordRequest>,
 ) -> Json<ApiResponse<ForgotPasswordResponse>> {
     let Some(pool) = state.pool.as_ref() else {
+        log_auth_failure(
+            "forgot_password",
+            payload.email.trim(),
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(ForgotPasswordResponse {
             success: false,
             email: payload.email,
@@ -702,6 +868,7 @@ async fn forgot_password(
 
     let email = payload.email.trim().to_lowercase();
     let Some(user) = find_user_by_email(pool, &email).await.unwrap_or(None) else {
+        log_auth_failure("forgot_password", &email, "user not found");
         return Json(ApiResponse::ok(ForgotPasswordResponse {
             success: false,
             email,
@@ -733,6 +900,13 @@ async fn forgot_password(
                     {
                         Ok(outcome) => outcome,
                         Err(error) => {
+                            log_auth_failure(
+                                "forgot_password",
+                                &email,
+                                &format!(
+                                    "password reset otp refreshed but email delivery failed: {error}"
+                                ),
+                            );
                             return Json(ApiResponse::ok(ForgotPasswordResponse {
                                 success: false,
                                 email,
@@ -747,6 +921,7 @@ async fn forgot_password(
                         }
                     };
 
+                    log_auth_success("forgot_password", &email, Some(user.id));
                     Json(ApiResponse::ok(ForgotPasswordResponse {
                         success: true,
                         email: email.clone(),
@@ -762,24 +937,34 @@ async fn forgot_password(
                         dev_otp: exposed_secret(&state, &otp),
                     }))
                 }
-                Err(error) => Json(ApiResponse::ok(ForgotPasswordResponse {
-                    success: false,
-                    email,
-                    next_step: "/auth/forgot-password".into(),
-                    message: format!("Failed to issue a password reset OTP: {}", error),
-                    otp_expires_at: None,
-                    dev_otp: None,
-                })),
+                Err(error) => {
+                    log_auth_failure(
+                        "forgot_password",
+                        &email,
+                        &format!("failed to issue password reset otp: {error}"),
+                    );
+                    Json(ApiResponse::ok(ForgotPasswordResponse {
+                        success: false,
+                        email,
+                        next_step: "/auth/forgot-password".into(),
+                        message: format!("Failed to issue a password reset OTP: {}", error),
+                        otp_expires_at: None,
+                        dev_otp: None,
+                    }))
+                }
             }
         }
-        Err(message) => Json(ApiResponse::ok(ForgotPasswordResponse {
-            success: false,
-            email,
-            next_step: "/auth/forgot-password".into(),
-            message,
-            otp_expires_at: None,
-            dev_otp: None,
-        })),
+        Err(message) => {
+            log_auth_failure("forgot_password", &email, &message);
+            Json(ApiResponse::ok(ForgotPasswordResponse {
+                success: false,
+                email,
+                next_step: "/auth/forgot-password".into(),
+                message,
+                otp_expires_at: None,
+                dev_otp: None,
+            }))
+        }
     }
 }
 
@@ -788,6 +973,11 @@ async fn reset_password(
     Json(payload): Json<ResetPasswordRequest>,
 ) -> Json<ApiResponse<ResetPasswordResponse>> {
     let Some(pool) = state.pool.as_ref() else {
+        log_auth_failure(
+            "reset_password",
+            payload.email.trim(),
+            "database connection is disabled",
+        );
         return Json(ApiResponse::ok(ResetPasswordResponse {
             success: false,
             email: payload.email,
@@ -800,6 +990,7 @@ async fn reset_password(
 
     let email = payload.email.trim().to_lowercase();
     if payload.password != payload.password_confirmation {
+        log_auth_failure("reset_password", &email, "password confirmation mismatch");
         return Json(ApiResponse::ok(ResetPasswordResponse {
             success: false,
             email,
@@ -812,6 +1003,7 @@ async fn reset_password(
     }
 
     if payload.password.len() < 8 {
+        log_auth_failure("reset_password", &email, "password too short");
         return Json(ApiResponse::ok(ResetPasswordResponse {
             success: false,
             email,
@@ -826,6 +1018,11 @@ async fn reset_password(
     let password_hash = match hash(&payload.password, 12) {
         Ok(value) => value,
         Err(error) => {
+            log_auth_failure(
+                "reset_password",
+                &email,
+                &format!("password hashing failed: {error}"),
+            );
             return Json(ApiResponse::ok(ResetPasswordResponse {
                 success: false,
                 email,
@@ -841,28 +1038,41 @@ async fn reset_password(
     match consume_password_reset_token(pool, &email, payload.reset_token.trim(), &password_hash)
         .await
     {
-        Ok(true) => Json(ApiResponse::ok(ResetPasswordResponse {
-            success: true,
-            email,
-            next_step: format!("/auth/login?email={}", payload.email.trim().to_lowercase()),
-            message: "Password updated in the Rust auth flow. Sign in with the new password."
-                .into(),
-        })),
-        Ok(false) => Json(ApiResponse::ok(ResetPasswordResponse {
-            success: false,
-            email,
-            next_step: format!(
-                "/auth/reset-password?email={}",
-                payload.email.trim().to_lowercase()
-            ),
-            message: "The reset token is invalid or expired.".into(),
-        })),
-        Err(error) => Json(ApiResponse::ok(ResetPasswordResponse {
-            success: false,
-            email,
-            next_step: "/auth/forgot-password".into(),
-            message: format!("Password reset failed: {}", error),
-        })),
+        Ok(true) => {
+            log_auth_success("reset_password", &email, None);
+            Json(ApiResponse::ok(ResetPasswordResponse {
+                success: true,
+                email,
+                next_step: format!("/auth/login?email={}", payload.email.trim().to_lowercase()),
+                message: "Password updated in the Rust auth flow. Sign in with the new password."
+                    .into(),
+            }))
+        }
+        Ok(false) => {
+            log_auth_failure("reset_password", &email, "invalid or expired reset token");
+            Json(ApiResponse::ok(ResetPasswordResponse {
+                success: false,
+                email,
+                next_step: format!(
+                    "/auth/reset-password?email={}",
+                    payload.email.trim().to_lowercase()
+                ),
+                message: "The reset token is invalid or expired.".into(),
+            }))
+        }
+        Err(error) => {
+            log_auth_failure(
+                "reset_password",
+                &email,
+                &format!("password reset failed: {error}"),
+            );
+            Json(ApiResponse::ok(ResetPasswordResponse {
+                success: false,
+                email,
+                next_step: "/auth/forgot-password".into(),
+                message: format!("Password reset failed: {}", error),
+            }))
+        }
     }
 }
 
