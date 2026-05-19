@@ -1,0 +1,671 @@
+# STLoads Production Readiness Completion Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Complete STLoads as a production-grade, market-ready enterprise load board that works hand in hand with ATMP-OS while remaining its own product.
+
+**Architecture:** ATMP-OS Dispatch remains the TMS and system of record. STLoads remains a standalone Rust/Leptos marketplace/load-board product with its own backend, frontend, middleware, database, deployment, security envelope, and operations surfaces. The GitHub STLoads UI/UX is locked as the visual contract, and all API/middleware/backend work must support that experience without redesigning it.
+
+**Tech Stack:** Rust, Axum, SQLx, PostgreSQL, Leptos, IBM Code Engine, IBM Container Registry, object storage, Stripe Connect, WebSocket/SSE realtime, ATMP Dispatch API contract.
+
+---
+
+## Non-Negotiable Product Boundaries
+
+- **STLoads UI/UX source of truth:** `https://github.com/StevenClarkDev/STLoads.git`
+- **Approved visual commit:** `a258e74082ae147f12c17ab793d9fffc236174a7`
+- **Clean working source:** `C:\New folder\STLoads-api-review`
+- **ATMP system of record:** `C:\New folder\atmp-os`
+- **Do not use:** `C:\New folder\atmp-os-core-rebuild`
+- **Do not treat as visual authority:** `C:\New folder\atmp-os\STLoads`
+
+STLoads must not become an ATMP screen. ATMP can launch or integrate with it, but STLoads remains its own board.
+
+---
+
+## Agent Work Lanes
+
+### Lane A: Backend And Data Core
+
+Owns database, domain models, API handlers, event state, and persistence.
+
+Primary areas:
+
+- `rust-port/crates/backend/src/routes`
+- `rust-port/crates/domain/src`
+- `rust-port/crates/db/src`
+- `rust-port/crates/shared/src`
+- `rust-port/crates/db/migrations`
+
+### Lane B: Frontend And Visual Contract
+
+Owns the Leptos UI, wiring real data into the developer's existing UX, removing placeholders, and preserving styling.
+
+Primary areas:
+
+- `rust-port/crates/frontend-leptos/src`
+- `rust-port/crates/frontend-leptos/index.html`
+- `rust-port/crates/frontend-leptos/assets`
+
+### Lane C: Middleware, Security, Integrations, Deployment
+
+Owns auth middleware, RBAC, rate limits, signed webhooks, observability, IBM deploy, smoke tests, and go-to-market readiness.
+
+Primary areas:
+
+- `rust-port/crates/backend/src/auth_session.rs`
+- `rust-port/crates/backend/src/config.rs`
+- `rust-port/crates/backend/src/app.rs`
+- `rust-port/scripts`
+- `rust-port/Dockerfile`
+- `rust-port/Dockerfile.frontend`
+- `rust-port/docs`
+
+---
+
+## Completion Rules
+
+- Remove or check off a task only after backend, frontend, middleware, and tests for that task are complete.
+- Commit after every completed task.
+- Commit and push STLoads-owned work from `C:\New folder\STLoads-api-review` to `https://github.com/StevenClarkDev/STLoads.git`.
+- Commit and push ATMP-owned work from `C:\New folder\atmp-os` to `https://github.com/sabertech-development/atmp-os.git` only when the task changes ATMP Dispatch, the ATMP launcher, or the ATMP side of the STLoads API contract.
+- If a task touches both products, split the work into separate commits in the correct repository.
+- Do not deploy to IBM until all Critical and Launch Gate tasks pass.
+- Do not redesign the GitHub UI/UX.
+- Do not leave demo loads, placeholder carriers, fake payments, fake compliance statuses, or static dashboards in production paths.
+- Every production write path must be tenant-scoped, role-gated, idempotent where repeatable, audited, and observable.
+
+---
+
+## Critical Tasks
+
+### Task P3: Database Schema Production Baseline
+
+**Outcome:** PostgreSQL schema supports enterprise board operations without relying on demo or legacy runtime assumptions.
+
+**Files:**
+
+- Create/modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\migrations\0008_enterprise_board_core.sql`
+- Create/modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\migrations\0009_enterprise_marketplace.sql`
+- Create/modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\migrations\0010_enterprise_operations.sql`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\lib.rs`
+
+- [ ] Add tenant and organization tables if missing:
+  - `tenants`
+  - `organizations`
+  - `organization_branches`
+  - `organization_memberships`
+  - `tenant_external_mappings`
+- [ ] Add board tables:
+  - `stloads_postings`
+  - `stloads_posting_versions`
+  - `stloads_posting_stops`
+  - `stloads_posting_rates`
+  - `stloads_posting_requirements`
+  - `stloads_posting_visibility_rules`
+- [ ] Add marketplace tables:
+  - `carrier_profiles`
+  - `carrier_equipment`
+  - `carrier_lanes`
+  - `carrier_availability`
+  - `carrier_groups`
+  - `carrier_group_members`
+  - `offers`
+  - `offer_versions`
+  - `counteroffers`
+  - `tenders`
+  - `tender_invites`
+  - `booking_awards`
+  - `booking_locks`
+  - `cancellation_requests`
+- [ ] Add compliance tables:
+  - `compliance_documents`
+  - `compliance_rules`
+  - `carrier_compliance_status`
+  - `eligibility_results`
+  - `compliance_overrides`
+  - `carrier_risk_flags`
+- [ ] Add integration tables:
+  - `atmp_inbound_events`
+  - `atmp_outbound_events`
+  - `atmp_contract_payloads`
+  - `atmp_sync_errors`
+  - `dead_letter_events`
+- [ ] Add document and payment extension tables:
+  - `document_versions`
+  - `document_reviews`
+  - `required_document_rules`
+  - `settlements`
+  - `settlement_lines`
+  - `accessorial_requests`
+  - `payment_holds`
+  - `payment_disputes`
+  - `factoring_profiles`
+  - `quickpay_terms`
+- [ ] Add unique constraints for tenant isolation and idempotency.
+- [ ] Add indexes for active board search, sync errors, retry queues, pending offers, unresolved compliance, and expiring documents.
+- [ ] Add migration tests or smoke scripts proving migrations apply cleanly to empty PostgreSQL.
+
+### Task P4: ATMP Contract Adapter And Inbound API
+
+**Outcome:** ATMP can publish, update, withdraw, close, and status-sync STLoads postings through the existing contract.
+
+**Files:**
+
+- Create: `C:\New folder\STLoads-api-review\rust-port\crates\domain\src\atmp_contract.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\tms.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\tms.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\shared\src\actions.rs`
+- Test: `C:\New folder\STLoads-api-review\rust-port\crates\backend\tests\atmp_contract.rs`
+
+- [ ] Implement contract version parsing.
+- [ ] Implement payload validation for publish, update, withdraw, close, cancel, status, document, and finance signals.
+- [ ] Persist raw payload, normalized payload, payload hash, idempotency key, event id, correlation id, tenant id, ATMP load id, and validation result.
+- [ ] Map valid ATMP publish payloads into one active STLoads posting.
+- [ ] Map ATMP update payloads into new posting versions.
+- [ ] Map ATMP withdraw/cancel into carrier-hidden terminal states.
+- [ ] Map ATMP close into closed posting state.
+- [ ] Reject unsupported contract versions with explicit JSON errors.
+- [ ] Reject missing tenant, missing ATMP load id, missing idempotency key, and invalid release gate.
+- [ ] Tests must prove replaying the same publish does not duplicate listings.
+
+### Task P5: Integration Authentication Middleware
+
+**Outcome:** ATMP/STLoads API traffic is authenticated, signed, replay-protected, and rate-limited.
+
+**Files:**
+
+- Create: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\integration_auth.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\app.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\config.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\tms.rs`
+
+- [ ] Require signed headers for ATMP integration routes in production:
+  - `X-ATMP-Tenant`
+  - `X-ATMP-Event-Id`
+  - `X-ATMP-Correlation-Id`
+  - `X-ATMP-Idempotency-Key`
+  - `X-ATMP-Timestamp`
+  - `X-ATMP-Signature`
+- [ ] Validate HMAC signature against raw request body.
+- [ ] Enforce replay window.
+- [ ] Reject reused event IDs.
+- [ ] Rate-limit integration routes.
+- [ ] Log rejected integration attempts without storing raw secrets.
+- [ ] Tests must cover valid signature, bad signature, expired timestamp, reused event id, missing tenant, and rate limit.
+
+### Task P6: Outbound Event Publisher To ATMP
+
+**Outcome:** STLoads reports marketplace results back to ATMP reliably.
+
+**Files:**
+
+- Create: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\atmp_outbound.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\main.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\tms.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\admin.rs`
+
+- [ ] Queue outbound events for:
+  - `listing_published`
+  - `listing_failed`
+  - `offer_submitted`
+  - `counteroffer_submitted`
+  - `offer_accepted`
+  - `offer_declined`
+  - `carrier_booked`
+  - `booking_canceled`
+  - `tracking_event`
+  - `exception_event`
+  - `document_uploaded`
+  - `document_approved`
+  - `document_rejected`
+  - `escrow_funded`
+  - `payment_hold`
+  - `payment_released`
+  - `settlement_ready`
+  - `sync_error`
+- [ ] Add retry worker with exponential backoff.
+- [ ] Add dead-letter state after max attempts.
+- [ ] Add replay API for authorized admins.
+- [ ] Add delivery status in admin reconciliation screen.
+- [ ] Tests must prove failed callback retries and successful callback marks delivered.
+
+### Task P7: Tenant, Organization, RBAC, And Session Hardening
+
+**Outcome:** Every screen and API route enforces tenant scope and least privilege.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\auth_session.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\auth.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\admin.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\auth.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\shared\src\auth_state.rs`
+
+- [ ] Add tenant and organization scope to session.
+- [ ] Add scoped roles:
+  - `platform_admin`
+  - `tenant_admin`
+  - `operations`
+  - `carrier_admin`
+  - `carrier_dispatcher`
+  - `driver`
+  - `finance`
+  - `compliance`
+  - `support`
+- [ ] Add resource permissions for posting, offer, booking, document, payment, compliance, admin, and integration actions.
+- [ ] Add support impersonation with required reason, expiry, and audit trail.
+- [ ] Ensure all DB reads include tenant scope.
+- [ ] Tests must prove cross-tenant access fails for postings, offers, docs, payments, chat, and admin screens.
+
+### Task P8: Carrier Search, Filters, Saved Searches, And Alerts
+
+**Outcome:** Carrier-facing load board search is production-grade and real-data-backed.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\dispatch.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\marketplace.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\marketplace.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\loads.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\load_profile.rs`
+
+- [ ] Replace any placeholder board rows with live API data.
+- [ ] Add filters for origin, destination, radius, equipment, mode, date windows, rate, RPM, weight, hazmat, reefer/temp, service level, and visibility type.
+- [ ] Add sort by pickup date, distance, rate, RPM, match score, age, expiration, and urgency.
+- [ ] Add stable pagination.
+- [ ] Add saved searches.
+- [ ] Add alert rules for saved searches.
+- [ ] Add eligibility indicators in the existing UI style.
+- [ ] Add empty states that say what is missing without demo language.
+- [ ] Tests must prove hidden/withdrawn/closed/ineligible freight does not appear.
+
+### Task P9: Carrier Compliance And Eligibility Engine
+
+**Outcome:** Compliance controls prevent bad bookings before they happen.
+
+**Files:**
+
+- Create: `C:\New folder\STLoads-api-review\rust-port\crates\domain\src\eligibility.rs`
+- Create: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\eligibility.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\marketplace.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\admin.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\profile.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\onboarding_reviews.rs`
+
+- [ ] Track carrier packet completion.
+- [ ] Track W-9 status.
+- [ ] Track insurance expiration.
+- [ ] Track authority/DOT/MC verification status.
+- [ ] Track equipment and lane eligibility.
+- [ ] Track blocked/preferred/contracted/customer-approved carrier status.
+- [ ] Add fraud/double-broker risk flags.
+- [ ] Gate view, offer, tender acceptance, and book-now.
+- [ ] Add admin override with reason, expiry, and audit.
+- [ ] Tests must prove every block reason prevents booking.
+
+### Task P10: Offers, Counteroffers, Tenders, And Book-Now
+
+**Outcome:** STLoads supports real marketplace workflows.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\marketplace.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\marketplace.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\domain\src\marketplace.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\load_profile.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\chat.rs`
+
+- [ ] Add carrier offer submission.
+- [ ] Add offer version history.
+- [ ] Add counteroffer creation and response.
+- [ ] Add tender invite creation.
+- [ ] Add tender accept/reject.
+- [ ] Add book-now with explicit terms confirmation.
+- [ ] Add booking lock using DB transaction.
+- [ ] Add carrier cancellation request.
+- [ ] Emit ATMP events for offer, counteroffer, award, and cancellation.
+- [ ] Tests must prove two carriers cannot book the same posting.
+
+### Task P11: Chat, Notifications, And Marketplace Messaging
+
+**Outcome:** Marketplace communication is scoped, auditable, and event-aware.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\marketplace.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\chat.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\email.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\email_outbox.rs`
+
+- [ ] Tie chat to posting, offer, tender, or booking.
+- [ ] Enforce participant permissions.
+- [ ] Add read receipts and presence.
+- [ ] Add system messages for offers, booking, documents, tracking, payment, and sync failures.
+- [ ] Add notification preferences.
+- [ ] Add email/outbox retry for critical events.
+- [ ] Ensure messages never leak across tenant or carrier boundaries.
+
+### Task P12: Execution, Tracking, Exceptions, And Mobile Driver Flow
+
+**Outcome:** Booked carriers can execute loads with tracking and exception reporting.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\execution.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\tracking.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\domain\src\tracking.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\execution.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\device_location.rs`
+
+- [ ] Add pickup, in-transit, arrival, delivery, exception, and completion events.
+- [ ] Add location ping ingestion.
+- [ ] Add stale tracking alert job.
+- [ ] Add map/list display using the existing developer UI pattern.
+- [ ] Restrict execution updates to the awarded carrier or authorized operator.
+- [ ] Emit ATMP tracking and exception events.
+- [ ] Tests must prove unauthorized carrier cannot update another carrier's load.
+
+### Task P13: Documents, Review, Versioning, And Storage Safety
+
+**Outcome:** STLoads document flows are safe enough for production freight.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\document_storage.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\dispatch.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\execution.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\document_upload.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\load_profile.rs`
+
+- [ ] Add required document rules by tenant/customer/mode/status/payment.
+- [ ] Add document upload validation by type and size.
+- [ ] Add object storage persistence.
+- [ ] Add document versioning.
+- [ ] Add approve/reject/request revision.
+- [ ] Add immutable audit history.
+- [ ] Add malware scan status field and block unscanned docs from payment-ready state in production.
+- [ ] Emit ATMP document events.
+- [ ] Tests must prove document replacement preserves prior version.
+
+### Task P14: Payments, Stripe Connect, Settlement, And Disputes
+
+**Outcome:** Payment workflows are production-safe and reconcilable.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\payments.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\stripe.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\payments.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\domain\src\payments.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\payments.rs`
+
+- [ ] Verify Stripe Connect onboarding path.
+- [ ] Verify PaymentIntent funding path.
+- [ ] Verify signed Stripe webhook path.
+- [ ] Add idempotency for Stripe webhooks.
+- [ ] Add settlement readiness gates.
+- [ ] Add accessorial request workflow.
+- [ ] Add payment hold workflow.
+- [ ] Add dispute workflow.
+- [ ] Add factoring/QuickPay data model if enabled for launch.
+- [ ] Emit ATMP finance events.
+- [ ] Tests must prove duplicate Stripe webhook does not duplicate payment state.
+
+### Task P15: Admin Operations, Reconciliation, And Support Tools
+
+**Outcome:** Operators can run the board safely without database access.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\admin.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\admin.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\reconciliation.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\stloads.rs`
+
+- [ ] Add ATMP sync reconciliation dashboard.
+- [ ] Add failed inbound payload queue.
+- [ ] Add failed outbound callback queue.
+- [ ] Add dead-letter replay.
+- [ ] Add force-withdraw with reason.
+- [ ] Add carrier pause/block.
+- [ ] Add session revocation.
+- [ ] Add support impersonation with reason.
+- [ ] Add audit export.
+- [ ] Add operational health cards for queue depth, webhook failures, stale postings, stale tracking, payment failures, and document failures.
+
+### Task P16: Frontend Placeholder And Demo Data Purge
+
+**Outcome:** The production frontend displays only real API data or honest empty states.
+
+**Files:**
+
+- Review and modify as needed:
+  - `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\*.rs`
+  - `C:\New folder\STLoads-api-review\rust-port\crates\shared\src\screens.rs`
+  - `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\screen_data.rs`
+
+- [ ] Search for demo language:
+
+```powershell
+rg -n "demo|sample|placeholder|mock|fake|lorem|test carrier|test load|preview" "C:\New folder\STLoads-api-review\rust-port\crates"
+```
+
+- [ ] Remove production-visible demo loads.
+- [ ] Remove production-visible fake carriers.
+- [ ] Remove static payments, static compliance statuses, and fake tracking rows.
+- [ ] Replace missing data with clear empty states.
+- [ ] Ensure development-only fixtures are behind an explicit `ENVIRONMENT=development` or test feature.
+- [ ] Add frontend smoke tests/screenshots for empty tenant state.
+
+### Task P17: Realtime And Event Streaming
+
+**Outcome:** Board updates, offers, messages, and execution events update live without unsafe polling.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\realtime_bus.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\realtime.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\realtime.rs`
+
+- [ ] Scope websocket topics by tenant and resource.
+- [ ] Add auth to websocket connect.
+- [ ] Add reconnect behavior in frontend.
+- [ ] Publish events for listing update, offer update, booking award, chat message, document update, payment update, and sync error.
+- [ ] Add stale connection handling.
+- [ ] Tests must prove unauthorized user cannot subscribe to another tenant/resource topic.
+
+### Task P18: Observability, Audit, And Production Health
+
+**Outcome:** Production issues are visible before customers find them.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\app.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\admin.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\state.rs`
+
+- [ ] Add structured logs with:
+  - `tenant_id`
+  - `actor_id`
+  - `route`
+  - `correlation_id`
+  - `event_id`
+  - `atmp_load_id`
+  - `posting_id`
+  - `idempotency_key`
+- [ ] Add `/health` for basic liveness.
+- [ ] Add `/readiness` for DB, object storage, Stripe config, ATMP outbound config, queue health, and realtime readiness.
+- [ ] Add admin-visible health summary.
+- [ ] Add immutable audit entries for auth, listing, offer, booking, compliance, document, payment, integration, admin, and impersonation actions.
+
+### Task P19: Security And Abuse Hardening
+
+**Outcome:** STLoads can safely face real users and carriers.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\app.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\auth_session.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\auth.rs`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\marketplace.rs`
+
+- [ ] Add rate limits for login, OTP, search, offer, booking, upload, webhooks, and admin replay.
+- [ ] Add account lockout or throttling for repeated auth failures.
+- [ ] Add secure headers.
+- [ ] Add file upload MIME and extension validation.
+- [ ] Add maximum body sizes per route class.
+- [ ] Add CSRF/same-origin strategy if cookie auth is used.
+- [ ] Add CORS allowlist for production.
+- [ ] Add tests for RBAC bypass attempts and cross-tenant data leakage.
+
+### Task P20: Build, CI, And Test Coverage
+
+**Outcome:** The repo can prove production readiness repeatedly.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\scripts\smoke_test_backend.ps1`
+- Create: `C:\New folder\STLoads-api-review\rust-port\scripts\production_readiness_check.ps1`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\Cargo.toml`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\docs\IBM_STAGING_SMOKE_CHECKLIST.md`
+
+- [ ] Add test groups:
+  - contract tests
+  - tenant isolation tests
+  - auth/RBAC tests
+  - marketplace tests
+  - booking concurrency tests
+  - document tests
+  - payment webhook tests
+  - ATMP outbound retry tests
+  - frontend build tests
+- [ ] Add `cargo fmt --check`.
+- [ ] Add `cargo clippy --workspace --all-targets`.
+- [ ] Add backend smoke test script.
+- [ ] Add frontend build verification.
+- [ ] Add production readiness script that fails on demo data, missing envs, failing tests, and placeholder strings.
+
+### Task P21: IBM Code Engine Deployment
+
+**Outcome:** Backend and frontend deploy cleanly and repeatably to IBM.
+
+**Files:**
+
+- Modify: `C:\New folder\STLoads-api-review\rust-port\Dockerfile`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\Dockerfile.frontend`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\docs\IBM_CODE_ENGINE_DEPLOYMENT.md`
+- Modify: `C:\New folder\STLoads-api-review\rust-port\scripts\verify_backend_cutover_hosted.ps1`
+
+- [ ] Build backend image.
+- [ ] Build frontend image.
+- [ ] Push images to IBM Container Registry.
+- [ ] Deploy backend to Code Engine.
+- [ ] Deploy frontend to Code Engine.
+- [ ] Set production secrets in Code Engine, not in source.
+- [ ] Verify `/health`.
+- [ ] Verify `/readiness`.
+- [ ] Verify frontend loads.
+- [ ] Verify login.
+- [ ] Verify ATMP publish smoke.
+- [ ] Verify carrier board search.
+- [ ] Verify offer/book smoke.
+- [ ] Verify outbound ATMP event retry path in staging.
+
+### Task P22: Launch Documentation And Partner Readiness
+
+**Outcome:** STLoads has enough product, support, and sales documentation to go to market.
+
+**Files:**
+
+- Create: `C:\New folder\STLoads_PRODUCTION_RUNBOOK.md`
+- Create: `C:\New folder\STLoads_GO_TO_MARKET_OVERVIEW.md`
+- Create: `C:\New folder\STLoads_SUPPORT_PLAYBOOK.md`
+- Create: `C:\New folder\STLoads_SECURITY_OVERVIEW.md`
+
+- [ ] Write production runbook:
+  - deploy process
+  - rollback process
+  - incident response
+  - queue replay
+  - DLQ recovery
+  - Stripe webhook recovery
+  - object storage recovery
+- [ ] Write go-to-market overview:
+  - what STLoads does
+  - why it is enterprise-grade
+  - how it integrates with ATMP
+  - carrier marketplace value
+  - shipper/broker/operator value
+- [ ] Write support playbook:
+  - common carrier issues
+  - login problems
+  - document problems
+  - payment problems
+  - booking disputes
+  - sync failures
+- [ ] Write security overview:
+  - tenant isolation
+  - RBAC
+  - signed integrations
+  - audit
+  - document controls
+  - payment controls
+
+---
+
+## Launch Gate
+
+Do not call STLoads market-ready until every item below is true:
+
+- [ ] GitHub developer UI/UX is preserved.
+- [ ] No production-visible demo or placeholder data remains.
+- [ ] ATMP publish/update/withdraw/close works end to end.
+- [ ] STLoads outbound events reconcile back to ATMP.
+- [ ] Tenant isolation tests pass.
+- [ ] RBAC tests pass.
+- [ ] Signed integration tests pass.
+- [ ] Carrier search uses real data with real filters and pagination.
+- [ ] Eligibility gates block noncompliant carriers.
+- [ ] Offer/counter/tender/book-now flows work.
+- [ ] Booking concurrency lock prevents double booking.
+- [ ] Documents are versioned, reviewed, and synced.
+- [ ] Tracking and exception events sync to ATMP.
+- [ ] Stripe webhook replay is idempotent.
+- [ ] Admin reconciliation can replay or dead-letter failed events.
+- [ ] Health/readiness checks are live.
+- [ ] Backend image builds.
+- [ ] Frontend image builds.
+- [ ] IBM staging smoke passes.
+- [ ] Production runbook exists.
+- [ ] Security overview exists.
+- [ ] Go-to-market overview exists.
+
+---
+
+## Recommended Execution Order
+
+1. P3 Database schema baseline.
+2. P4 ATMP contract adapter and inbound API.
+3. P5 Integration authentication middleware.
+4. P6 Outbound event publisher.
+5. P7 Tenant/RBAC/session hardening.
+6. P16 Placeholder/demo data purge.
+7. P8 Carrier search and alerts.
+8. P9 Compliance and eligibility.
+9. P10 Offers, tenders, and booking.
+10. P11 Chat and notifications.
+11. P12 Execution and tracking.
+12. P13 Documents.
+13. P14 Payments.
+14. P15 Admin ops and reconciliation.
+15. P17 Realtime.
+16. P18 Observability and audit.
+17. P19 Security hardening.
+18. P20 Build and tests.
+19. P21 IBM deployment.
+20. P22 Launch documentation.
+
+## Definition Of Done
+
+STLoads is done when a clean tenant can receive a board-ready ATMP load, expose it only to eligible carriers, accept an offer or booking, prevent duplicate awards, track execution, process documents, handle payment events, reconcile every important event back to ATMP, and provide operators with enough admin tooling to recover from failures without database access.
