@@ -168,6 +168,68 @@ pub struct OfferReviewResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubmitOfferRequest {
+    pub amount: f64,
+    pub currency: Option<String>,
+    pub message: Option<String>,
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateCounterofferRequest {
+    pub amount: f64,
+    pub currency: Option<String>,
+    pub message: Option<String>,
+    pub from_party_type: Option<String>,
+    pub to_party_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RespondCounterofferRequest {
+    pub decision: String,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTenderInviteRequest {
+    pub carrier_profile_id: i64,
+    pub tender_type: Option<String>,
+    pub expires_minutes: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RespondTenderInviteRequest {
+    pub decision: String,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BookNowRequest {
+    pub carrier_profile_id: Option<i64>,
+    pub offer_id: Option<i64>,
+    pub tender_id: Option<i64>,
+    pub amount: Option<f64>,
+    pub currency: Option<String>,
+    pub terms_accepted: bool,
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CarrierCancellationRequest {
+    pub booking_award_id: Option<i64>,
+    pub reason_code: String,
+    pub reason_detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketplaceActionResponse {
+    pub success: bool,
+    pub id: Option<i64>,
+    pub status_label: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatSendMessageRequest {
     pub body: String,
 }

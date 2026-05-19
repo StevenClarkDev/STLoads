@@ -79,29 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P10: Offers, Counteroffers, Tenders, And Book-Now
-
-**Outcome:** STLoads supports real marketplace workflows.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\marketplace.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\marketplace.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\domain\src\marketplace.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\load_profile.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\chat.rs`
-
-- [ ] Add carrier offer submission.
-- [ ] Add offer version history.
-- [ ] Add counteroffer creation and response.
-- [ ] Add tender invite creation.
-- [ ] Add tender accept/reject.
-- [ ] Add book-now with explicit terms confirmation.
-- [ ] Add booking lock using DB transaction.
-- [ ] Add carrier cancellation request.
-- [ ] Emit ATMP events for offer, counteroffer, award, and cancellation.
-- [ ] Tests must prove two carriers cannot book the same posting.
-
 ### Task P11: Chat, Notifications, And Marketplace Messaging
 
 **Outcome:** Marketplace communication is scoped, auditable, and event-aware.
@@ -423,12 +400,11 @@ Do not call STLoads market-ready until every item below is true:
 1. P7 Tenant/RBAC/session hardening.
 2. P16 Placeholder/demo data purge.
 3. P8 Carrier search and alerts.
-4. P10 Offers, tenders, and booking.
-5. P11 Chat and notifications.
-6. P12 Execution and tracking.
-7. P13 Documents.
-8. P14 Payments.
-9. P15 Admin ops and reconciliation.
+4. P11 Chat and notifications.
+5. P12 Execution and tracking.
+6. P13 Documents.
+7. P14 Payments.
+8. P15 Admin ops and reconciliation.
 11. P17 Realtime.
 12. P18 Observability and audit.
 13. P19 Security hardening.

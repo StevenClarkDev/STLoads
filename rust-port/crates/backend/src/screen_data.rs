@@ -576,6 +576,7 @@ async fn build_chat_workspace_screen(
         return Ok(ChatWorkspaceScreen {
             title: "Private Chat".into(),
             active_conversation_id: None,
+            active_posting_id: None,
             active_participant: "No conversations yet".into(),
             active_participant_user_id: None,
             active_participant_presence_label: None,
@@ -603,6 +604,7 @@ async fn build_chat_workspace_screen(
         list_message_details_for_conversation(pool, active_conversation.id, 50).await?;
     messages.sort_by_key(|row| row.id);
     let offers = list_offers_for_leg(pool, active_conversation.load_leg_id).await?;
+    let active_posting_id = find_posting_id_for_leg(pool, active_conversation.load_leg_id).await?;
     let viewer_read_state =
         find_conversation_read_state(pool, active_conversation.id, viewer_user_id).await?;
     let peer_read_state =
@@ -735,6 +737,7 @@ async fn build_chat_workspace_screen(
     Ok(ChatWorkspaceScreen {
         title: "Private Chat".into(),
         active_conversation_id: Some(active_conversation.id.max(0) as u64),
+        active_posting_id: active_posting_id.map(|value| value.max(0) as u64),
         active_participant: if viewer_user_id == active_conversation.carrier_id {
             active_conversation.shipper_name
         } else {
@@ -816,6 +819,18 @@ async fn build_dispatch_desk_screen(
             total: total.max(0) as u64,
         },
     })
+}
+
+async fn find_posting_id_for_leg(
+    pool: &db::DbPool,
+    load_leg_id: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM stloads_postings WHERE source_leg_id = $1 AND deleted_at IS NULL ORDER BY updated_at DESC, id DESC LIMIT 1",
+    )
+    .bind(load_leg_id.to_string())
+    .fetch_optional(pool)
+    .await
 }
 async fn build_stloads_operations_screen(
     pool: &db::DbPool,
@@ -1174,6 +1189,7 @@ fn empty_chat_workspace_screen(state: &AppState, mut notes: Vec<String>) -> Chat
     ChatWorkspaceScreen {
         title: "Private Chat".into(),
         active_conversation_id: None,
+        active_posting_id: None,
         active_participant: "Secure session required".into(),
         active_participant_user_id: None,
         active_participant_presence_label: None,

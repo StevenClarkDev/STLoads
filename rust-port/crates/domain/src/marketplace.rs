@@ -23,6 +23,40 @@ impl OfferStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CounterofferDecision {
+    Accept,
+    Reject,
+}
+
+impl CounterofferDecision {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "accept" | "accepted" => Some(Self::Accept),
+            "reject" | "decline" | "declined" | "rejected" => Some(Self::Reject),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TenderDecision {
+    Accept,
+    Reject,
+}
+
+impl TenderDecision {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "accept" | "accepted" => Some(Self::Accept),
+            "reject" | "decline" | "declined" | "rejected" => Some(Self::Reject),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct OfferStatusDescriptor {
     pub status: OfferStatus,

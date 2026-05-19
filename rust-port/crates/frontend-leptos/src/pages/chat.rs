@@ -6,8 +6,10 @@ use crate::{
     session::{self, use_auth},
 };
 use shared::{
-    ChatSendMessageRequest, ChatWorkspaceScreen, OfferReviewDecision, OfferReviewRequest,
-    RealtimeEventKind, RealtimeTopic,
+    BookNowRequest, CarrierCancellationRequest, ChatSendMessageRequest, ChatWorkspaceScreen,
+    CreateCounterofferRequest, CreateTenderInviteRequest, OfferReviewDecision, OfferReviewRequest,
+    RealtimeEventKind, RealtimeTopic, RespondCounterofferRequest, RespondTenderInviteRequest,
+    SubmitOfferRequest,
 };
 
 fn tone_style(tone: &str) -> &'static str {
@@ -35,6 +37,16 @@ pub fn ChatWorkspacePage() -> impl IntoView {
     let pending_offer_id = RwSignal::new(None::<u64>);
     let is_sending = RwSignal::new(false);
     let message_body = RwSignal::new(String::new());
+    let offer_amount = RwSignal::new(String::new());
+    let counter_offer_id = RwSignal::new(String::new());
+    let counter_amount = RwSignal::new(String::new());
+    let counter_response_id = RwSignal::new(String::new());
+    let tender_carrier_profile_id = RwSignal::new(String::new());
+    let tender_response_id = RwSignal::new(String::new());
+    let book_amount = RwSignal::new(String::new());
+    let cancellation_award_id = RwSignal::new(String::new());
+    let cancellation_reason = RwSignal::new(String::new());
+    let marketplace_action_loading = RwSignal::new(false);
     let refresh_nonce = RwSignal::new(0_u64);
     let ws_connected = RwSignal::new(false);
     let ws_handle = RwSignal::new(None::<AbortHandle>);
@@ -275,6 +287,132 @@ pub fn ChatWorkspacePage() -> impl IntoView {
         });
     };
 
+    let run_marketplace_action = move |label: &'static str, action: MarketplaceUiAction| {
+        let Some(posting_id) = screen.get().and_then(|value| value.active_posting_id) else {
+            action_message.set(Some(
+                "No STLoads posting is linked to this conversation yet.".into(),
+            ));
+            return;
+        };
+        marketplace_action_loading.set(true);
+        action_message.set(None);
+        let auth = auth.clone();
+        spawn_local(async move {
+            let result = match action {
+                MarketplaceUiAction::SubmitOffer { amount } => {
+                    api::submit_marketplace_offer(
+                        posting_id,
+                        &SubmitOfferRequest {
+                            amount,
+                            currency: Some("USD".into()),
+                            message: Some("Submitted from the Rust marketplace chat.".into()),
+                            idempotency_key: None,
+                        },
+                    )
+                    .await
+                }
+                MarketplaceUiAction::CreateCounteroffer { offer_id, amount } => {
+                    api::create_marketplace_counteroffer(
+                        offer_id,
+                        &CreateCounterofferRequest {
+                            amount,
+                            currency: Some("USD".into()),
+                            message: Some("Counteroffer from the Rust marketplace chat.".into()),
+                            from_party_type: Some("shipper".into()),
+                            to_party_type: Some("carrier".into()),
+                        },
+                    )
+                    .await
+                }
+                MarketplaceUiAction::RespondCounteroffer {
+                    counteroffer_id,
+                    decision,
+                } => {
+                    api::respond_marketplace_counteroffer(
+                        counteroffer_id,
+                        &RespondCounterofferRequest {
+                            decision,
+                            note: Some("Counteroffer response from Rust chat.".into()),
+                        },
+                    )
+                    .await
+                }
+                MarketplaceUiAction::CreateTender { carrier_profile_id } => {
+                    api::create_marketplace_tender(
+                        posting_id,
+                        &CreateTenderInviteRequest {
+                            carrier_profile_id,
+                            tender_type: Some("direct".into()),
+                            expires_minutes: Some(120),
+                        },
+                    )
+                    .await
+                }
+                MarketplaceUiAction::RespondTender {
+                    invite_id,
+                    decision,
+                } => {
+                    api::respond_marketplace_tender(
+                        invite_id,
+                        &RespondTenderInviteRequest {
+                            decision,
+                            note: Some("Tender response from Rust chat.".into()),
+                        },
+                    )
+                    .await
+                }
+                MarketplaceUiAction::BookNow { amount } => {
+                    api::book_marketplace_posting(
+                        posting_id,
+                        &BookNowRequest {
+                            carrier_profile_id: None,
+                            offer_id: None,
+                            tender_id: None,
+                            amount,
+                            currency: Some("USD".into()),
+                            terms_accepted: true,
+                            idempotency_key: None,
+                        },
+                    )
+                    .await
+                }
+                MarketplaceUiAction::Cancel {
+                    booking_award_id,
+                    reason,
+                } => {
+                    api::request_marketplace_cancellation(
+                        posting_id,
+                        &CarrierCancellationRequest {
+                            booking_award_id,
+                            reason_code: "carrier_request".into(),
+                            reason_detail: Some(reason),
+                        },
+                    )
+                    .await
+                }
+            };
+
+            match result {
+                Ok(response) => {
+                    action_message.set(Some(format!("{}: {}", label, response.message)));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            marketplace_action_loading.set(false);
+        });
+    };
+
     let can_review_offers = Signal::derive(move || {
         auth.session
             .get()
@@ -461,6 +599,95 @@ pub fn ChatWorkspacePage() -> impl IntoView {
                                     .collect_view()}
                             </div>
 
+                            <section style="display:grid;gap:0.75rem;padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fcfcfb;">
+                                <strong>"Marketplace actions"</strong>
+                                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem;">
+                                    <label style="display:grid;gap:0.35rem;">
+                                        <span>"Offer amount"</span>
+                                        <input type="number" step="0.01" prop:value=move || offer_amount.get() on:input=move |ev| offer_amount.set(event_target_value(&ev)) />
+                                        <button type="button" disabled=move || marketplace_action_loading.get() on:click=move |_| {
+                                            if let Some(amount) = parse_money(&offer_amount.get()) {
+                                                run_marketplace_action("Offer", MarketplaceUiAction::SubmitOffer { amount });
+                                            } else {
+                                                action_message.set(Some("Enter a valid offer amount.".into()));
+                                            }
+                                        }>"Submit offer"</button>
+                                    </label>
+                                    <label style="display:grid;gap:0.35rem;">
+                                        <span>"Book-now amount"</span>
+                                        <input type="number" step="0.01" prop:value=move || book_amount.get() on:input=move |ev| book_amount.set(event_target_value(&ev)) />
+                                        <button type="button" disabled=move || marketplace_action_loading.get() on:click=move |_| {
+                                            run_marketplace_action("Book-now", MarketplaceUiAction::BookNow { amount: parse_money(&book_amount.get()) });
+                                        }>"Book now"</button>
+                                    </label>
+                                    <label style="display:grid;gap:0.35rem;">
+                                        <span>"Counteroffer"</span>
+                                        <input type="number" placeholder="Offer ID" prop:value=move || counter_offer_id.get() on:input=move |ev| counter_offer_id.set(event_target_value(&ev)) />
+                                        <input type="number" step="0.01" placeholder="Amount" prop:value=move || counter_amount.get() on:input=move |ev| counter_amount.set(event_target_value(&ev)) />
+                                        <button type="button" disabled=move || marketplace_action_loading.get() on:click=move |_| {
+                                            match (parse_id(&counter_offer_id.get()), parse_money(&counter_amount.get())) {
+                                                (Some(offer_id), Some(amount)) => run_marketplace_action("Counteroffer", MarketplaceUiAction::CreateCounteroffer { offer_id, amount }),
+                                                _ => action_message.set(Some("Enter a valid offer ID and counter amount.".into())),
+                                            }
+                                        }>"Create counter"</button>
+                                    </label>
+                                    <label style="display:grid;gap:0.35rem;">
+                                        <span>"Counter response"</span>
+                                        <input type="number" placeholder="Counteroffer ID" prop:value=move || counter_response_id.get() on:input=move |ev| counter_response_id.set(event_target_value(&ev)) />
+                                        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                                            <button type="button" disabled=move || marketplace_action_loading.get() on:click=move |_| {
+                                                if let Some(counteroffer_id) = parse_id(&counter_response_id.get()) {
+                                                    run_marketplace_action("Counter accepted", MarketplaceUiAction::RespondCounteroffer { counteroffer_id, decision: "accept".into() });
+                                                }
+                                            }>"Accept"</button>
+                                            <button type="button" disabled=move || marketplace_action_loading.get() on:click=move |_| {
+                                                if let Some(counteroffer_id) = parse_id(&counter_response_id.get()) {
+                                                    run_marketplace_action("Counter rejected", MarketplaceUiAction::RespondCounteroffer { counteroffer_id, decision: "reject".into() });
+                                                }
+                                            }>"Reject"</button>
+                                        </div>
+                                    </label>
+                                    <label style="display:grid;gap:0.35rem;">
+                                        <span>"Tender carrier profile"</span>
+                                        <input type="number" prop:value=move || tender_carrier_profile_id.get() on:input=move |ev| tender_carrier_profile_id.set(event_target_value(&ev)) />
+                                        <button type="button" disabled=move || marketplace_action_loading.get() on:click=move |_| {
+                                            if let Some(carrier_profile_id) = parse_signed_id(&tender_carrier_profile_id.get()) {
+                                                run_marketplace_action("Tender", MarketplaceUiAction::CreateTender { carrier_profile_id });
+                                            } else {
+                                                action_message.set(Some("Enter a valid carrier profile ID.".into()));
+                                            }
+                                        }>"Create tender"</button>
+                                    </label>
+                                    <label style="display:grid;gap:0.35rem;">
+                                        <span>"Tender response"</span>
+                                        <input type="number" placeholder="Invite ID" prop:value=move || tender_response_id.get() on:input=move |ev| tender_response_id.set(event_target_value(&ev)) />
+                                        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                                            <button type="button" disabled=move || marketplace_action_loading.get() on:click=move |_| {
+                                                if let Some(invite_id) = parse_id(&tender_response_id.get()) {
+                                                    run_marketplace_action("Tender accepted", MarketplaceUiAction::RespondTender { invite_id, decision: "accept".into() });
+                                                }
+                                            }>"Accept"</button>
+                                            <button type="button" disabled=move || marketplace_action_loading.get() on:click=move |_| {
+                                                if let Some(invite_id) = parse_id(&tender_response_id.get()) {
+                                                    run_marketplace_action("Tender declined", MarketplaceUiAction::RespondTender { invite_id, decision: "reject".into() });
+                                                }
+                                            }>"Decline"</button>
+                                        </div>
+                                    </label>
+                                    <label style="display:grid;gap:0.35rem;">
+                                        <span>"Cancellation"</span>
+                                        <input type="number" placeholder="Award ID" prop:value=move || cancellation_award_id.get() on:input=move |ev| cancellation_award_id.set(event_target_value(&ev)) />
+                                        <input type="text" placeholder="Reason" prop:value=move || cancellation_reason.get() on:input=move |ev| cancellation_reason.set(event_target_value(&ev)) />
+                                        <button type="button" disabled=move || marketplace_action_loading.get() on:click=move |_| {
+                                            run_marketplace_action("Cancellation", MarketplaceUiAction::Cancel {
+                                                booking_award_id: parse_signed_id(&cancellation_award_id.get()),
+                                                reason: optional_reason(&cancellation_reason.get()),
+                                            });
+                                        }>"Request cancel"</button>
+                                    </label>
+                                </div>
+                            </section>
+
                             <section style="display:grid;gap:0.35rem;">
                                 {value
                                     .notes
@@ -473,5 +700,59 @@ pub fn ChatWorkspacePage() -> impl IntoView {
                 </section>
             </section>
         </article>
+    }
+}
+
+#[derive(Clone)]
+enum MarketplaceUiAction {
+    SubmitOffer {
+        amount: f64,
+    },
+    CreateCounteroffer {
+        offer_id: u64,
+        amount: f64,
+    },
+    RespondCounteroffer {
+        counteroffer_id: u64,
+        decision: String,
+    },
+    CreateTender {
+        carrier_profile_id: i64,
+    },
+    RespondTender {
+        invite_id: u64,
+        decision: String,
+    },
+    BookNow {
+        amount: Option<f64>,
+    },
+    Cancel {
+        booking_award_id: Option<i64>,
+        reason: String,
+    },
+}
+
+fn parse_money(value: &str) -> Option<f64> {
+    value
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|amount| *amount > 0.0)
+}
+
+fn parse_id(value: &str) -> Option<u64> {
+    value.trim().parse::<u64>().ok().filter(|id| *id > 0)
+}
+
+fn parse_signed_id(value: &str) -> Option<i64> {
+    value.trim().parse::<i64>().ok().filter(|id| *id > 0)
+}
+
+fn optional_reason(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        "Carrier requested cancellation from Rust chat.".into()
+    } else {
+        trimmed.into()
     }
 }

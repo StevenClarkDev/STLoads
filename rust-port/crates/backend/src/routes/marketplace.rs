@@ -8,8 +8,11 @@ use db::{
     dispatch::{LoadLegScopeRecord, find_load_leg_scope},
     eligibility::{evaluate_carrier_eligibility, find_carrier_profile_id_for_user},
     marketplace::{
-        create_message, find_conversation_by_id, find_offer_by_id, mark_conversation_read,
-        review_offer,
+        BookNowInput, CarrierCancellationInput, CreateCounterofferInput, CreateTenderInviteInput,
+        SubmitCarrierOfferInput, book_now_posting, create_counteroffer, create_message,
+        create_tender_invite, find_conversation_by_id, find_offer_by_id, mark_conversation_read,
+        request_carrier_cancellation, respond_to_counteroffer, respond_to_tender_invite,
+        review_offer, submit_carrier_offer,
     },
 };
 use domain::{
@@ -23,9 +26,12 @@ use domain::{
 use serde::{Deserialize, Serialize};
 use shared::{
     ApiResponse, ChatSendMessageRequest, ChatSendMessageResponse, ChatWorkspaceScreen,
-    ConversationReadResponse, OfferReviewDecision, OfferReviewRequest, OfferReviewResponse,
-    RealtimeEvent, RealtimeEventKind, RealtimeTopic,
+    ConversationReadResponse, CreateCounterofferRequest, CreateTenderInviteRequest,
+    MarketplaceActionResponse, OfferReviewDecision, OfferReviewRequest, OfferReviewResponse,
+    RealtimeEvent, RealtimeEventKind, RealtimeTopic, RespondCounterofferRequest,
+    RespondTenderInviteRequest, SubmitOfferRequest,
 };
+use shared::{BookNowRequest, CarrierCancellationRequest};
 
 use crate::{auth_session, realtime_bus::RoutedRealtimeEvent, screen_data, state::AppState};
 
@@ -65,6 +71,28 @@ pub fn router() -> Router<AppState> {
             "/postings/{posting_id}/eligibility",
             get(posting_eligibility_handler),
         )
+        .route("/postings/{posting_id}/offers", post(submit_offer_handler))
+        .route(
+            "/offers/{offer_id}/counteroffers",
+            post(create_counteroffer_handler),
+        )
+        .route(
+            "/counteroffers/{counteroffer_id}/respond",
+            post(respond_counteroffer_handler),
+        )
+        .route(
+            "/postings/{posting_id}/tenders",
+            post(create_tender_handler),
+        )
+        .route(
+            "/tender-invites/{invite_id}/respond",
+            post(respond_tender_handler),
+        )
+        .route("/postings/{posting_id}/book-now", post(book_now_handler))
+        .route(
+            "/postings/{posting_id}/cancellations",
+            post(request_cancellation_handler),
+        )
         .route("/offers/{offer_id}/review", post(review_offer_handler))
         .route(
             "/conversations/{conversation_id}/messages",
@@ -74,6 +102,315 @@ pub fn router() -> Router<AppState> {
             "/conversations/{conversation_id}/read",
             post(mark_conversation_read_handler),
         )
+}
+
+async fn submit_offer_handler(
+    State(state): State<AppState>,
+    Path(posting_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<SubmitOfferRequest>,
+) -> Json<ApiResponse<MarketplaceActionResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(marketplace_unavailable(&state)));
+    };
+    let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
+    else {
+        return Json(ApiResponse::ok(marketplace_unauthorized("submit an offer")));
+    };
+    let tenant_id = session_tenant_id(&session);
+    let Some(carrier_profile_id) = resolve_carrier_profile(pool, &tenant_id, &session).await else {
+        return Json(ApiResponse::ok(marketplace_failure(
+            "Missing carrier",
+            "No carrier profile is attached to this session.",
+        )));
+    };
+    match submit_carrier_offer(
+        pool,
+        SubmitCarrierOfferInput {
+            tenant_id: &tenant_id,
+            posting_id,
+            carrier_profile_id,
+            carrier_user_id: session.user.id,
+            amount: payload.amount,
+            currency: payload.currency.as_deref().unwrap_or("USD"),
+            message: payload.message.as_deref(),
+            idempotency_key: payload.idempotency_key.as_deref(),
+            created_by: session.user.id,
+        },
+    )
+    .await
+    {
+        Ok(record) => Json(ApiResponse::ok(MarketplaceActionResponse {
+            success: true,
+            id: Some(record.id),
+            status_label: "Pending".into(),
+            message: "Offer submitted and queued for ATMP sync.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(marketplace_error(
+            "Offer submission failed",
+            error,
+        ))),
+    }
+}
+
+async fn create_counteroffer_handler(
+    State(state): State<AppState>,
+    Path(offer_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateCounterofferRequest>,
+) -> Json<ApiResponse<MarketplaceActionResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(marketplace_unavailable(&state)));
+    };
+    let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
+    else {
+        return Json(ApiResponse::ok(marketplace_unauthorized(
+            "create a counteroffer",
+        )));
+    };
+    let tenant_id = session_tenant_id(&session);
+    match create_counteroffer(
+        pool,
+        CreateCounterofferInput {
+            tenant_id: &tenant_id,
+            offer_id,
+            from_party_type: payload.from_party_type.as_deref().unwrap_or("shipper"),
+            to_party_type: payload.to_party_type.as_deref().unwrap_or("carrier"),
+            amount: payload.amount,
+            currency: payload.currency.as_deref().unwrap_or("USD"),
+            message: payload.message.as_deref(),
+            created_by: session.user.id,
+        },
+    )
+    .await
+    {
+        Ok(record) => Json(ApiResponse::ok(MarketplaceActionResponse {
+            success: true,
+            id: Some(record.id),
+            status_label: record.status,
+            message: "Counteroffer created and queued for ATMP sync.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(marketplace_error(
+            "Counteroffer failed",
+            error,
+        ))),
+    }
+}
+
+async fn respond_counteroffer_handler(
+    State(state): State<AppState>,
+    Path(counteroffer_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<RespondCounterofferRequest>,
+) -> Json<ApiResponse<MarketplaceActionResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(marketplace_unavailable(&state)));
+    };
+    let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
+    else {
+        return Json(ApiResponse::ok(marketplace_unauthorized(
+            "respond to a counteroffer",
+        )));
+    };
+    let tenant_id = session_tenant_id(&session);
+    match respond_to_counteroffer(
+        pool,
+        &tenant_id,
+        counteroffer_id,
+        &payload.decision,
+        payload.note.as_deref(),
+        session.user.id,
+    )
+    .await
+    {
+        Ok(record) => Json(ApiResponse::ok(MarketplaceActionResponse {
+            success: true,
+            id: Some(record.id),
+            status_label: record.status,
+            message: "Counteroffer response saved.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(marketplace_error(
+            "Counteroffer response failed",
+            error,
+        ))),
+    }
+}
+
+async fn create_tender_handler(
+    State(state): State<AppState>,
+    Path(posting_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateTenderInviteRequest>,
+) -> Json<ApiResponse<MarketplaceActionResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(marketplace_unavailable(&state)));
+    };
+    let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
+    else {
+        return Json(ApiResponse::ok(marketplace_unauthorized("create a tender")));
+    };
+    let tenant_id = session_tenant_id(&session);
+    match create_tender_invite(
+        pool,
+        CreateTenderInviteInput {
+            tenant_id: &tenant_id,
+            posting_id,
+            carrier_profile_id: payload.carrier_profile_id,
+            tender_type: payload.tender_type.as_deref().unwrap_or("direct"),
+            expires_minutes: payload.expires_minutes,
+            created_by: session.user.id,
+        },
+    )
+    .await
+    {
+        Ok(record) => Json(ApiResponse::ok(MarketplaceActionResponse {
+            success: true,
+            id: Some(record.invite_id),
+            status_label: record.invite_status,
+            message: "Tender invite created.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(marketplace_error(
+            "Tender creation failed",
+            error,
+        ))),
+    }
+}
+
+async fn respond_tender_handler(
+    State(state): State<AppState>,
+    Path(invite_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<RespondTenderInviteRequest>,
+) -> Json<ApiResponse<MarketplaceActionResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(marketplace_unavailable(&state)));
+    };
+    let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
+    else {
+        return Json(ApiResponse::ok(marketplace_unauthorized(
+            "respond to a tender",
+        )));
+    };
+    let tenant_id = session_tenant_id(&session);
+    match respond_to_tender_invite(
+        pool,
+        &tenant_id,
+        invite_id,
+        &payload.decision,
+        payload.note.as_deref(),
+        session.user.id,
+    )
+    .await
+    {
+        Ok(record) => Json(ApiResponse::ok(MarketplaceActionResponse {
+            success: true,
+            id: Some(record.invite_id),
+            status_label: record.invite_status,
+            message: "Tender response saved.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(marketplace_error(
+            "Tender response failed",
+            error,
+        ))),
+    }
+}
+
+async fn book_now_handler(
+    State(state): State<AppState>,
+    Path(posting_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<BookNowRequest>,
+) -> Json<ApiResponse<MarketplaceActionResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(marketplace_unavailable(&state)));
+    };
+    let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
+    else {
+        return Json(ApiResponse::ok(marketplace_unauthorized(
+            "book this posting",
+        )));
+    };
+    let tenant_id = session_tenant_id(&session);
+    let carrier_profile_id = match payload.carrier_profile_id {
+        Some(value) => value,
+        None => match resolve_carrier_profile(pool, &tenant_id, &session).await {
+            Some(value) => value,
+            None => {
+                return Json(ApiResponse::ok(marketplace_failure(
+                    "Missing carrier",
+                    "No carrier profile is attached to this session.",
+                )));
+            }
+        },
+    };
+    match book_now_posting(
+        pool,
+        BookNowInput {
+            tenant_id: &tenant_id,
+            posting_id,
+            carrier_profile_id,
+            carrier_user_id: session.user.id,
+            offer_id: payload.offer_id,
+            tender_id: payload.tender_id,
+            amount: payload.amount,
+            currency: payload.currency.as_deref().unwrap_or("USD"),
+            terms_accepted: payload.terms_accepted,
+            idempotency_key: payload.idempotency_key.as_deref(),
+            created_by: session.user.id,
+        },
+    )
+    .await
+    {
+        Ok(record) => Json(ApiResponse::ok(MarketplaceActionResponse {
+            success: true,
+            id: Some(record.id),
+            status_label: record.status,
+            message: "Posting booked and queued for ATMP sync.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(marketplace_error("Book-now failed", error))),
+    }
+}
+
+async fn request_cancellation_handler(
+    State(state): State<AppState>,
+    Path(posting_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<CarrierCancellationRequest>,
+) -> Json<ApiResponse<MarketplaceActionResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(marketplace_unavailable(&state)));
+    };
+    let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
+    else {
+        return Json(ApiResponse::ok(marketplace_unauthorized(
+            "request cancellation",
+        )));
+    };
+    let tenant_id = session_tenant_id(&session);
+    match request_carrier_cancellation(
+        pool,
+        CarrierCancellationInput {
+            tenant_id: &tenant_id,
+            posting_id,
+            booking_award_id: payload.booking_award_id,
+            requested_by: session.user.id,
+            reason_code: &payload.reason_code,
+            reason_detail: payload.reason_detail.as_deref(),
+        },
+    )
+    .await
+    {
+        Ok(record) => Json(ApiResponse::ok(MarketplaceActionResponse {
+            success: true,
+            id: Some(record.id),
+            status_label: record.status,
+            message: "Cancellation request queued for operator review and ATMP sync.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(marketplace_error(
+            "Cancellation request failed",
+            error,
+        ))),
+    }
 }
 
 async fn posting_eligibility_handler(
@@ -583,6 +920,45 @@ fn session_tenant_id(session: &auth_session::ResolvedSession) -> String {
         .as_ref()
         .map(|scope| scope.tenant_id.clone())
         .unwrap_or_else(|| "legacy".into())
+}
+
+async fn resolve_carrier_profile(
+    pool: &db::DbPool,
+    tenant_id: &str,
+    session: &auth_session::ResolvedSession,
+) -> Option<i64> {
+    find_carrier_profile_id_for_user(pool, tenant_id, session.user.id)
+        .await
+        .ok()
+        .flatten()
+}
+
+fn marketplace_unavailable(state: &AppState) -> MarketplaceActionResponse {
+    marketplace_failure(
+        "Unavailable",
+        &format!(
+            "Marketplace action is unavailable because the database is {} on {}.",
+            state.database_state(),
+            state.config.deployment_target
+        ),
+    )
+}
+
+fn marketplace_unauthorized(action: &str) -> MarketplaceActionResponse {
+    marketplace_failure("Unauthorized", &format!("Sign in before you {action}."))
+}
+
+fn marketplace_error(label: &str, error: sqlx::Error) -> MarketplaceActionResponse {
+    marketplace_failure(label, &format!("{}: {}", label, error))
+}
+
+fn marketplace_failure(label: &str, message: &str) -> MarketplaceActionResponse {
+    MarketplaceActionResponse {
+        success: false,
+        id: None,
+        status_label: label.into(),
+        message: message.into(),
+    }
 }
 
 fn conversation_participant_user_ids(

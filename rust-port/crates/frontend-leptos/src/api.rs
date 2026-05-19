@@ -6,29 +6,31 @@ use shared::{
     AdminUpdateRolePermissionsResponse, AdminUpdateUserProfileRequest,
     AdminUpdateUserProfileResponse, AdminUpdateUserRequest, AdminUpdateUserResponse,
     AdminUserDirectoryScreen, AdminUserProfileScreen, ApiResponse, AuthOnboardingScreen,
-    AuthSessionState, BookLoadLegRequest, BookLoadLegResponse, ChangePasswordRequest,
-    ChangePasswordResponse, ChatSendMessageRequest, ChatSendMessageResponse, ChatWorkspaceScreen,
-    CityUpsertRequest, ConversationReadResponse, CountryUpsertRequest, CreateLoadRequest,
-    CreateLoadResponse, DeleteKycDocumentResponse, DispatchDeskFollowUpRequest,
-    DispatchDeskFollowUpResponse, DispatchDeskScreen, EscrowFundRequest, EscrowHoldRequest,
-    EscrowLifecycleResponse, EscrowReleaseRequest, ExecutionLegActionRequest,
-    ExecutionLegActionResponse, ExecutionLegScreen, ExecutionLocationPingRequest,
-    ExecutionLocationPingResponse, ForgotPasswordRequest, ForgotPasswordResponse,
-    LoadBoardFilterState, LoadBoardScreen, LoadBuilderScreen, LoadProfileScreen,
-    LocationUpsertRequest, LoginRequest, LoginResponse, LogoutResponse, MasterDataDeleteRequest,
-    MasterDataMutationResponse, MasterDataScreen, OfferReviewRequest, OfferReviewResponse,
-    PortalRoleCountsResponse, RealtimeTopic, RegisterRequest, RegisterResponse, ResendOtpRequest,
-    ResendOtpResponse, ResetPasswordRequest, ResetPasswordResponse, ResolveSyncErrorRequest,
-    ResolveSyncErrorResponse, ReviewOnboardingRequest, ReviewOnboardingResponse,
-    SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse, SelfProfileScreen,
-    SimpleCatalogUpsertRequest, StloadsOperationsScreen, StloadsReconciliationScreen,
-    StripeWebhookRequest, StripeWebhookResponse, SubmitOnboardingRequest, SubmitOnboardingResponse,
-    TmsCloseRequest, TmsHandoffPayload, TmsHandoffResponse, TmsRequeueRequest,
-    TmsStatusWebhookRequest, TmsWebhookResponse, TmsWithdrawRequest, UpdateSelfProfileRequest,
-    UpdateSelfProfileResponse, UpsertKycDocumentRequest, UpsertKycDocumentResponse,
-    UpsertLoadDocumentRequest, UpsertLoadDocumentResponse, VerifyKycDocumentRequest,
-    VerifyKycDocumentResponse, VerifyLoadDocumentRequest, VerifyLoadDocumentResponse,
-    VerifyOtpRequest, VerifyOtpResponse,
+    AuthSessionState, BookLoadLegRequest, BookLoadLegResponse, BookNowRequest,
+    CarrierCancellationRequest, ChangePasswordRequest, ChangePasswordResponse,
+    ChatSendMessageRequest, ChatSendMessageResponse, ChatWorkspaceScreen, CityUpsertRequest,
+    ConversationReadResponse, CountryUpsertRequest, CreateCounterofferRequest, CreateLoadRequest,
+    CreateLoadResponse, CreateTenderInviteRequest, DeleteKycDocumentResponse,
+    DispatchDeskFollowUpRequest, DispatchDeskFollowUpResponse, DispatchDeskScreen,
+    EscrowFundRequest, EscrowHoldRequest, EscrowLifecycleResponse, EscrowReleaseRequest,
+    ExecutionLegActionRequest, ExecutionLegActionResponse, ExecutionLegScreen,
+    ExecutionLocationPingRequest, ExecutionLocationPingResponse, ForgotPasswordRequest,
+    ForgotPasswordResponse, LoadBoardFilterState, LoadBoardScreen, LoadBuilderScreen,
+    LoadProfileScreen, LocationUpsertRequest, LoginRequest, LoginResponse, LogoutResponse,
+    MarketplaceActionResponse, MasterDataDeleteRequest, MasterDataMutationResponse,
+    MasterDataScreen, OfferReviewRequest, OfferReviewResponse, PortalRoleCountsResponse,
+    RealtimeTopic, RegisterRequest, RegisterResponse, ResendOtpRequest, ResendOtpResponse,
+    ResetPasswordRequest, ResetPasswordResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
+    RespondCounterofferRequest, RespondTenderInviteRequest, ReviewOnboardingRequest,
+    ReviewOnboardingResponse, SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse,
+    SelfProfileScreen, SimpleCatalogUpsertRequest, StloadsOperationsScreen,
+    StloadsReconciliationScreen, StripeWebhookRequest, StripeWebhookResponse, SubmitOfferRequest,
+    SubmitOnboardingRequest, SubmitOnboardingResponse, TmsCloseRequest, TmsHandoffPayload,
+    TmsHandoffResponse, TmsRequeueRequest, TmsStatusWebhookRequest, TmsWebhookResponse,
+    TmsWithdrawRequest, UpdateSelfProfileRequest, UpdateSelfProfileResponse,
+    UpsertKycDocumentRequest, UpsertKycDocumentResponse, UpsertLoadDocumentRequest,
+    UpsertLoadDocumentResponse, VerifyKycDocumentRequest, VerifyKycDocumentResponse,
+    VerifyLoadDocumentRequest, VerifyLoadDocumentResponse, VerifyOtpRequest, VerifyOtpResponse,
 };
 
 use crate::runtime_config;
@@ -379,6 +381,62 @@ pub async fn review_offer(
     payload: &OfferReviewRequest,
 ) -> Result<OfferReviewResponse, String> {
     let path = format!("/marketplace/offers/{}/review", offer_id);
+    post_api(&path, payload).await
+}
+
+pub async fn submit_marketplace_offer(
+    posting_id: u64,
+    payload: &SubmitOfferRequest,
+) -> Result<MarketplaceActionResponse, String> {
+    let path = format!("/marketplace/postings/{}/offers", posting_id);
+    post_api(&path, payload).await
+}
+
+pub async fn create_marketplace_counteroffer(
+    offer_id: u64,
+    payload: &CreateCounterofferRequest,
+) -> Result<MarketplaceActionResponse, String> {
+    let path = format!("/marketplace/offers/{}/counteroffers", offer_id);
+    post_api(&path, payload).await
+}
+
+pub async fn respond_marketplace_counteroffer(
+    counteroffer_id: u64,
+    payload: &RespondCounterofferRequest,
+) -> Result<MarketplaceActionResponse, String> {
+    let path = format!("/marketplace/counteroffers/{}/respond", counteroffer_id);
+    post_api(&path, payload).await
+}
+
+pub async fn create_marketplace_tender(
+    posting_id: u64,
+    payload: &CreateTenderInviteRequest,
+) -> Result<MarketplaceActionResponse, String> {
+    let path = format!("/marketplace/postings/{}/tenders", posting_id);
+    post_api(&path, payload).await
+}
+
+pub async fn respond_marketplace_tender(
+    invite_id: u64,
+    payload: &RespondTenderInviteRequest,
+) -> Result<MarketplaceActionResponse, String> {
+    let path = format!("/marketplace/tender-invites/{}/respond", invite_id);
+    post_api(&path, payload).await
+}
+
+pub async fn book_marketplace_posting(
+    posting_id: u64,
+    payload: &BookNowRequest,
+) -> Result<MarketplaceActionResponse, String> {
+    let path = format!("/marketplace/postings/{}/book-now", posting_id);
+    post_api(&path, payload).await
+}
+
+pub async fn request_marketplace_cancellation(
+    posting_id: u64,
+    payload: &CarrierCancellationRequest,
+) -> Result<MarketplaceActionResponse, String> {
+    let path = format!("/marketplace/postings/{}/cancellations", posting_id);
     post_api(&path, payload).await
 }
 

@@ -60,6 +60,9 @@ fn render_handoff(handoff: Option<LoadHandoffSummary>, admin_mode: bool) -> AnyV
                                 <A href="/admin/stloads/operations" attr:style="padding:0.45rem 0.7rem;border-radius:0.75rem;background:#eef2ff;color:#312e81;text-decoration:none;">
                                     "STLOADS Ops"
                                 </A>
+                                <A href="/marketplace/chat-workspace" attr:style="padding:0.45rem 0.7rem;border-radius:0.75rem;background:#ecfdf5;color:#0f766e;text-decoration:none;">
+                                    "Marketplace"
+                                </A>
                                 {reconciliation_href.clone().map(|href| view! {
                                     <A href=href attr:style="padding:0.45rem 0.7rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
                                         "Reconciliation"

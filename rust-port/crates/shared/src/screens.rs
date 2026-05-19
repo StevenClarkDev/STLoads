@@ -475,6 +475,7 @@ pub struct ChatOfferItem {
 pub struct ChatWorkspaceScreen {
     pub title: String,
     pub active_conversation_id: Option<u64>,
+    pub active_posting_id: Option<u64>,
     pub active_participant: String,
     pub active_participant_user_id: Option<u64>,
     pub active_participant_presence_label: Option<String>,
@@ -655,6 +656,7 @@ pub fn sample_chat_workspace_screen() -> ChatWorkspaceScreen {
     ChatWorkspaceScreen {
         title: "Private Chat".into(),
         active_conversation_id: Some(128),
+        active_posting_id: None,
         active_participant: "Atlas Freight".into(),
         active_participant_user_id: Some(412),
         active_participant_presence_label: Some("Online now".into()),
