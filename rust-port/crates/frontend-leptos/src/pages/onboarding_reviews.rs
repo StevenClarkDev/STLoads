@@ -166,6 +166,10 @@ pub fn OnboardingReviewPage() -> impl IntoView {
                                                         <>
                                                             {company_name.clone().map(|value| view! { <p style="margin:0;">{format!("Company: {}", value)}</p> })}
                                                             {company_address.clone().map(|value| view! { <p style="margin:0;">{format!("Address: {}", value)}</p> })}
+                                                            <section style="padding:0.75rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.85rem;background:white;display:grid;gap:0.25rem;">
+                                                                <strong>"Eligibility Intake"</strong>
+                                                                <small>"Approval should confirm carrier packet, W-9, active insurance, DOT/MC authority, equipment, lanes, customer access, and fraud-risk flags before booking is allowed."</small>
+                                                            </section>
                                                             <section style="display:grid;gap:0.4rem;">
                                                                 <strong>"KYC Documents"</strong>
                                                                 {if documents.is_empty() {

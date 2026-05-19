@@ -6,6 +6,7 @@ use axum::{
 };
 use db::{
     dispatch::{LoadLegScopeRecord, find_load_leg_scope},
+    eligibility::{evaluate_carrier_eligibility, find_carrier_profile_id_for_user},
     marketplace::{
         create_message, find_conversation_by_id, find_offer_by_id, mark_conversation_read,
         review_offer,
@@ -13,6 +14,7 @@ use db::{
 };
 use domain::{
     auth::UserRole,
+    eligibility::EligibilityDecision,
     marketplace::{
         MarketplaceModuleContract, OfferStatus, OfferStatusDescriptor, marketplace_module_contract,
         offer_status_descriptors,
@@ -40,6 +42,18 @@ struct ChatWorkspaceQuery {
     conversation_id: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+struct EligibilityQuery {
+    carrier_profile_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct EligibilityResponse {
+    success: bool,
+    decision: Option<EligibilityDecision>,
+    message: String,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(index))
@@ -47,6 +61,10 @@ pub fn router() -> Router<AppState> {
         .route("/contract", get(contract))
         .route("/offer-statuses", get(offer_statuses))
         .route("/chat-workspace", get(chat_workspace))
+        .route(
+            "/postings/{posting_id}/eligibility",
+            get(posting_eligibility_handler),
+        )
         .route("/offers/{offer_id}/review", post(review_offer_handler))
         .route(
             "/conversations/{conversation_id}/messages",
@@ -56,6 +74,89 @@ pub fn router() -> Router<AppState> {
             "/conversations/{conversation_id}/read",
             post(mark_conversation_read_handler),
         )
+}
+
+async fn posting_eligibility_handler(
+    State(state): State<AppState>,
+    Path(posting_id): Path<i64>,
+    Query(query): Query<EligibilityQuery>,
+    headers: HeaderMap,
+) -> Json<ApiResponse<EligibilityResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(EligibilityResponse {
+            success: false,
+            decision: None,
+            message: format!(
+                "Eligibility is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        }));
+    };
+
+    let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
+    else {
+        return Json(ApiResponse::ok(EligibilityResponse {
+            success: false,
+            decision: None,
+            message: "Sign in before checking carrier eligibility.".into(),
+        }));
+    };
+
+    let tenant_id = session_tenant_id(&session);
+    let carrier_profile_id = match query.carrier_profile_id {
+        Some(value) => value,
+        None => match find_carrier_profile_id_for_user(pool, &tenant_id, session.user.id).await {
+            Ok(Some(value)) => value,
+            Ok(None) => {
+                return Json(ApiResponse::ok(EligibilityResponse {
+                    success: false,
+                    decision: None,
+                    message: "No carrier profile is attached to this session.".into(),
+                }));
+            }
+            Err(error) => {
+                return Json(ApiResponse::ok(EligibilityResponse {
+                    success: false,
+                    decision: None,
+                    message: format!("Carrier profile lookup failed: {}", error),
+                }));
+            }
+        },
+    };
+
+    let is_admin = session.user.primary_role() == Some(UserRole::Admin);
+    if !is_admin && query.carrier_profile_id.is_some() {
+        let Ok(Some(owned_profile_id)) =
+            find_carrier_profile_id_for_user(pool, &tenant_id, session.user.id).await
+        else {
+            return Json(ApiResponse::ok(EligibilityResponse {
+                success: false,
+                decision: None,
+                message: "Only admins can check eligibility for another carrier profile.".into(),
+            }));
+        };
+        if owned_profile_id != carrier_profile_id {
+            return Json(ApiResponse::ok(EligibilityResponse {
+                success: false,
+                decision: None,
+                message: "Only admins can check eligibility for another carrier profile.".into(),
+            }));
+        }
+    }
+
+    match evaluate_carrier_eligibility(pool, &tenant_id, posting_id, carrier_profile_id).await {
+        Ok(decision) => Json(ApiResponse::ok(EligibilityResponse {
+            success: true,
+            message: decision.result_detail.clone(),
+            decision: Some(decision),
+        })),
+        Err(error) => Json(ApiResponse::ok(EligibilityResponse {
+            success: false,
+            decision: None,
+            message: format!("Eligibility check failed: {}", error),
+        })),
+    }
 }
 
 async fn index() -> Json<ApiResponse<MarketplaceOverview>> {
@@ -473,6 +574,15 @@ fn collect_scope_user_ids(scope: Option<&LoadLegScopeRecord>) -> Vec<u64> {
     }
 
     user_ids
+}
+
+fn session_tenant_id(session: &auth_session::ResolvedSession) -> String {
+    session
+        .session
+        .tenant_scope
+        .as_ref()
+        .map(|scope| scope.tenant_id.clone())
+        .unwrap_or_else(|| "legacy".into())
 }
 
 fn conversation_participant_user_ids(

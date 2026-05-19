@@ -500,6 +500,13 @@ pub fn ProfilePage() -> impl IntoView {
                                 {fact_grid("Company Facts", screen_value.company_facts.clone())}
                             </section>
 
+                            {show_carrier_fields.then(|| view! {
+                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fff;display:grid;gap:0.5rem;">
+                                    <strong>"Carrier Eligibility"</strong>
+                                    <p style="margin:0;color:#475569;">"Booking access now checks carrier packet, W-9, insurance, authority, DOT/MC, equipment, lane, customer approval, and fraud-risk status before loads can be viewed or booked."</p>
+                                </section>
+                            })}
+
                             <form on:submit=submit style="display:grid;gap:1rem;padding:1rem;border:1px solid #d6d3d1;border-radius:1rem;background:#fff;">
                                 <div style="display:grid;gap:0.35rem;"><strong>"Edit profile"</strong></div>
                                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">

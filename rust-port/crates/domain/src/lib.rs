@@ -1,6 +1,7 @@
 pub mod atmp_contract;
 pub mod auth;
 pub mod dispatch;
+pub mod eligibility;
 pub mod marketplace;
 pub mod master_data;
 pub mod payments;

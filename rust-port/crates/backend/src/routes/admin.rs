@@ -15,6 +15,7 @@ use db::{
         update_admin_user_account, update_admin_user_profile,
     },
     dispatch::{count_admin_load_legs_filtered, list_admin_load_legs_filtered, review_load_status},
+    eligibility::create_compliance_override,
     tms::{replay_atmp_outbound_event, resolve_sync_error},
 };
 use domain::auth::{
@@ -85,6 +86,23 @@ struct SupportImpersonationResponse {
     message: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct ComplianceOverrideRequest {
+    tenant_id: String,
+    carrier_profile_id: i64,
+    posting_id: Option<i64>,
+    override_key: String,
+    reason: String,
+    expires_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ComplianceOverrideResponse {
+    success: bool,
+    override_id: Option<u64>,
+    message: String,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(index))
@@ -123,6 +141,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/support/impersonations",
             post(create_support_impersonation_handler),
+        )
+        .route(
+            "/compliance/overrides",
+            post(create_compliance_override_handler),
         )
 }
 
@@ -1735,6 +1757,99 @@ async fn create_support_impersonation_handler(
         expires_at: Some(audit.expires_at.to_string()),
         message: "Support impersonation audit was created with a bounded expiry.".into(),
     })))
+}
+
+async fn create_compliance_override_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<ComplianceOverrideRequest>,
+) -> Result<Json<ApiResponse<ComplianceOverrideResponse>>, StatusCode> {
+    let session = require_any_permission(
+        &state,
+        &headers,
+        &["access_admin_portal", "manage_compliance_actions"],
+    )
+    .await?;
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(ComplianceOverrideResponse {
+            success: false,
+            override_id: None,
+            message: format!(
+                "Compliance override is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        })));
+    };
+
+    let tenant_id = payload.tenant_id.trim();
+    let override_key = payload.override_key.trim();
+    let reason = payload.reason.trim();
+    if tenant_id.is_empty() || override_key.is_empty() || reason.is_empty() {
+        return Ok(Json(ApiResponse::ok(ComplianceOverrideResponse {
+            success: false,
+            override_id: None,
+            message: "Tenant, override key, and reason are required.".into(),
+        })));
+    }
+
+    let platform_admin = session
+        .session
+        .permissions
+        .iter()
+        .any(|permission| permission == "manage_admin_actions");
+    if !platform_admin {
+        let Some(scope) = session.session.tenant_scope.as_ref() else {
+            return Err(StatusCode::FORBIDDEN);
+        };
+        if scope.tenant_id != tenant_id {
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
+
+    let expires_at = match payload
+        .expires_at
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        Some(value) => match chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S") {
+            Ok(parsed) => Some(parsed),
+            Err(_) => {
+                return Ok(Json(ApiResponse::ok(ComplianceOverrideResponse {
+                    success: false,
+                    override_id: None,
+                    message: "Override expiry must use YYYY-MM-DD HH:MM:SS when provided.".into(),
+                })));
+            }
+        },
+        None => None,
+    };
+
+    match create_compliance_override(
+        pool,
+        tenant_id,
+        payload.carrier_profile_id,
+        payload.posting_id,
+        override_key,
+        reason,
+        expires_at,
+        session.user.id,
+    )
+    .await
+    {
+        Ok(record) => Ok(Json(ApiResponse::ok(ComplianceOverrideResponse {
+            success: true,
+            override_id: Some(record.id.max(0) as u64),
+            message: "Compliance override created with reason and expiry audit fields.".into(),
+        }))),
+        Err(error) => Ok(Json(ApiResponse::ok(ComplianceOverrideResponse {
+            success: false,
+            override_id: None,
+            message: format!("Compliance override failed: {}", error),
+        }))),
+    }
 }
 
 async fn require_any_permission(

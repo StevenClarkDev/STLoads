@@ -79,30 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P9: Carrier Compliance And Eligibility Engine
-
-**Outcome:** Compliance controls prevent bad bookings before they happen.
-
-**Files:**
-
-- Create: `C:\New folder\STLoads-api-review\rust-port\crates\domain\src\eligibility.rs`
-- Create: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\eligibility.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\marketplace.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\admin.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\profile.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\onboarding_reviews.rs`
-
-- [ ] Track carrier packet completion.
-- [ ] Track W-9 status.
-- [ ] Track insurance expiration.
-- [ ] Track authority/DOT/MC verification status.
-- [ ] Track equipment and lane eligibility.
-- [ ] Track blocked/preferred/contracted/customer-approved carrier status.
-- [ ] Add fraud/double-broker risk flags.
-- [ ] Gate view, offer, tender acceptance, and book-now.
-- [ ] Add admin override with reason, expiry, and audit.
-- [ ] Tests must prove every block reason prevents booking.
-
 ### Task P10: Offers, Counteroffers, Tenders, And Book-Now
 
 **Outcome:** STLoads supports real marketplace workflows.
@@ -447,13 +423,12 @@ Do not call STLoads market-ready until every item below is true:
 1. P7 Tenant/RBAC/session hardening.
 2. P16 Placeholder/demo data purge.
 3. P8 Carrier search and alerts.
-4. P9 Compliance and eligibility.
-5. P10 Offers, tenders, and booking.
-6. P11 Chat and notifications.
-7. P12 Execution and tracking.
-8. P13 Documents.
-9. P14 Payments.
-10. P15 Admin ops and reconciliation.
+4. P10 Offers, tenders, and booking.
+5. P11 Chat and notifications.
+6. P12 Execution and tracking.
+7. P13 Documents.
+8. P14 Payments.
+9. P15 Admin ops and reconciliation.
 11. P17 Realtime.
 12. P18 Observability and audit.
 13. P19 Security hardening.
