@@ -15,6 +15,33 @@ pub struct BookLoadLegResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveLoadBoardSearchRequest {
+    pub name: String,
+    pub alert_enabled: bool,
+    pub filters: crate::screens::LoadBoardFilterState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveLoadBoardSearchResponse {
+    pub success: bool,
+    pub saved_search_id: Option<u64>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertLoadBoardAlertRequest {
+    pub channel: String,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertLoadBoardAlertResponse {
+    pub success: bool,
+    pub alert_rule_id: Option<u64>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateLoadLegRequest {
     pub pickup_location_id: Option<u64>,
     pub pickup_location_address: Option<String>,

@@ -273,6 +273,8 @@ async fn reset_database(pool: &DbPool) -> Result<(), sqlx::Error> {
         "TRUNCATE TABLE
             dead_letter_events,
             support_impersonation_audits,
+            load_board_alert_rules,
+            load_board_saved_searches,
             atmp_contract_payloads,
             atmp_sync_errors,
             atmp_outbound_events,

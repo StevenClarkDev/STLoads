@@ -1,9 +1,9 @@
-use chrono::NaiveDateTime;
+use chrono::{NaiveDate, NaiveDateTime};
 use domain::dispatch::{
     LegExecutionStatus, LegPostingStatus, LegacyLoadLegStatusCode, load_module_contract,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::{FromRow, Postgres, QueryBuilder};
 
 use crate::DbPool;
 
@@ -290,6 +290,54 @@ pub struct LoadBoardMetricsRecord {
     pub open_board_total: i64,
     pub recommended_total: i64,
     pub funding_watch_total: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LoadBoardSearchFilters {
+    pub origin: Option<String>,
+    pub destination: Option<String>,
+    pub equipment: Option<String>,
+    pub mode: Option<String>,
+    pub date_from: Option<NaiveDate>,
+    pub date_to: Option<NaiveDate>,
+    pub min_rate: Option<f64>,
+    pub max_rate: Option<f64>,
+    pub min_rpm: Option<f64>,
+    pub max_rpm: Option<f64>,
+    pub min_weight: Option<f64>,
+    pub max_weight: Option<f64>,
+    pub hazmat: Option<bool>,
+    pub temperature_controlled: Option<bool>,
+    pub service_level: Option<String>,
+    pub visibility: Option<String>,
+    pub sort: Option<String>,
+    pub page: i64,
+    pub per_page: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct LoadBoardSavedSearchRecord {
+    pub id: i64,
+    pub tenant_id: String,
+    pub user_id: i64,
+    pub name: String,
+    pub filters: serde_json::Value,
+    pub alert_enabled: bool,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct LoadBoardAlertRuleRecord {
+    pub id: i64,
+    pub tenant_id: String,
+    pub saved_search_id: i64,
+    pub user_id: i64,
+    pub channel: String,
+    pub active: bool,
+    pub last_triggered_at: Option<NaiveDateTime>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -972,6 +1020,137 @@ pub async fn list_load_board_legs_for_carrier_filtered(
     query.fetch_all(pool).await
 }
 
+pub async fn search_load_board_for_carrier(
+    pool: &DbPool,
+    carrier_user_id: i64,
+    filters: &LoadBoardSearchFilters,
+) -> Result<Vec<LoadBoardLegRecord>, sqlx::Error> {
+    let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(load_board_select_sql());
+    builder.push(
+        r#"
+        LEFT JOIN equipments equipment ON equipment.id = l.equipment_id
+        WHERE ll.deleted_at IS NULL
+          AND ((ll.status_id IN (1, 2, 3) AND ll.booked_carrier_id IS NULL) OR ll.booked_carrier_id = "#,
+    );
+    builder.push_bind(carrier_user_id);
+    builder.push(")");
+    builder.push(
+        " AND COALESCE(handoff.status, 'published') NOT IN ('withdrawn', 'closed', 'hidden')",
+    );
+    builder.push(
+        r#"
+          AND COALESCE(handoff.raw_payload->>'visibility', 'public') NOT IN ('private', 'hidden')
+          AND NOT EXISTS (
+              SELECT 1
+              FROM carrier_profiles carrier_profile
+              INNER JOIN stloads_postings posting
+                ON posting.source_load_id = l.id::text
+               AND (posting.source_leg_id IS NULL OR posting.source_leg_id = ll.id::text)
+               AND posting.tenant_id = carrier_profile.tenant_id
+               AND posting.deleted_at IS NULL
+              INNER JOIN eligibility_results eligibility
+                ON eligibility.posting_id = posting.id
+               AND eligibility.tenant_id = posting.tenant_id
+               AND eligibility.carrier_profile_id = carrier_profile.id
+               AND eligibility.eligible = FALSE
+              WHERE carrier_profile.user_id = "#,
+    );
+    builder.push_bind(carrier_user_id);
+    builder.push(" AND carrier_profile.deleted_at IS NULL)");
+
+    apply_load_board_search_filters(&mut builder, filters);
+    push_load_board_sort(&mut builder, filters.sort.as_deref());
+
+    let per_page = filters.per_page.clamp(1, 100);
+    let page = filters.page.max(1);
+    builder.push(" LIMIT ");
+    builder.push_bind(per_page);
+    builder.push(" OFFSET ");
+    builder.push_bind((page - 1) * per_page);
+
+    builder
+        .build_query_as::<LoadBoardLegRecord>()
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn upsert_load_board_saved_search(
+    pool: &DbPool,
+    tenant_id: &str,
+    user_id: i64,
+    name: &str,
+    filters: &LoadBoardSearchFilters,
+    alert_enabled: bool,
+) -> Result<LoadBoardSavedSearchRecord, sqlx::Error> {
+    let filters_json = serde_json::to_value(filters).unwrap_or_else(|_| serde_json::json!({}));
+    sqlx::query_as::<_, LoadBoardSavedSearchRecord>(
+        r#"
+        INSERT INTO load_board_saved_searches
+            (tenant_id, user_id, name, filters, alert_enabled, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (tenant_id, user_id, name) WHERE deleted_at IS NULL
+        DO UPDATE SET
+            filters = EXCLUDED.filters,
+            alert_enabled = EXCLUDED.alert_enabled,
+            updated_at = CURRENT_TIMESTAMP
+        RETURNING id, tenant_id, user_id, name, filters, alert_enabled, created_at, updated_at
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(name.trim())
+    .bind(filters_json)
+    .bind(alert_enabled)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn list_load_board_saved_searches(
+    pool: &DbPool,
+    tenant_id: &str,
+    user_id: i64,
+) -> Result<Vec<LoadBoardSavedSearchRecord>, sqlx::Error> {
+    sqlx::query_as::<_, LoadBoardSavedSearchRecord>(
+        r#"
+        SELECT id, tenant_id, user_id, name, filters, alert_enabled, created_at, updated_at
+        FROM load_board_saved_searches
+        WHERE tenant_id = $1 AND user_id = $2 AND deleted_at IS NULL
+        ORDER BY updated_at DESC, id DESC
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn upsert_load_board_alert_rule(
+    pool: &DbPool,
+    tenant_id: &str,
+    saved_search_id: i64,
+    user_id: i64,
+    channel: &str,
+    active: bool,
+) -> Result<LoadBoardAlertRuleRecord, sqlx::Error> {
+    sqlx::query_as::<_, LoadBoardAlertRuleRecord>(
+        r#"
+        INSERT INTO load_board_alert_rules
+            (tenant_id, saved_search_id, user_id, channel, active, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (tenant_id, saved_search_id, user_id, channel) WHERE deleted_at IS NULL
+        DO UPDATE SET active = EXCLUDED.active, updated_at = CURRENT_TIMESTAMP
+        RETURNING id, tenant_id, saved_search_id, user_id, channel, active, last_triggered_at, created_at, updated_at
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(saved_search_id)
+    .bind(user_id)
+    .bind(channel.trim())
+    .bind(active)
+    .fetch_one(pool)
+    .await
+}
+
 pub async fn load_board_tab_counts(
     pool: &DbPool,
 ) -> Result<Vec<LoadBoardTabCountRecord>, sqlx::Error> {
@@ -1274,6 +1453,114 @@ fn load_board_select_sql() -> &'static str {
             LIMIT 1
         )
     "#
+}
+
+fn apply_load_board_search_filters(
+    builder: &mut QueryBuilder<Postgres>,
+    filters: &LoadBoardSearchFilters,
+) {
+    if let Some(value) = normalized_like(filters.origin.as_deref()) {
+        builder.push(" AND pickup.name ILIKE ");
+        builder.push_bind(value);
+    }
+    if let Some(value) = normalized_like(filters.destination.as_deref()) {
+        builder.push(" AND delivery.name ILIKE ");
+        builder.push_bind(value);
+    }
+    if let Some(value) = normalized_like(filters.equipment.as_deref()) {
+        builder.push(" AND COALESCE(handoff.equipment_type, equipment.name, '') ILIKE ");
+        builder.push_bind(value);
+    }
+    if let Some(value) = normalized_exact(filters.mode.as_deref()) {
+        builder.push(" AND LOWER(COALESCE(handoff.freight_mode, 'road')) = ");
+        builder.push_bind(value);
+    }
+    if let Some(value) = filters.date_from {
+        builder.push(" AND ll.pickup_date >= ");
+        builder.push_bind(value.and_hms_opt(0, 0, 0).unwrap());
+    }
+    if let Some(value) = filters.date_to {
+        builder.push(" AND ll.pickup_date <= ");
+        builder.push_bind(value.and_hms_opt(23, 59, 59).unwrap());
+    }
+    if let Some(value) = filters.min_rate {
+        builder.push(" AND COALESCE(handoff.board_rate::double precision, ll.price::double precision, 0) >= ");
+        builder.push_bind(value);
+    }
+    if let Some(value) = filters.max_rate {
+        builder.push(" AND COALESCE(handoff.board_rate::double precision, ll.price::double precision, 0) <= ");
+        builder.push_bind(value);
+    }
+    if let Some(value) = filters.min_rpm {
+        builder.push(
+            " AND (COALESCE(handoff.board_rate::double precision, ll.price::double precision, 0) / NULLIF((handoff.raw_payload->>'miles')::double precision, 0)) >= ",
+        );
+        builder.push_bind(value);
+    }
+    if let Some(value) = filters.max_rpm {
+        builder.push(
+            " AND (COALESCE(handoff.board_rate::double precision, ll.price::double precision, 0) / NULLIF((handoff.raw_payload->>'miles')::double precision, 0)) <= ",
+        );
+        builder.push_bind(value);
+    }
+    if let Some(value) = filters.min_weight {
+        builder.push(" AND COALESCE(l.weight::double precision, 0) >= ");
+        builder.push_bind(value);
+    }
+    if let Some(value) = filters.max_weight {
+        builder.push(" AND COALESCE(l.weight::double precision, 0) <= ");
+        builder.push_bind(value);
+    }
+    if let Some(value) = filters.hazmat {
+        builder.push(" AND l.is_hazardous = ");
+        builder.push_bind(value);
+    }
+    if let Some(value) = filters.temperature_controlled {
+        builder.push(" AND l.is_temperature_controlled = ");
+        builder.push_bind(value);
+    }
+    if let Some(value) = normalized_exact(filters.service_level.as_deref()) {
+        builder.push(" AND LOWER(COALESCE(handoff.raw_payload->>'service_level', 'standard')) = ");
+        builder.push_bind(value);
+    }
+    if let Some(value) = normalized_exact(filters.visibility.as_deref()) {
+        builder.push(" AND LOWER(COALESCE(handoff.raw_payload->>'visibility', 'public')) = ");
+        builder.push_bind(value);
+    }
+}
+
+fn push_load_board_sort(builder: &mut QueryBuilder<Postgres>, sort: Option<&str>) {
+    match sort.unwrap_or("pickup_date") {
+        "rate_desc" => builder.push(
+            " ORDER BY COALESCE(handoff.board_rate::double precision, ll.price::double precision, 0) DESC, ll.id DESC",
+        ),
+        "rate_asc" => builder.push(
+            " ORDER BY COALESCE(handoff.board_rate::double precision, ll.price::double precision, 0) ASC, ll.id DESC",
+        ),
+        "rpm_desc" => builder.push(
+            " ORDER BY (COALESCE(handoff.board_rate::double precision, ll.price::double precision, 0) / NULLIF((handoff.raw_payload->>'miles')::double precision, 0)) DESC NULLS LAST, ll.id DESC",
+        ),
+        "age" => builder.push(" ORDER BY ll.created_at DESC, ll.id DESC"),
+        "expiration" => builder.push(" ORDER BY ll.pickup_date ASC NULLS LAST, ll.id DESC"),
+        "urgency" => builder.push(" ORDER BY COALESCE(ll.pickup_date, ll.created_at) ASC, ll.price DESC NULLS LAST, ll.id DESC"),
+        "distance" => builder.push(" ORDER BY (handoff.raw_payload->>'miles')::double precision ASC NULLS LAST, ll.id DESC"),
+        "match_score" => builder.push(" ORDER BY ll.price DESC NULLS LAST, ll.pickup_date ASC NULLS LAST, ll.id DESC"),
+        _ => builder.push(" ORDER BY COALESCE(ll.pickup_date, ll.created_at) ASC, ll.id DESC"),
+    };
+}
+
+fn normalized_like(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{}%", value))
+}
+
+fn normalized_exact(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_lowercase)
 }
 
 pub async fn list_dispatch_desk_legs_filtered(

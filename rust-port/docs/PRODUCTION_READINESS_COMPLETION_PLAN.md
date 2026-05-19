@@ -79,28 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P8: Carrier Search, Filters, Saved Searches, And Alerts
-
-**Outcome:** Carrier-facing load board search is production-grade and real-data-backed.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\dispatch.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\marketplace.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\marketplace.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\loads.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\load_profile.rs`
-
-- [ ] Replace any placeholder board rows with live API data.
-- [ ] Add filters for origin, destination, radius, equipment, mode, date windows, rate, RPM, weight, hazmat, reefer/temp, service level, and visibility type.
-- [ ] Add sort by pickup date, distance, rate, RPM, match score, age, expiration, and urgency.
-- [ ] Add stable pagination.
-- [ ] Add saved searches.
-- [ ] Add alert rules for saved searches.
-- [ ] Add eligibility indicators in the existing UI style.
-- [ ] Add empty states that say what is missing without demo language.
-- [ ] Tests must prove hidden/withdrawn/closed/ineligible freight does not appear.
-
 ### Task P9: Carrier Compliance And Eligibility Engine
 
 **Outcome:** Compliance controls prevent bad bookings before they happen.

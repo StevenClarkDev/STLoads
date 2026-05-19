@@ -137,12 +137,51 @@ pub struct LoadBoardRow {
     pub primary_action_label: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LoadBoardFilterState {
+    pub origin: Option<String>,
+    pub destination: Option<String>,
+    pub equipment: Option<String>,
+    pub mode: Option<String>,
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
+    pub min_rate: Option<String>,
+    pub max_rate: Option<String>,
+    pub min_rpm: Option<String>,
+    pub max_rpm: Option<String>,
+    pub min_weight: Option<String>,
+    pub max_weight: Option<String>,
+    pub hazmat: Option<bool>,
+    pub temperature_controlled: Option<bool>,
+    pub service_level: Option<String>,
+    pub visibility: Option<String>,
+    pub sort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadBoardSavedSearchItem {
+    pub id: u64,
+    pub name: String,
+    pub alert_enabled: bool,
+    pub updated_at_label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadBoardOption {
+    pub key: String,
+    pub label: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadBoardScreen {
     pub title: String,
     pub role_label: String,
     pub primary_action_label: Option<String>,
     pub primary_action_href: Option<String>,
+    pub filters: LoadBoardFilterState,
+    pub sort_options: Vec<LoadBoardOption>,
+    pub visibility_options: Vec<LoadBoardOption>,
+    pub saved_searches: Vec<LoadBoardSavedSearchItem>,
     pub tabs: Vec<LoadBoardTab>,
     pub metrics: Vec<LoadBoardMetric>,
     pub rows: Vec<LoadBoardRow>,
@@ -527,6 +566,10 @@ pub fn sample_load_board_screen() -> LoadBoardScreen {
         role_label: "Carrier Workspace".into(),
         primary_action_label: Some("Set Preferences".into()),
         primary_action_href: Some("/loads/preferences".into()),
+        filters: LoadBoardFilterState::default(),
+        sort_options: load_board_sort_options(),
+        visibility_options: load_board_visibility_options(),
+        saved_searches: Vec::new(),
         tabs: vec![
             LoadBoardTab { key: "all".into(), label: "All Loads".into(), count: 128, is_active: true },
             LoadBoardTab { key: "recommended".into(), label: "Recommended".into(), count: 18, is_active: false },
@@ -548,6 +591,64 @@ pub fn sample_load_board_screen() -> LoadBoardScreen {
         ],
         pagination: Pagination { page: 1, per_page: 20, total: 128 },
     }
+}
+
+pub fn load_board_sort_options() -> Vec<LoadBoardOption> {
+    vec![
+        LoadBoardOption {
+            key: "pickup_date".into(),
+            label: "Pickup date".into(),
+        },
+        LoadBoardOption {
+            key: "distance".into(),
+            label: "Distance".into(),
+        },
+        LoadBoardOption {
+            key: "rate_desc".into(),
+            label: "Rate high to low".into(),
+        },
+        LoadBoardOption {
+            key: "rate_asc".into(),
+            label: "Rate low to high".into(),
+        },
+        LoadBoardOption {
+            key: "rpm_desc".into(),
+            label: "RPM".into(),
+        },
+        LoadBoardOption {
+            key: "match_score".into(),
+            label: "Match score".into(),
+        },
+        LoadBoardOption {
+            key: "age".into(),
+            label: "Age".into(),
+        },
+        LoadBoardOption {
+            key: "expiration".into(),
+            label: "Expiration".into(),
+        },
+        LoadBoardOption {
+            key: "urgency".into(),
+            label: "Urgency".into(),
+        },
+    ]
+}
+
+pub fn load_board_visibility_options() -> Vec<LoadBoardOption> {
+    vec![
+        LoadBoardOption {
+            key: "public".into(),
+            label: "Public".into(),
+        },
+        LoadBoardOption {
+            key: "private_network".into(),
+            label: "Private network".into(),
+        },
+        LoadBoardOption {
+            key: "contracted".into(),
+            label: "Contracted".into(),
+        },
+    ]
 }
 
 pub fn sample_chat_workspace_screen() -> ChatWorkspaceScreen {

@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
 use db::dispatch::{
-    count_dispatch_desk_legs_filtered, list_dispatch_desk_legs_filtered,
+    LoadBoardSearchFilters, count_dispatch_desk_legs_filtered, list_dispatch_desk_legs_filtered,
     list_load_board_legs_filtered, list_load_board_legs_for_carrier_filtered,
-    list_load_board_legs_for_owner_filtered, load_board_metrics, load_board_metrics_for_carrier,
-    load_board_metrics_for_owner, load_board_tab_counts, load_board_tab_counts_for_carrier,
-    load_board_tab_counts_for_owner,
+    list_load_board_legs_for_owner_filtered, list_load_board_saved_searches, load_board_metrics,
+    load_board_metrics_for_carrier, load_board_metrics_for_owner, load_board_tab_counts,
+    load_board_tab_counts_for_carrier, load_board_tab_counts_for_owner,
+    search_load_board_for_carrier,
 };
 use db::marketplace::{
     ConversationPresenceRecord, ConversationReadRecord, OfferRecord,
@@ -26,10 +27,12 @@ use domain::marketplace::OfferStatus;
 use domain::tms::reconciliation_action_descriptors;
 use shared::{
     ChatConversationItem, ChatMessageItem, ChatOfferItem, ChatWorkspaceScreen, DispatchDeskLink,
-    DispatchDeskRow, DispatchDeskScreen, ErrorBreakdownRow, HandoffRow, LoadBoardMetric,
-    LoadBoardRow, LoadBoardScreen, LoadBoardTab, MismatchCard, Pagination, ReconciliationLogRow,
-    StatusCard, StloadsOperationsScreen, StloadsReconciliationScreen, SyncIssueRow,
-    SyncIssueSummary, sample_stloads_operations_screen, sample_stloads_reconciliation_screen,
+    DispatchDeskRow, DispatchDeskScreen, ErrorBreakdownRow, HandoffRow, LoadBoardFilterState,
+    LoadBoardMetric, LoadBoardRow, LoadBoardSavedSearchItem, LoadBoardScreen, LoadBoardTab,
+    MismatchCard, Pagination, ReconciliationLogRow, StatusCard, StloadsOperationsScreen,
+    StloadsReconciliationScreen, SyncIssueRow, SyncIssueSummary, load_board_sort_options,
+    load_board_visibility_options, sample_stloads_operations_screen,
+    sample_stloads_reconciliation_screen,
 };
 use tracing::warn;
 
@@ -98,6 +101,7 @@ pub async fn load_board_screen(
     state: &AppState,
     viewer: Option<&ResolvedSession>,
     tab_filter: Option<String>,
+    search_filters: LoadBoardSearchFilters,
 ) -> LoadBoardScreen {
     let active_tab = normalize_load_board_tab(tab_filter.as_deref());
     let Some(viewer) = viewer else {
@@ -144,7 +148,7 @@ pub async fn load_board_screen(
         );
     };
 
-    match build_load_board_screen(state, pool, viewer, active_tab.clone()).await {
+    match build_load_board_screen(state, pool, viewer, active_tab.clone(), search_filters).await {
         Ok(screen) => screen,
         Err(error) => {
             warn!(error = %error, "failed to build auth-scoped load board screen");
@@ -318,6 +322,7 @@ async fn build_load_board_screen(
     pool: &db::DbPool,
     viewer: &ResolvedSession,
     active_tab: String,
+    search_filters: LoadBoardSearchFilters,
 ) -> Result<LoadBoardScreen, sqlx::Error> {
     let viewer_role = viewer.user.primary_role();
     let (tab_counts, metrics, rows, role_label, mut recommendation_notes) = match viewer_role {
@@ -334,8 +339,17 @@ async fn build_load_board_screen(
         Some(UserRole::Carrier) => (
             load_board_tab_counts_for_carrier(pool, viewer.user.id).await?,
             load_board_metrics_for_carrier(pool, viewer.user.id).await?,
-            list_load_board_legs_for_carrier_filtered(pool, viewer.user.id, Some(active_tab.as_str()), 20)
-                .await?,
+            if search_filters_has_values(&search_filters) {
+                search_load_board_for_carrier(pool, viewer.user.id, &search_filters).await?
+            } else {
+                list_load_board_legs_for_carrier_filtered(
+                    pool,
+                    viewer.user.id,
+                    Some(active_tab.as_str()),
+                    20,
+                )
+                .await?
+            },
             "Carrier Workspace".to_string(),
             vec![
                 "This load board is scoped to open board inventory plus legs already booked by the authenticated carrier account.".into(),
@@ -467,6 +481,24 @@ async fn build_load_board_screen(
         })
         .collect::<Vec<_>>();
 
+    let tenant_id = viewer
+        .session
+        .tenant_scope
+        .as_ref()
+        .map(|scope| scope.tenant_id.clone())
+        .unwrap_or_else(|| "legacy".into());
+    let saved_searches = list_load_board_saved_searches(pool, &tenant_id, viewer.user.id)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| LoadBoardSavedSearchItem {
+            id: row.id.max(0) as u64,
+            name: row.name,
+            alert_enabled: row.alert_enabled,
+            updated_at_label: format_date(Some(&row.updated_at)),
+        })
+        .collect::<Vec<_>>();
+
     if let Some(public_base_url) = state.config.public_base_url.as_ref() {
         recommendation_notes.push(format!(
             "IBM deployment note: PUBLIC_BASE_URL is set to {} so auth-scoped booking actions and websocket upgrades stay proxy-safe.",
@@ -479,6 +511,10 @@ async fn build_load_board_screen(
         role_label,
         primary_action_label: None,
         primary_action_href: None,
+        filters: load_board_filter_state(&search_filters),
+        sort_options: load_board_sort_options(),
+        visibility_options: load_board_visibility_options(),
+        saved_searches,
         tabs,
         metrics,
         rows,
@@ -1048,6 +1084,10 @@ fn empty_load_board_screen(
         role_label: role_label.into(),
         primary_action_label: primary_action.as_ref().map(|(label, _)| label.clone()),
         primary_action_href: primary_action.as_ref().map(|(_, href)| href.clone()),
+        filters: LoadBoardFilterState::default(),
+        sort_options: load_board_sort_options(),
+        visibility_options: load_board_visibility_options(),
+        saved_searches: Vec::new(),
         tabs: LOAD_BOARD_TAB_ORDER
             .iter()
             .map(|(key, label)| LoadBoardTab {
@@ -1880,6 +1920,52 @@ fn normalize_load_board_tab(value: Option<&str>) -> String {
         "recommended" => "recommended".into(),
         "booked" => "booked".into(),
         _ => "all".into(),
+    }
+}
+
+fn search_filters_has_values(filters: &LoadBoardSearchFilters) -> bool {
+    filters.origin.is_some()
+        || filters.destination.is_some()
+        || filters.equipment.is_some()
+        || filters.mode.is_some()
+        || filters.date_from.is_some()
+        || filters.date_to.is_some()
+        || filters.min_rate.is_some()
+        || filters.max_rate.is_some()
+        || filters.min_rpm.is_some()
+        || filters.max_rpm.is_some()
+        || filters.min_weight.is_some()
+        || filters.max_weight.is_some()
+        || filters.hazmat.is_some()
+        || filters.temperature_controlled.is_some()
+        || filters.service_level.is_some()
+        || filters.visibility.is_some()
+        || filters.sort.is_some()
+}
+
+fn load_board_filter_state(filters: &LoadBoardSearchFilters) -> LoadBoardFilterState {
+    LoadBoardFilterState {
+        origin: filters.origin.clone(),
+        destination: filters.destination.clone(),
+        equipment: filters.equipment.clone(),
+        mode: filters.mode.clone(),
+        date_from: filters
+            .date_from
+            .map(|value| value.format("%Y-%m-%d").to_string()),
+        date_to: filters
+            .date_to
+            .map(|value| value.format("%Y-%m-%d").to_string()),
+        min_rate: filters.min_rate.map(|value| value.to_string()),
+        max_rate: filters.max_rate.map(|value| value.to_string()),
+        min_rpm: filters.min_rpm.map(|value| value.to_string()),
+        max_rpm: filters.max_rpm.map(|value| value.to_string()),
+        min_weight: filters.min_weight.map(|value| value.to_string()),
+        max_weight: filters.max_weight.map(|value| value.to_string()),
+        hazmat: filters.hazmat,
+        temperature_controlled: filters.temperature_controlled,
+        service_level: filters.service_level.clone(),
+        visibility: filters.visibility.clone(),
+        sort: filters.sort.clone(),
     }
 }
 

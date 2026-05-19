@@ -10,14 +10,15 @@ use axum::{
 use chrono::{NaiveDate, NaiveDateTime};
 use db::{
     dispatch::{
-        CreateLoadLegParams, CreateLoadParams, UpsertLoadDocumentParams,
+        CreateLoadLegParams, CreateLoadParams, LoadBoardSearchFilters, UpsertLoadDocumentParams,
         append_dispatch_desk_follow_up, book_load_leg,
         create_load_document as insert_load_document, create_load_with_legs, find_load_by_id,
         find_load_document_by_id, find_load_document_scope, find_load_id_and_status_for_leg,
-        find_load_leg_by_id, find_load_leg_scope, list_load_builder_legs_for_load,
-        list_load_documents_for_load, list_load_history_for_load, list_load_legs_for_load,
-        list_load_profile_legs_for_load, update_load_document as persist_load_document_updates,
-        update_load_with_legs,
+        find_load_leg_by_id, find_load_leg_scope, list_load_board_saved_searches,
+        list_load_builder_legs_for_load, list_load_documents_for_load, list_load_history_for_load,
+        list_load_legs_for_load, list_load_profile_legs_for_load,
+        update_load_document as persist_load_document_updates, update_load_with_legs,
+        upsert_load_board_alert_rule, upsert_load_board_saved_search,
         verify_load_document_blockchain as persist_load_document_blockchain_verification,
     },
     master_data::{
@@ -36,10 +37,12 @@ use domain::{
 use serde::{Deserialize, Serialize};
 use shared::{
     ApiResponse, BookLoadLegRequest, BookLoadLegResponse, CreateLoadRequest, CreateLoadResponse,
-    DispatchDeskFollowUpRequest, DispatchDeskFollowUpResponse, DispatchDeskScreen, LoadBoardScreen,
-    LoadBuilderDraft, LoadBuilderLegDraft, LoadBuilderOption, LoadBuilderScreen, LoadDocumentRow,
-    LoadHandoffSummary, LoadHistoryRow, LoadProfileField, LoadProfileLegRow, LoadProfileScreen,
-    RealtimeEvent, RealtimeEventKind, RealtimeTopic, UpsertLoadDocumentRequest,
+    DispatchDeskFollowUpRequest, DispatchDeskFollowUpResponse, DispatchDeskScreen,
+    LoadBoardFilterState, LoadBoardSavedSearchItem, LoadBoardScreen, LoadBuilderDraft,
+    LoadBuilderLegDraft, LoadBuilderOption, LoadBuilderScreen, LoadDocumentRow, LoadHandoffSummary,
+    LoadHistoryRow, LoadProfileField, LoadProfileLegRow, LoadProfileScreen, RealtimeEvent,
+    RealtimeEventKind, RealtimeTopic, SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse,
+    UpsertLoadBoardAlertRequest, UpsertLoadBoardAlertResponse, UpsertLoadDocumentRequest,
     UpsertLoadDocumentResponse, VerifyLoadDocumentRequest, VerifyLoadDocumentResponse,
 };
 use std::collections::HashMap;
@@ -54,6 +57,25 @@ struct DispatchOverview {
 #[derive(Debug, Deserialize)]
 struct LoadBoardQuery {
     tab: Option<String>,
+    origin: Option<String>,
+    destination: Option<String>,
+    equipment: Option<String>,
+    mode: Option<String>,
+    date_from: Option<String>,
+    date_to: Option<String>,
+    min_rate: Option<String>,
+    max_rate: Option<String>,
+    min_rpm: Option<String>,
+    max_rpm: Option<String>,
+    min_weight: Option<String>,
+    max_weight: Option<String>,
+    hazmat: Option<bool>,
+    temperature_controlled: Option<bool>,
+    service_level: Option<String>,
+    visibility: Option<String>,
+    sort: Option<String>,
+    page: Option<i64>,
+    per_page: Option<i64>,
 }
 
 fn log_dispatch_failure(
@@ -81,6 +103,88 @@ fn log_dispatch_success(
     );
 }
 
+fn load_board_filters_from_query(query: &LoadBoardQuery) -> LoadBoardSearchFilters {
+    LoadBoardSearchFilters {
+        origin: clean_string(query.origin.as_deref()),
+        destination: clean_string(query.destination.as_deref()),
+        equipment: clean_string(query.equipment.as_deref()),
+        mode: clean_string(query.mode.as_deref()),
+        date_from: parse_date(query.date_from.as_deref()),
+        date_to: parse_date(query.date_to.as_deref()),
+        min_rate: parse_f64(query.min_rate.as_deref()),
+        max_rate: parse_f64(query.max_rate.as_deref()),
+        min_rpm: parse_f64(query.min_rpm.as_deref()),
+        max_rpm: parse_f64(query.max_rpm.as_deref()),
+        min_weight: parse_f64(query.min_weight.as_deref()),
+        max_weight: parse_f64(query.max_weight.as_deref()),
+        hazmat: query.hazmat,
+        temperature_controlled: query.temperature_controlled,
+        service_level: clean_string(query.service_level.as_deref()),
+        visibility: clean_string(query.visibility.as_deref()),
+        sort: clean_string(query.sort.as_deref()),
+        page: query.page.unwrap_or(1).max(1),
+        per_page: query.per_page.unwrap_or(20).clamp(1, 100),
+    }
+}
+
+fn load_board_filters_from_state(state: &LoadBoardFilterState) -> LoadBoardSearchFilters {
+    LoadBoardSearchFilters {
+        origin: clean_string(state.origin.as_deref()),
+        destination: clean_string(state.destination.as_deref()),
+        equipment: clean_string(state.equipment.as_deref()),
+        mode: clean_string(state.mode.as_deref()),
+        date_from: parse_date(state.date_from.as_deref()),
+        date_to: parse_date(state.date_to.as_deref()),
+        min_rate: parse_f64(state.min_rate.as_deref()),
+        max_rate: parse_f64(state.max_rate.as_deref()),
+        min_rpm: parse_f64(state.min_rpm.as_deref()),
+        max_rpm: parse_f64(state.max_rpm.as_deref()),
+        min_weight: parse_f64(state.min_weight.as_deref()),
+        max_weight: parse_f64(state.max_weight.as_deref()),
+        hazmat: state.hazmat,
+        temperature_controlled: state.temperature_controlled,
+        service_level: clean_string(state.service_level.as_deref()),
+        visibility: clean_string(state.visibility.as_deref()),
+        sort: clean_string(state.sort.as_deref()),
+        page: 1,
+        per_page: 20,
+    }
+}
+
+fn clean_string(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn parse_f64(value: Option<&str>) -> Option<f64> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<f64>().ok())
+}
+
+fn parse_date(value: Option<&str>) -> Option<NaiveDate> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
+}
+
+fn session_tenant_id(session: &auth_session::ResolvedSession) -> String {
+    session
+        .session
+        .tenant_scope
+        .as_ref()
+        .map(|scope| scope.tenant_id.clone())
+        .unwrap_or_else(|| "legacy".into())
+}
+
+fn format_datetime(value: &NaiveDateTime) -> String {
+    value.format("%b %-d, %Y %H:%M").to_string()
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(index))
@@ -88,6 +192,12 @@ pub fn router() -> Router<AppState> {
         .route("/contract", get(contract))
         .route("/legacy-statuses", get(legacy_statuses))
         .route("/load-board", get(load_board))
+        .route("/load-board/saved-searches", get(load_board_saved_searches))
+        .route("/load-board/saved-searches", post(save_load_board_search))
+        .route(
+            "/load-board/saved-searches/{saved_search_id}/alert",
+            post(upsert_load_board_alert),
+        )
         .route("/desk/{desk_key}", get(dispatch_desk))
         .route(
             "/desk/legs/{leg_id}/follow-up",
@@ -159,8 +269,146 @@ async fn load_board(
         .flatten();
 
     Json(ApiResponse::ok(
-        screen_data::load_board_screen(&state, viewer.as_ref(), query.tab).await,
+        screen_data::load_board_screen(
+            &state,
+            viewer.as_ref(),
+            query.tab.clone(),
+            load_board_filters_from_query(&query),
+        )
+        .await,
     ))
+}
+
+async fn load_board_saved_searches(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Json<ApiResponse<Vec<LoadBoardSavedSearchItem>>> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(Vec::new()));
+    };
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(Vec::new()));
+    };
+    let tenant_id = session_tenant_id(&session);
+    let rows = list_load_board_saved_searches(pool, &tenant_id, session.user.id)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| LoadBoardSavedSearchItem {
+            id: row.id.max(0) as u64,
+            name: row.name,
+            alert_enabled: row.alert_enabled,
+            updated_at_label: format_datetime(&row.updated_at),
+        })
+        .collect::<Vec<_>>();
+    Json(ApiResponse::ok(rows))
+}
+
+async fn save_load_board_search(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<SaveLoadBoardSearchRequest>,
+) -> Json<ApiResponse<SaveLoadBoardSearchResponse>> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(SaveLoadBoardSearchResponse {
+            success: false,
+            saved_search_id: None,
+            message: "Sign in before saving a load-board search.".into(),
+        }));
+    };
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(SaveLoadBoardSearchResponse {
+            success: false,
+            saved_search_id: None,
+            message: "Saved searches are unavailable because the database is not connected.".into(),
+        }));
+    };
+    let name = payload.name.trim();
+    if name.is_empty() {
+        return Json(ApiResponse::ok(SaveLoadBoardSearchResponse {
+            success: false,
+            saved_search_id: None,
+            message: "Name this search before saving it.".into(),
+        }));
+    }
+    let tenant_id = session_tenant_id(&session);
+    match upsert_load_board_saved_search(
+        pool,
+        &tenant_id,
+        session.user.id,
+        name,
+        &load_board_filters_from_state(&payload.filters),
+        payload.alert_enabled,
+    )
+    .await
+    {
+        Ok(saved) => Json(ApiResponse::ok(SaveLoadBoardSearchResponse {
+            success: true,
+            saved_search_id: Some(saved.id.max(0) as u64),
+            message: "Saved search is ready for this tenant.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(SaveLoadBoardSearchResponse {
+            success: false,
+            saved_search_id: None,
+            message: format!("Saved search failed: {}", error),
+        })),
+    }
+}
+
+async fn upsert_load_board_alert(
+    State(state): State<AppState>,
+    Path(saved_search_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<UpsertLoadBoardAlertRequest>,
+) -> Json<ApiResponse<UpsertLoadBoardAlertResponse>> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(UpsertLoadBoardAlertResponse {
+            success: false,
+            alert_rule_id: None,
+            message: "Sign in before changing load-board alerts.".into(),
+        }));
+    };
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(UpsertLoadBoardAlertResponse {
+            success: false,
+            alert_rule_id: None,
+            message: "Alert rules are unavailable because the database is not connected.".into(),
+        }));
+    };
+    let tenant_id = session_tenant_id(&session);
+    match upsert_load_board_alert_rule(
+        pool,
+        &tenant_id,
+        saved_search_id,
+        session.user.id,
+        &payload.channel,
+        payload.active,
+    )
+    .await
+    {
+        Ok(alert) => Json(ApiResponse::ok(UpsertLoadBoardAlertResponse {
+            success: true,
+            alert_rule_id: Some(alert.id.max(0) as u64),
+            message: "Alert rule updated for this saved search.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(UpsertLoadBoardAlertResponse {
+            success: false,
+            alert_rule_id: None,
+            message: format!("Alert rule update failed: {}", error),
+        })),
+    }
 }
 
 async fn load_builder(

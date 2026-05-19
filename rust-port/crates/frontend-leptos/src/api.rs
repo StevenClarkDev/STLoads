@@ -13,13 +13,14 @@ use shared::{
     DispatchDeskFollowUpResponse, DispatchDeskScreen, EscrowFundRequest, EscrowHoldRequest,
     EscrowLifecycleResponse, EscrowReleaseRequest, ExecutionLegActionRequest,
     ExecutionLegActionResponse, ExecutionLegScreen, ExecutionLocationPingRequest,
-    ExecutionLocationPingResponse, ForgotPasswordRequest, ForgotPasswordResponse, LoadBoardScreen,
-    LoadBuilderScreen, LoadProfileScreen, LocationUpsertRequest, LoginRequest, LoginResponse,
-    LogoutResponse, MasterDataDeleteRequest, MasterDataMutationResponse, MasterDataScreen,
-    OfferReviewRequest, OfferReviewResponse, PortalRoleCountsResponse, RealtimeTopic,
-    RegisterRequest, RegisterResponse, ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest,
-    ResetPasswordResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
-    ReviewOnboardingRequest, ReviewOnboardingResponse, SelfProfileScreen,
+    ExecutionLocationPingResponse, ForgotPasswordRequest, ForgotPasswordResponse,
+    LoadBoardFilterState, LoadBoardScreen, LoadBuilderScreen, LoadProfileScreen,
+    LocationUpsertRequest, LoginRequest, LoginResponse, LogoutResponse, MasterDataDeleteRequest,
+    MasterDataMutationResponse, MasterDataScreen, OfferReviewRequest, OfferReviewResponse,
+    PortalRoleCountsResponse, RealtimeTopic, RegisterRequest, RegisterResponse, ResendOtpRequest,
+    ResendOtpResponse, ResetPasswordRequest, ResetPasswordResponse, ResolveSyncErrorRequest,
+    ResolveSyncErrorResponse, ReviewOnboardingRequest, ReviewOnboardingResponse,
+    SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse, SelfProfileScreen,
     SimpleCatalogUpsertRequest, StloadsOperationsScreen, StloadsReconciliationScreen,
     StripeWebhookRequest, StripeWebhookResponse, SubmitOnboardingRequest, SubmitOnboardingResponse,
     TmsCloseRequest, TmsHandoffPayload, TmsHandoffResponse, TmsRequeueRequest,
@@ -273,9 +274,44 @@ pub async fn update_load(
     post_api(&path, payload).await
 }
 
-pub async fn fetch_load_board_screen(tab: &str) -> Result<LoadBoardScreen, String> {
-    let path = format!("/dispatch/load-board?tab={}", tab);
+pub async fn fetch_load_board_screen(
+    tab: &str,
+    filters: &LoadBoardFilterState,
+) -> Result<LoadBoardScreen, String> {
+    let mut query = vec![format!("tab={}", encode_query(tab))];
+    push_filter(&mut query, "origin", filters.origin.as_deref());
+    push_filter(&mut query, "destination", filters.destination.as_deref());
+    push_filter(&mut query, "equipment", filters.equipment.as_deref());
+    push_filter(&mut query, "mode", filters.mode.as_deref());
+    push_filter(&mut query, "date_from", filters.date_from.as_deref());
+    push_filter(&mut query, "date_to", filters.date_to.as_deref());
+    push_filter(&mut query, "min_rate", filters.min_rate.as_deref());
+    push_filter(&mut query, "max_rate", filters.max_rate.as_deref());
+    push_filter(&mut query, "min_rpm", filters.min_rpm.as_deref());
+    push_filter(&mut query, "max_rpm", filters.max_rpm.as_deref());
+    push_filter(&mut query, "min_weight", filters.min_weight.as_deref());
+    push_filter(&mut query, "max_weight", filters.max_weight.as_deref());
+    push_filter(
+        &mut query,
+        "service_level",
+        filters.service_level.as_deref(),
+    );
+    push_filter(&mut query, "visibility", filters.visibility.as_deref());
+    push_filter(&mut query, "sort", filters.sort.as_deref());
+    if let Some(value) = filters.hazmat {
+        query.push(format!("hazmat={value}"));
+    }
+    if let Some(value) = filters.temperature_controlled {
+        query.push(format!("temperature_controlled={value}"));
+    }
+    let path = format!("/dispatch/load-board?{}", query.join("&"));
     get_api(&path).await
+}
+
+pub async fn save_load_board_search(
+    payload: &SaveLoadBoardSearchRequest,
+) -> Result<SaveLoadBoardSearchResponse, String> {
+    post_api("/dispatch/load-board/saved-searches", payload).await
 }
 
 pub async fn fetch_dispatch_desk_screen(desk_key: &str) -> Result<DispatchDeskScreen, String> {
@@ -688,6 +724,21 @@ pub fn api_href(path: &str) -> String {
 
 fn api_url(path: &str) -> String {
     api_href(path)
+}
+
+fn push_filter(query: &mut Vec<String>, key: &str, value: Option<&str>) {
+    if let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) {
+        query.push(format!("{}={}", key, encode_query(value)));
+    }
+}
+
+fn encode_query(value: &str) -> String {
+    value
+        .replace('%', "%25")
+        .replace(' ', "%20")
+        .replace('&', "%26")
+        .replace('=', "%3D")
+        .replace('?', "%3F")
 }
 
 #[cfg(target_arch = "wasm32")]

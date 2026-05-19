@@ -6,7 +6,10 @@ use crate::{
     api, realtime,
     session::{self, use_auth},
 };
-use shared::{BookLoadLegRequest, LoadBoardRow, LoadBoardScreen, RealtimeEventKind, RealtimeTopic};
+use shared::{
+    BookLoadLegRequest, LoadBoardFilterState, LoadBoardRow, LoadBoardScreen, RealtimeEventKind,
+    RealtimeTopic, SaveLoadBoardSearchRequest,
+};
 
 fn tone_style(tone: &str) -> &'static str {
     match tone {
@@ -26,6 +29,10 @@ fn tone_style(tone: &str) -> &'static str {
 pub fn LoadBoardPage() -> impl IntoView {
     let auth = use_auth();
     let selected_tab = RwSignal::new("all".to_string());
+    let filters = RwSignal::new(LoadBoardFilterState::default());
+    let draft_filters = RwSignal::new(LoadBoardFilterState::default());
+    let saved_search_name = RwSignal::new(String::new());
+    let saved_search_alert = RwSignal::new(false);
     let screen = RwSignal::new(None::<LoadBoardScreen>);
     let is_loading = RwSignal::new(false);
     let error_message = RwSignal::new(None::<String>);
@@ -37,6 +44,7 @@ pub fn LoadBoardPage() -> impl IntoView {
 
     Effect::new(move |_| {
         let tab = selected_tab.get();
+        let active_filters = filters.get();
         let _refresh = refresh_nonce.get();
         let ready = auth.session_ready.get();
         let current_session = auth.session.get();
@@ -56,7 +64,7 @@ pub fn LoadBoardPage() -> impl IntoView {
         let auth = auth.clone();
 
         spawn_local(async move {
-            match api::fetch_load_board_screen(&tab).await {
+            match api::fetch_load_board_screen(&tab, &active_filters).await {
                 Ok(next_screen) => {
                     error_message.set(None);
                     screen.set(Some(next_screen));
@@ -194,6 +202,45 @@ pub fn LoadBoardPage() -> impl IntoView {
             || session::has_permission(&auth, "manage_dispatch_desk")
     });
 
+    let apply_filters = move |_| {
+        filters.set(draft_filters.get());
+        action_message.set(None);
+    };
+
+    let clear_filters = move |_| {
+        let next = LoadBoardFilterState::default();
+        draft_filters.set(next.clone());
+        filters.set(next);
+        action_message.set(None);
+    };
+
+    let save_search = move |_| {
+        let name = saved_search_name.get();
+        let active_filters = filters.get();
+        let alert_enabled = saved_search_alert.get();
+        if name.trim().is_empty() {
+            action_message.set(Some("Name this search before saving it.".into()));
+            return;
+        }
+        spawn_local(async move {
+            match api::save_load_board_search(&SaveLoadBoardSearchRequest {
+                name,
+                alert_enabled,
+                filters: active_filters,
+            })
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => action_message.set(Some(error)),
+            }
+        });
+    };
+
     view! {
         <article style="display:grid;gap:1.25rem;">
             <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
@@ -246,6 +293,89 @@ pub fn LoadBoardPage() -> impl IntoView {
                             }
                         })
                         .collect_view()
+                })}
+            </section>
+
+            <section style="display:grid;gap:0.85rem;padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;">
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.75rem;">
+                    {filter_input("Origin", draft_filters, |state, value| state.origin = value)}
+                    {filter_input("Destination", draft_filters, |state, value| state.destination = value)}
+                    {filter_input("Equipment", draft_filters, |state, value| state.equipment = value)}
+                    {filter_input("Mode", draft_filters, |state, value| state.mode = value)}
+                    {filter_input("Pickup from", draft_filters, |state, value| state.date_from = value)}
+                    {filter_input("Pickup to", draft_filters, |state, value| state.date_to = value)}
+                    {filter_input("Min rate", draft_filters, |state, value| state.min_rate = value)}
+                    {filter_input("Max rate", draft_filters, |state, value| state.max_rate = value)}
+                    {filter_input("Min RPM", draft_filters, |state, value| state.min_rpm = value)}
+                    {filter_input("Max RPM", draft_filters, |state, value| state.max_rpm = value)}
+                    {filter_input("Min weight", draft_filters, |state, value| state.min_weight = value)}
+                    {filter_input("Max weight", draft_filters, |state, value| state.max_weight = value)}
+                    <label style="display:grid;gap:0.35rem;font-size:0.85rem;">
+                        "Sort"
+                        <select style="padding:0.55rem;border:1px solid #d4d4d8;border-radius:0.65rem;" on:change=move |ev| {
+                            let value = event_target_value(&ev);
+                            draft_filters.update(|state| state.sort = if value.is_empty() { None } else { Some(value) });
+                        }>
+                            <option value="">"Pickup date"</option>
+                            <option value="distance">"Distance"</option>
+                            <option value="rate_desc">"Rate high to low"</option>
+                            <option value="rate_asc">"Rate low to high"</option>
+                            <option value="rpm_desc">"RPM"</option>
+                            <option value="match_score">"Match score"</option>
+                            <option value="age">"Age"</option>
+                            <option value="expiration">"Expiration"</option>
+                            <option value="urgency">"Urgency"</option>
+                        </select>
+                    </label>
+                    <label style="display:grid;gap:0.35rem;font-size:0.85rem;">
+                        "Visibility"
+                        <select style="padding:0.55rem;border:1px solid #d4d4d8;border-radius:0.65rem;" on:change=move |ev| {
+                            let value = event_target_value(&ev);
+                            draft_filters.update(|state| state.visibility = if value.is_empty() { None } else { Some(value) });
+                        }>
+                            <option value="">"Any visible"</option>
+                            <option value="public">"Public"</option>
+                            <option value="private_network">"Private network"</option>
+                            <option value="contracted">"Contracted"</option>
+                        </select>
+                    </label>
+                </div>
+                <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+                    <label style="display:flex;gap:0.4rem;align-items:center;">
+                        <input type="checkbox" on:change=move |ev| {
+                            draft_filters.update(|state| state.hazmat = Some(event_target_checked(&ev)));
+                        } />
+                        "Hazmat"
+                    </label>
+                    <label style="display:flex;gap:0.4rem;align-items:center;">
+                        <input type="checkbox" on:change=move |ev| {
+                            draft_filters.update(|state| state.temperature_controlled = Some(event_target_checked(&ev)));
+                        } />
+                        "Temp controlled"
+                    </label>
+                    <button type="button" style="padding:0.55rem 0.9rem;border-radius:0.75rem;border:1px solid #111827;background:#111827;color:white;cursor:pointer;" on:click=apply_filters>"Search"</button>
+                    <button type="button" style="padding:0.55rem 0.9rem;border-radius:0.75rem;border:1px solid #d4d4d8;background:white;cursor:pointer;" on:click=clear_filters>"Clear"</button>
+                    <input placeholder="Saved search name" prop:value=move || saved_search_name.get() on:input=move |ev| saved_search_name.set(event_target_value(&ev)) style="padding:0.55rem;border:1px solid #d4d4d8;border-radius:0.65rem;" />
+                    <label style="display:flex;gap:0.4rem;align-items:center;">
+                        <input type="checkbox" prop:checked=move || saved_search_alert.get() on:change=move |ev| saved_search_alert.set(event_target_checked(&ev)) />
+                        "Alert"
+                    </label>
+                    <button type="button" style="padding:0.55rem 0.9rem;border-radius:0.75rem;border:1px solid #1d4ed8;background:#eff6ff;color:#1d4ed8;cursor:pointer;" on:click=save_search>"Save"</button>
+                </div>
+                {move || screen.get().map(|value| {
+                    if value.saved_searches.is_empty() {
+                        view! { <small>"No saved searches yet."</small> }.into_any()
+                    } else {
+                        view! {
+                            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                                {value.saved_searches.into_iter().map(|item| view! {
+                                    <span style="padding:0.35rem 0.55rem;border:1px solid #e5e7eb;border-radius:999px;background:#fafafa;">
+                                        {format!("{}{}", item.name, if item.alert_enabled { " alert" } else { "" })}
+                                    </span>
+                                }).collect_view()}
+                            </div>
+                        }.into_any()
+                    }
                 })}
             </section>
 
@@ -410,5 +540,26 @@ fn render_row(
                 })}
             </td>
         </tr>
+    }
+}
+
+fn filter_input(
+    label: &'static str,
+    draft_filters: RwSignal<LoadBoardFilterState>,
+    apply: fn(&mut LoadBoardFilterState, Option<String>),
+) -> impl IntoView {
+    view! {
+        <label style="display:grid;gap:0.35rem;font-size:0.85rem;">
+            {label}
+            <input
+                style="padding:0.55rem;border:1px solid #d4d4d8;border-radius:0.65rem;"
+                on:input=move |ev| {
+                    let value = event_target_value(&ev);
+                    draft_filters.update(|state| {
+                        apply(state, if value.trim().is_empty() { None } else { Some(value.clone()) });
+                    });
+                }
+            />
+        </label>
     }
 }
