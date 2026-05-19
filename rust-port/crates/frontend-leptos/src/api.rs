@@ -30,7 +30,6 @@ use shared::{
     VerifyOtpRequest, VerifyOtpResponse,
 };
 
-#[cfg(target_arch = "wasm32")]
 use crate::runtime_config;
 #[derive(Debug, Clone, Deserialize)]
 pub struct AdminOverview {
@@ -584,12 +583,23 @@ pub fn realtime_ws_url(conversation_id: Option<u64>, topics: &[RealtimeTopic]) -
         return None;
     }
 
-    let websocket_base = if let Some(stripped) = base.strip_prefix("https://") {
+    let configured_ws_base = runtime_config::realtime_ws_base_url();
+    let websocket_base = configured_ws_base.unwrap_or_else(|| {
+        if let Some(stripped) = base.strip_prefix("https://") {
+            format!("wss://{}", stripped)
+        } else if let Some(stripped) = base.strip_prefix("http://") {
+            format!("ws://{}", stripped)
+        } else {
+            format!("ws://{}", base)
+        }
+    });
+
+    let websocket_base = if let Some(stripped) = websocket_base.strip_prefix("https://") {
         format!("wss://{}", stripped)
-    } else if let Some(stripped) = base.strip_prefix("http://") {
+    } else if let Some(stripped) = websocket_base.strip_prefix("http://") {
         format!("ws://{}", stripped)
     } else {
-        format!("ws://{}", base)
+        websocket_base
     };
 
     let mut url = format!(

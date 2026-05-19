@@ -28,6 +28,10 @@ pub struct RuntimeConfig {
     pub stripe_connect_refresh_url: Option<String>,
     pub stripe_connect_return_url: Option<String>,
     pub stripe_live_transfers_required: bool,
+    pub atmp_outbound_base_url: Option<String>,
+    pub atmp_integration_shared_secret: Option<String>,
+    pub atmp_integration_require_signature: bool,
+    pub atmp_integration_replay_window_seconds: u64,
     pub tms_shared_secret: Option<String>,
     pub tms_reconciliation_worker_enabled: bool,
     pub tms_reconciliation_interval_seconds: u64,
@@ -55,7 +59,11 @@ pub struct RuntimeConfig {
 
 impl RuntimeConfig {
     pub fn from_env() -> Self {
-        Self {
+        let environment = env::var("ENVIRONMENT")
+            .or_else(|_| env::var("APP_ENV"))
+            .unwrap_or_else(|_| "development".to_string());
+
+        let config = Self {
             bind_addr: env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: env::var("PORT")
                 .ok()
@@ -63,7 +71,7 @@ impl RuntimeConfig {
                 .unwrap_or(3001),
             deployment_target: env::var("DEPLOYMENT_TARGET")
                 .unwrap_or_else(|_| "ibm-server".to_string()),
-            environment: env::var("APP_ENV").unwrap_or_else(|_| "development".to_string()),
+            environment,
             public_base_url: env::var("PUBLIC_BASE_URL").ok(),
             cors_allowed_origins: allowed_origin_values(),
             run_migrations: env::var("RUN_MIGRATIONS")
@@ -93,6 +101,7 @@ impl RuntimeConfig {
             stripe_webhook_shared_secret: env::var("STRIPE_WEBHOOK_SHARED_SECRET")
                 .or_else(|_| env::var("STRIPE_WEBHOOK_PLATFORM_SECRET"))
                 .or_else(|_| env::var("STRIPE_WEBHOOK_SECRET_PLATFORM"))
+                .or_else(|_| env::var("STRIPE_WEBHOOK_SECRET"))
                 .ok()
                 .and_then(optional_env_value),
             stripe_webhook_connect_secret: env::var("STRIPE_WEBHOOK_CONNECT_SECRET")
@@ -116,6 +125,29 @@ impl RuntimeConfig {
             stripe_live_transfers_required: env::var("STRIPE_LIVE_TRANSFERS_REQUIRED")
                 .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
                 .unwrap_or(false),
+            atmp_outbound_base_url: env::var("ATMP_OUTBOUND_BASE_URL")
+                .ok()
+                .and_then(optional_env_value),
+            atmp_integration_shared_secret: env::var("ATMP_INTEGRATION_SHARED_SECRET")
+                .or_else(|_| env::var("TMS_SHARED_SECRET"))
+                .ok()
+                .and_then(optional_env_value),
+            atmp_integration_require_signature: env::var("ATMP_INTEGRATION_REQUIRE_SIGNATURE")
+                .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+                .unwrap_or_else(|_| {
+                    is_production_environment_value(
+                        &env::var("ENVIRONMENT")
+                            .or_else(|_| env::var("APP_ENV"))
+                            .unwrap_or_default(),
+                    )
+                }),
+            atmp_integration_replay_window_seconds: env::var(
+                "ATMP_INTEGRATION_REPLAY_WINDOW_SECONDS",
+            )
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(300)
+            .clamp(30, 3600),
             tms_shared_secret: env::var("TMS_SHARED_SECRET").ok(),
             tms_reconciliation_worker_enabled: env::var("TMS_RECONCILIATION_WORKER_ENABLED")
                 .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
@@ -215,8 +247,117 @@ impl RuntimeConfig {
                         .and_then(optional_env_value)
                 })
                 .unwrap_or_else(|| "https://portal.stloads.com".to_string()),
+        };
+
+        config.validate_production().unwrap_or_else(|message| {
+            panic!("invalid STLoads production configuration: {message}")
+        });
+
+        config
+    }
+
+    pub fn is_production(&self) -> bool {
+        is_production_environment_value(&self.environment)
+    }
+
+    pub fn validate_production(&self) -> Result<(), String> {
+        if !self.is_production() {
+            return Ok(());
+        }
+
+        let mut missing = Vec::new();
+
+        require_option(&mut missing, "DATABASE_URL", &self.database_url);
+        require_option(&mut missing, "PUBLIC_BASE_URL", &self.public_base_url);
+        require_option(
+            &mut missing,
+            "ATMP_OUTBOUND_BASE_URL",
+            &self.atmp_outbound_base_url,
+        );
+        require_option(
+            &mut missing,
+            "ATMP_INTEGRATION_SHARED_SECRET",
+            &self.atmp_integration_shared_secret,
+        );
+        require_option(&mut missing, "STRIPE_SECRET_KEY", &self.stripe_secret_key);
+        require_option(
+            &mut missing,
+            "STRIPE_WEBHOOK_SECRET",
+            &self.stripe_webhook_shared_secret,
+        );
+        require_nonempty(&mut missing, "MAIL_MAILER", &self.mail_mailer);
+        require_nonempty(&mut missing, "MAIL_FROM_ADDRESS", &self.mail_from_address);
+
+        if self.cors_allowed_origins.is_empty() {
+            missing.push("CORS_ALLOWED_ORIGINS");
+        }
+
+        if self.atmp_integration_require_signature
+            && self.atmp_integration_replay_window_seconds < 30
+        {
+            missing.push("ATMP_INTEGRATION_REPLAY_WINDOW_SECONDS>=30");
+        }
+
+        if matches!(
+            self.document_storage_backend.as_str(),
+            "ibm_cos" | "s3" | "object_storage"
+        ) {
+            require_option(
+                &mut missing,
+                "OBJECT_STORAGE_BUCKET",
+                &self.object_storage_bucket,
+            );
+            require_option(
+                &mut missing,
+                "OBJECT_STORAGE_ENDPOINT",
+                &self.object_storage_endpoint,
+            );
+            require_option(
+                &mut missing,
+                "OBJECT_STORAGE_ACCESS_KEY_ID",
+                &self.object_storage_access_key_id,
+            );
+            require_option(
+                &mut missing,
+                "OBJECT_STORAGE_SECRET_ACCESS_KEY",
+                &self.object_storage_secret_access_key,
+            );
+        } else {
+            missing.push("DOCUMENT_STORAGE_BACKEND=ibm_cos");
+        }
+
+        if missing.is_empty() {
+            Ok(())
+        } else {
+            missing.sort();
+            missing.dedup();
+            Err(format!("missing or invalid: {}", missing.join(", ")))
         }
     }
+}
+
+fn require_option<'a>(missing: &mut Vec<&'a str>, name: &'a str, value: &Option<String>) {
+    if value
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .is_empty()
+    {
+        missing.push(name);
+    }
+}
+
+fn require_nonempty<'a>(missing: &mut Vec<&'a str>, name: &'a str, value: &str) {
+    if value.trim().is_empty() {
+        missing.push(name);
+    }
+}
+
+fn is_production_environment_value(environment: &str) -> bool {
+    matches!(
+        environment.trim().to_ascii_lowercase().as_str(),
+        "production" | "prod"
+    )
 }
 
 fn optional_env_value(value: String) -> Option<String> {
@@ -251,4 +392,102 @@ fn allowed_origin_values() -> Vec<String> {
     values.sort();
     values.dedup();
     values
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn production_config() -> RuntimeConfig {
+        RuntimeConfig {
+            bind_addr: "127.0.0.1".into(),
+            port: 3001,
+            deployment_target: "test".into(),
+            environment: "production".into(),
+            public_base_url: Some("https://backend.stloads.test".into()),
+            cors_allowed_origins: vec!["https://portal.stloads.test".into()],
+            run_migrations: false,
+            database_url: Some("postgres://stloads:secret@db.example/stloads".into()),
+            database_schema: Some("stloads".into()),
+            document_storage_backend: "ibm_cos".into(),
+            document_storage_root: "./runtime/document-storage".into(),
+            object_storage_bucket: Some("stloads-documents".into()),
+            object_storage_region: "us-south".into(),
+            object_storage_endpoint: Some(
+                "https://s3.us-south.cloud-object-storage.appdomain.cloud".into(),
+            ),
+            object_storage_access_key_id: Some("access".into()),
+            object_storage_secret_access_key: Some("secret".into()),
+            object_storage_session_token: None,
+            object_storage_force_path_style: false,
+            object_storage_prefix: "load-documents".into(),
+            stripe_webhook_shared_secret: Some("whsec_test".into()),
+            stripe_webhook_connect_secret: None,
+            stripe_secret_key: Some("sk_test".into()),
+            stripe_api_base_url: "https://api.stripe.com/v1".into(),
+            stripe_connect_refresh_url: Some(
+                "https://portal.stloads.test/settings/payouts?refresh=1".into(),
+            ),
+            stripe_connect_return_url: Some(
+                "https://portal.stloads.test/settings/payouts?done=1".into(),
+            ),
+            stripe_live_transfers_required: false,
+            atmp_outbound_base_url: Some("https://dispatch-api.example.test".into()),
+            atmp_integration_shared_secret: Some("shared-secret".into()),
+            atmp_integration_require_signature: true,
+            atmp_integration_replay_window_seconds: 300,
+            tms_shared_secret: Some("shared-secret".into()),
+            tms_reconciliation_worker_enabled: true,
+            tms_reconciliation_interval_seconds: 21_600,
+            tms_retry_worker_enabled: true,
+            tms_retry_interval_seconds: 300,
+            tms_retry_batch_size: 10,
+            tms_retry_max_attempts: 5,
+            tms_stale_handoff_days: 30,
+            mail_mailer: "smtp".into(),
+            mail_host: Some("smtp.example.test".into()),
+            mail_port: 587,
+            mail_username: Some("mailer".into()),
+            mail_password: Some("secret".into()),
+            mail_encryption: Some("tls".into()),
+            mail_from_address: "noreply@stloads.test".into(),
+            mail_from_name: "STLoads".into(),
+            mail_fail_open: false,
+            mail_outbox_enabled: true,
+            mail_outbox_worker_enabled: true,
+            mail_outbox_batch_size: 25,
+            mail_outbox_retry_interval_seconds: 30,
+            mail_outbox_max_attempts: 8,
+            portal_url: "https://portal.stloads.test".into(),
+        }
+    }
+
+    #[test]
+    fn production_config_with_required_values_passes() {
+        assert!(production_config().validate_production().is_ok());
+    }
+
+    #[test]
+    fn production_config_missing_required_values_fails() {
+        let mut config = production_config();
+        config.database_url = None;
+        config.atmp_integration_shared_secret = None;
+        config.object_storage_secret_access_key = None;
+
+        let message = config.validate_production().unwrap_err();
+        assert!(message.contains("DATABASE_URL"));
+        assert!(message.contains("ATMP_INTEGRATION_SHARED_SECRET"));
+        assert!(message.contains("OBJECT_STORAGE_SECRET_ACCESS_KEY"));
+    }
+
+    #[test]
+    fn development_config_allows_local_defaults() {
+        let mut config = production_config();
+        config.environment = "development".into();
+        config.database_url = None;
+        config.document_storage_backend = "local".into();
+        config.object_storage_bucket = None;
+
+        assert!(config.validate_production().is_ok());
+    }
 }

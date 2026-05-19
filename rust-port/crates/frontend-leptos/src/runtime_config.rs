@@ -24,6 +24,10 @@ pub fn backend_api_base_url() -> Option<String> {
     read_string_property("backendApiBaseUrl")
 }
 
+pub fn realtime_ws_base_url() -> Option<String> {
+    read_string_property("realtimeWsBaseUrl")
+}
+
 pub fn google_maps_api_key() -> Option<String> {
     read_string_property("googleMapsApiKey")
 }
