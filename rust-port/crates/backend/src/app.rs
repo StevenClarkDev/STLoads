@@ -2,9 +2,10 @@ use axum::{
     Json, Router,
     extract::State,
     http::{
-        HeaderValue, Method,
+        HeaderName, HeaderValue, Method,
         header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
     },
+    middleware,
     routing::get,
 };
 use db::inventory;
@@ -14,7 +15,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::{config::RuntimeConfig, routes, state::AppState};
+use crate::{config::RuntimeConfig, integration_auth, routes, state::AppState};
 
 #[derive(Debug, Serialize)]
 struct HealthResponse {
@@ -35,6 +36,9 @@ struct HealthResponse {
 
 pub fn router(state: AppState) -> Router {
     let cors = cors_layer(&state.config);
+    let signed_tms_routes = routes::tms::integration_router().route_layer(
+        middleware::from_fn_with_state(state.clone(), integration_auth::require_atmp_signature),
+    );
 
     Router::new()
         .route("/health", get(health))
@@ -43,8 +47,11 @@ pub fn router(state: AppState) -> Router {
         .nest("/marketplace", routes::marketplace::router())
         .nest("/execution", routes::execution::router())
         .nest("/payments", routes::payments::router())
-        .nest("/tms", routes::tms::router())
-        .nest("/api/stloads", routes::tms::integration_router())
+        .nest(
+            "/tms",
+            routes::tms::metadata_router().merge(signed_tms_routes.clone()),
+        )
+        .nest("/api/stloads", signed_tms_routes)
         .nest("/admin", routes::admin::router())
         .nest("/master-data", routes::master_data::router())
         .nest("/realtime", routes::realtime::router())
@@ -90,6 +97,25 @@ fn cors_layer(config: &RuntimeConfig) -> CorsLayer {
             Method::OPTIONS,
         ])
         .allow_headers([AUTHORIZATION, CONTENT_TYPE, ACCEPT]);
+
+    let integration_headers = [
+        "x-atmp-tenant",
+        "x-atmp-event-id",
+        "x-atmp-correlation-id",
+        "x-atmp-idempotency-key",
+        "x-atmp-timestamp",
+        "x-atmp-signature",
+    ]
+    .into_iter()
+    .filter_map(|name| HeaderName::from_lowercase(name.as_bytes()).ok())
+    .collect::<Vec<_>>();
+
+    cors = cors.allow_headers(
+        [AUTHORIZATION, CONTENT_TYPE, ACCEPT]
+            .into_iter()
+            .chain(integration_headers)
+            .collect::<Vec<_>>(),
+    );
 
     let origins = config
         .cors_allowed_origins

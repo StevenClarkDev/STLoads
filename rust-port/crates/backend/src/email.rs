@@ -911,6 +911,7 @@ mod tests {
             atmp_integration_shared_secret: None,
             atmp_integration_require_signature: false,
             atmp_integration_replay_window_seconds: 300,
+            atmp_integration_rate_limit_per_minute: 120,
             tms_shared_secret: None,
             tms_reconciliation_worker_enabled: false,
             tms_reconciliation_interval_seconds: 21_600,

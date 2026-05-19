@@ -4,7 +4,8 @@ use tracing::{info, warn};
 
 use crate::{
     config::RuntimeConfig, document_storage::DocumentStorageService, email::EmailService,
-    realtime_bus::RoutedRealtimeEvent, stripe::StripeService, tms_scheduler,
+    integration_auth::IntegrationAuthState, realtime_bus::RoutedRealtimeEvent,
+    stripe::StripeService, tms_scheduler,
 };
 
 #[derive(Clone)]
@@ -14,6 +15,7 @@ pub struct AppState {
     pub document_storage: DocumentStorageService,
     pub email: EmailService,
     pub stripe: StripeService,
+    pub integration_auth: IntegrationAuthState,
     pub realtime_tx: broadcast::Sender<RoutedRealtimeEvent>,
 }
 
@@ -57,6 +59,7 @@ impl AppState {
             document_storage,
             email,
             stripe,
+            integration_auth: IntegrationAuthState::default(),
             realtime_tx,
         };
         tms_scheduler::start_tms_workers(state.clone());

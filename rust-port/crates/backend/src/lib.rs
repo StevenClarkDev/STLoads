@@ -3,6 +3,7 @@ pub mod auth_session;
 pub mod config;
 pub mod document_storage;
 pub mod email;
+pub mod integration_auth;
 pub mod realtime_bus;
 pub mod routes;
 pub mod screen_data;

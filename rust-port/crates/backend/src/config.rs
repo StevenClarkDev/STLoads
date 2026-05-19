@@ -32,6 +32,7 @@ pub struct RuntimeConfig {
     pub atmp_integration_shared_secret: Option<String>,
     pub atmp_integration_require_signature: bool,
     pub atmp_integration_replay_window_seconds: u64,
+    pub atmp_integration_rate_limit_per_minute: u32,
     pub tms_shared_secret: Option<String>,
     pub tms_reconciliation_worker_enabled: bool,
     pub tms_reconciliation_interval_seconds: u64,
@@ -148,6 +149,13 @@ impl RuntimeConfig {
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(300)
             .clamp(30, 3600),
+            atmp_integration_rate_limit_per_minute: env::var(
+                "ATMP_INTEGRATION_RATE_LIMIT_PER_MINUTE",
+            )
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(120)
+            .clamp(1, 10_000),
             tms_shared_secret: env::var("TMS_SHARED_SECRET").ok(),
             tms_reconciliation_worker_enabled: env::var("TMS_RECONCILIATION_WORKER_ENABLED")
                 .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
@@ -436,6 +444,7 @@ mod tests {
             atmp_integration_shared_secret: Some("shared-secret".into()),
             atmp_integration_require_signature: true,
             atmp_integration_replay_window_seconds: 300,
+            atmp_integration_rate_limit_per_minute: 120,
             tms_shared_secret: Some("shared-secret".into()),
             tms_reconciliation_worker_enabled: true,
             tms_reconciliation_interval_seconds: 21_600,

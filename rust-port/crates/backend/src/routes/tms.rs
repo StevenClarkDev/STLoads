@@ -124,7 +124,7 @@ async fn atmp_contract(
     }
 }
 
-fn metadata_router() -> Router<crate::state::AppState> {
+pub fn metadata_router() -> Router<crate::state::AppState> {
     Router::new()
         .route("/", get(index))
         .route("/health", get(health))
@@ -810,6 +810,10 @@ async fn authorize_tms_lifecycle_request(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<Option<ResolvedSession>, StatusCode> {
+    if crate::integration_auth::atmp_authenticated(headers) {
+        return Ok(None);
+    }
+
     if tms_shared_secret_matches(state, headers) {
         return Ok(None);
     }
@@ -839,6 +843,10 @@ async fn authorize_tms_webhook_request(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<Option<ResolvedSession>, StatusCode> {
+    if crate::integration_auth::atmp_authenticated(headers) {
+        return Ok(None);
+    }
+
     if tms_shared_secret_matches(state, headers) {
         return Ok(None);
     }

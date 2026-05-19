@@ -79,31 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P5: Integration Authentication Middleware
-
-**Outcome:** ATMP/STLoads API traffic is authenticated, signed, replay-protected, and rate-limited.
-
-**Files:**
-
-- Create: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\integration_auth.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\app.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\config.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\tms.rs`
-
-- [ ] Require signed headers for ATMP integration routes in production:
-  - `X-ATMP-Tenant`
-  - `X-ATMP-Event-Id`
-  - `X-ATMP-Correlation-Id`
-  - `X-ATMP-Idempotency-Key`
-  - `X-ATMP-Timestamp`
-  - `X-ATMP-Signature`
-- [ ] Validate HMAC signature against raw request body.
-- [ ] Enforce replay window.
-- [ ] Reject reused event IDs.
-- [ ] Rate-limit integration routes.
-- [ ] Log rejected integration attempts without storing raw secrets.
-- [ ] Tests must cover valid signature, bad signature, expired timestamp, reused event id, missing tenant, and rate limit.
-
 ### Task P6: Outbound Event Publisher To ATMP
 
 **Outcome:** STLoads reports marketplace results back to ATMP reliably.
@@ -555,24 +530,23 @@ Do not call STLoads market-ready until every item below is true:
 
 ## Recommended Execution Order
 
-1. P5 Integration authentication middleware.
-2. P6 Outbound event publisher.
-3. P7 Tenant/RBAC/session hardening.
-4. P16 Placeholder/demo data purge.
-5. P8 Carrier search and alerts.
-6. P9 Compliance and eligibility.
-7. P10 Offers, tenders, and booking.
-8. P11 Chat and notifications.
-9. P12 Execution and tracking.
-10. P13 Documents.
-11. P14 Payments.
-12. P15 Admin ops and reconciliation.
-13. P17 Realtime.
-14. P18 Observability and audit.
-15. P19 Security hardening.
-16. P20 Build and tests.
-17. P21 IBM deployment.
-18. P22 Launch documentation.
+1. P6 Outbound event publisher.
+2. P7 Tenant/RBAC/session hardening.
+3. P16 Placeholder/demo data purge.
+4. P8 Carrier search and alerts.
+5. P9 Compliance and eligibility.
+6. P10 Offers, tenders, and booking.
+7. P11 Chat and notifications.
+8. P12 Execution and tracking.
+9. P13 Documents.
+10. P14 Payments.
+11. P15 Admin ops and reconciliation.
+12. P17 Realtime.
+13. P18 Observability and audit.
+14. P19 Security hardening.
+15. P20 Build and tests.
+16. P21 IBM deployment.
+17. P22 Launch documentation.
 
 ## Definition Of Done
 
