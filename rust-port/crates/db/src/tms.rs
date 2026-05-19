@@ -105,6 +105,44 @@ pub struct StloadsHandoffEventRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct AtmpOutboundEventRecord {
+    pub id: i64,
+    pub tenant_id: String,
+    pub event_id: String,
+    pub correlation_id: Option<String>,
+    pub event_type: String,
+    pub posting_id: Option<i64>,
+    pub booking_award_id: Option<i64>,
+    pub target_url: Option<String>,
+    pub payload: Value,
+    pub payload_hash: String,
+    pub status: String,
+    pub attempt_count: i32,
+    pub next_attempt_at: Option<NaiveDateTime>,
+    pub last_attempt_at: Option<NaiveDateTime>,
+    pub last_error: Option<String>,
+    pub sent_at: Option<NaiveDateTime>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+pub struct EnqueueAtmpOutboundEvent<'a> {
+    pub tenant_id: &'a str,
+    pub event_type: &'a str,
+    pub posting_id: Option<i64>,
+    pub booking_award_id: Option<i64>,
+    pub target_url: Option<&'a str>,
+    pub payload: Value,
+    pub correlation_id: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct AtmpOutboundStatusCount {
+    pub status: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct StloadsExternalRefRecord {
     pub id: i64,
     pub handoff_id: i64,
@@ -431,6 +469,236 @@ pub async fn reconciliation_action_catalog() -> &'static [ReconciliationActionDe
     reconciliation_action_descriptors()
 }
 
+pub async fn enqueue_atmp_outbound_event(
+    pool: &DbPool,
+    event: EnqueueAtmpOutboundEvent<'_>,
+) -> Result<i64, sqlx::Error> {
+    let event_type = event.event_type.trim();
+    if !supported_atmp_outbound_event_types().contains(&event_type) {
+        return Err(sqlx::Error::Protocol(
+            format!("unsupported ATMP outbound event type: {event_type}").into(),
+        ));
+    }
+
+    let tenant_id = event.tenant_id.trim();
+    let event_id = format!("stloads-{}", uuid::Uuid::new_v4());
+    let payload_hash = stable_json_hash(&event.payload);
+    let mut tx = pool.begin().await?;
+    ensure_contract_tenant(&mut tx, tenant_id).await?;
+    let id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO atmp_outbound_events (
+            tenant_id, event_id, correlation_id, event_type, posting_id, booking_award_id,
+            target_url, payload, payload_hash, status, next_attempt_at, created_at, updated_at
+         ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, 'queued', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+         )
+         RETURNING id",
+    )
+    .bind(tenant_id)
+    .bind(&event_id)
+    .bind(event.correlation_id)
+    .bind(event_type)
+    .bind(event.posting_id)
+    .bind(event.booking_award_id)
+    .bind(event.target_url)
+    .bind(&event.payload)
+    .bind(&payload_hash)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO atmp_contract_payloads (
+            tenant_id, outbound_event_id, contract_version, direction, payload_hash, payload, created_at
+         ) VALUES ($1, $2, '2026-05-01', 'outbound', $3, $4, CURRENT_TIMESTAMP)",
+    )
+    .bind(tenant_id)
+    .bind(id)
+    .bind(&payload_hash)
+    .bind(&event.payload)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(id)
+}
+
+pub async fn claim_due_atmp_outbound_events(
+    pool: &DbPool,
+    limit: i64,
+) -> Result<Vec<AtmpOutboundEventRecord>, sqlx::Error> {
+    let events = sqlx::query_as::<_, AtmpOutboundEventRecord>(
+        "SELECT id, tenant_id, event_id, correlation_id, event_type, posting_id, booking_award_id,
+                target_url, payload, payload_hash, status, attempt_count, next_attempt_at,
+                last_attempt_at, last_error, sent_at, created_at, updated_at
+         FROM atmp_outbound_events
+         WHERE status IN ('queued', 'retry')
+           AND (next_attempt_at IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP)
+         ORDER BY created_at ASC
+         LIMIT $1",
+    )
+    .bind(limit.clamp(1, 250))
+    .fetch_all(pool)
+    .await?;
+
+    for event in &events {
+        sqlx::query(
+            "UPDATE atmp_outbound_events
+             SET status = 'processing', last_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1 AND status IN ('queued', 'retry')",
+        )
+        .bind(event.id)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(events)
+}
+
+pub async fn mark_atmp_outbound_event_delivered(
+    pool: &DbPool,
+    event_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE atmp_outbound_events
+         SET status = 'delivered',
+             attempt_count = attempt_count + 1,
+             sent_at = CURRENT_TIMESTAMP,
+             last_error = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1",
+    )
+    .bind(event_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn mark_atmp_outbound_event_failed(
+    pool: &DbPool,
+    event_id: i64,
+    error: &str,
+    attempt_count: i32,
+    dead_lettered: bool,
+) -> Result<(), sqlx::Error> {
+    let status = if dead_lettered {
+        "dead_letter"
+    } else {
+        "retry"
+    };
+    let delay_seconds = retry_delay_seconds(attempt_count);
+    sqlx::query(
+        "UPDATE atmp_outbound_events
+         SET status = $1,
+             attempt_count = $2,
+             next_attempt_at = CASE WHEN $1 = 'dead_letter' THEN NULL ELSE CURRENT_TIMESTAMP + ($3 * INTERVAL '1 second') END,
+             last_error = $4,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $5",
+    )
+    .bind(status)
+    .bind(attempt_count)
+    .bind(delay_seconds)
+    .bind(error)
+    .bind(event_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn replay_atmp_outbound_event(
+    pool: &DbPool,
+    event_id: i64,
+) -> Result<Option<AtmpOutboundEventRecord>, sqlx::Error> {
+    sqlx::query(
+        "UPDATE atmp_outbound_events
+         SET status = 'queued',
+             attempt_count = 0,
+             next_attempt_at = CURRENT_TIMESTAMP,
+             last_error = NULL,
+             sent_at = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1",
+    )
+    .bind(event_id)
+    .execute(pool)
+    .await?;
+
+    find_atmp_outbound_event_by_id(pool, event_id).await
+}
+
+pub async fn find_atmp_outbound_event_by_id(
+    pool: &DbPool,
+    event_id: i64,
+) -> Result<Option<AtmpOutboundEventRecord>, sqlx::Error> {
+    sqlx::query_as::<_, AtmpOutboundEventRecord>(
+        "SELECT id, tenant_id, event_id, correlation_id, event_type, posting_id, booking_award_id,
+                target_url, payload, payload_hash, status, attempt_count, next_attempt_at,
+                last_attempt_at, last_error, sent_at, created_at, updated_at
+         FROM atmp_outbound_events
+         WHERE id = $1",
+    )
+    .bind(event_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn count_atmp_outbound_events_by_status(
+    pool: &DbPool,
+) -> Result<Vec<AtmpOutboundStatusCount>, sqlx::Error> {
+    sqlx::query_as::<_, AtmpOutboundStatusCount>(
+        "SELECT status, COUNT(*) AS count
+         FROM atmp_outbound_events
+         GROUP BY status
+         ORDER BY status",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn force_atmp_outbound_event_due_for_test(
+    pool: &DbPool,
+    event_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE atmp_outbound_events
+         SET next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1",
+    )
+    .bind(event_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub fn supported_atmp_outbound_event_types() -> &'static [&'static str] {
+    &[
+        "listing_published",
+        "listing_failed",
+        "offer_submitted",
+        "counteroffer_submitted",
+        "offer_accepted",
+        "offer_declined",
+        "carrier_booked",
+        "booking_canceled",
+        "tracking_event",
+        "exception_event",
+        "document_uploaded",
+        "document_approved",
+        "document_rejected",
+        "escrow_funded",
+        "payment_hold",
+        "payment_released",
+        "settlement_ready",
+        "sync_error",
+    ]
+}
+
+fn retry_delay_seconds(attempt_count: i32) -> i64 {
+    let exponent = attempt_count.saturating_sub(1).clamp(0, 8) as u32;
+    30_i64.saturating_mul(2_i64.saturating_pow(exponent))
+}
+
 pub async fn apply_atmp_contract_event(
     pool: &DbPool,
     raw_payload: Value,
@@ -478,6 +746,23 @@ pub async fn apply_atmp_contract_event(
     let (posting_id, status_label, message) = match envelope.action {
         AtmpContractAction::Publish => {
             let posting_id = upsert_atmp_posting(&mut tx, &envelope, &payload_hash, true).await?;
+            insert_atmp_outbound_event_tx(
+                &mut tx,
+                &envelope.tenant_id,
+                "listing_published",
+                Some(posting_id),
+                None,
+                &serde_json::json!({
+                    "event_type": "listing_published",
+                    "tenant_id": envelope.tenant_id,
+                    "atmp_load_id": envelope.atmp_load_id,
+                    "atmp_leg_id": envelope.atmp_leg_id,
+                    "posting_id": posting_id,
+                    "correlation_id": envelope.correlation_id
+                }),
+                Some(&envelope.correlation_id),
+            )
+            .await?;
             (
                 Some(posting_id),
                 "Published".into(),
@@ -1910,6 +2195,53 @@ async fn insert_contract_payload(
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+async fn insert_atmp_outbound_event_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: &str,
+    event_type: &str,
+    posting_id: Option<i64>,
+    booking_award_id: Option<i64>,
+    payload: &Value,
+    correlation_id: Option<&str>,
+) -> Result<i64, sqlx::Error> {
+    let event_id = format!("stloads-{}", uuid::Uuid::new_v4());
+    let payload_hash = stable_json_hash(payload);
+    let outbound_event_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO atmp_outbound_events (
+            tenant_id, event_id, correlation_id, event_type, posting_id, booking_award_id,
+            payload, payload_hash, status, next_attempt_at, created_at, updated_at
+         ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, 'queued', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+         )
+         RETURNING id",
+    )
+    .bind(tenant_id)
+    .bind(&event_id)
+    .bind(correlation_id)
+    .bind(event_type)
+    .bind(posting_id)
+    .bind(booking_award_id)
+    .bind(payload)
+    .bind(&payload_hash)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO atmp_contract_payloads (
+            tenant_id, outbound_event_id, contract_version, direction, payload_hash, payload, created_at
+         ) VALUES ($1, $2, '2026-05-01', 'outbound', $3, $4, CURRENT_TIMESTAMP)",
+    )
+    .bind(tenant_id)
+    .bind(outbound_event_id)
+    .bind(&payload_hash)
+    .bind(payload)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(outbound_event_id)
 }
 
 async fn upsert_atmp_posting(

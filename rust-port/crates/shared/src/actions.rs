@@ -175,6 +175,14 @@ pub struct ResolveSyncErrorResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplayAtmpOutboundEventResponse {
+    pub success: bool,
+    pub outbound_event_id: i64,
+    pub status_label: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EscrowFundRequest {
     pub amount_cents: Option<i64>,
     pub currency: Option<String>,

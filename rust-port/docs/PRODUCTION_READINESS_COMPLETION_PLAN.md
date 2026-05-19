@@ -79,42 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P6: Outbound Event Publisher To ATMP
-
-**Outcome:** STLoads reports marketplace results back to ATMP reliably.
-
-**Files:**
-
-- Create: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\atmp_outbound.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\main.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\tms.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\admin.rs`
-
-- [ ] Queue outbound events for:
-  - `listing_published`
-  - `listing_failed`
-  - `offer_submitted`
-  - `counteroffer_submitted`
-  - `offer_accepted`
-  - `offer_declined`
-  - `carrier_booked`
-  - `booking_canceled`
-  - `tracking_event`
-  - `exception_event`
-  - `document_uploaded`
-  - `document_approved`
-  - `document_rejected`
-  - `escrow_funded`
-  - `payment_hold`
-  - `payment_released`
-  - `settlement_ready`
-  - `sync_error`
-- [ ] Add retry worker with exponential backoff.
-- [ ] Add dead-letter state after max attempts.
-- [ ] Add replay API for authorized admins.
-- [ ] Add delivery status in admin reconciliation screen.
-- [ ] Tests must prove failed callback retries and successful callback marks delivered.
-
 ### Task P7: Tenant, Organization, RBAC, And Session Hardening
 
 **Outcome:** Every screen and API route enforces tenant scope and least privilege.
@@ -530,23 +494,22 @@ Do not call STLoads market-ready until every item below is true:
 
 ## Recommended Execution Order
 
-1. P6 Outbound event publisher.
-2. P7 Tenant/RBAC/session hardening.
-3. P16 Placeholder/demo data purge.
-4. P8 Carrier search and alerts.
-5. P9 Compliance and eligibility.
-6. P10 Offers, tenders, and booking.
-7. P11 Chat and notifications.
-8. P12 Execution and tracking.
-9. P13 Documents.
-10. P14 Payments.
-11. P15 Admin ops and reconciliation.
-12. P17 Realtime.
-13. P18 Observability and audit.
-14. P19 Security hardening.
-15. P20 Build and tests.
-16. P21 IBM deployment.
-17. P22 Launch documentation.
+1. P7 Tenant/RBAC/session hardening.
+2. P16 Placeholder/demo data purge.
+3. P8 Carrier search and alerts.
+4. P9 Compliance and eligibility.
+5. P10 Offers, tenders, and booking.
+6. P11 Chat and notifications.
+7. P12 Execution and tracking.
+8. P13 Documents.
+9. P14 Payments.
+10. P15 Admin ops and reconciliation.
+11. P17 Realtime.
+12. P18 Observability and audit.
+13. P19 Security hardening.
+14. P20 Build and tests.
+15. P21 IBM deployment.
+16. P22 Launch documentation.
 
 ## Definition Of Done
 

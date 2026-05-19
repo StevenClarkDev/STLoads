@@ -10,6 +10,7 @@ async fn main() {
         .init();
 
     let state = backend::state::AppState::from_env().await;
+    backend::atmp_outbound::start_worker(state.clone());
     let bind_target = format!("{}:{}", state.config.bind_addr, state.config.port);
     let app = backend::app::router(state.clone());
 

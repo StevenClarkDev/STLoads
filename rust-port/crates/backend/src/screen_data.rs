@@ -15,7 +15,8 @@ use db::marketplace::{
     list_recent_conversation_workspace_records_for_user,
 };
 use db::tms::{
-    count_handoffs_by_status, count_unresolved_sync_errors_by_class, list_recent_handoffs_filtered,
+    count_atmp_outbound_events_by_status, count_handoffs_by_status,
+    count_unresolved_sync_errors_by_class, list_recent_handoffs_filtered,
     list_recent_reconciliation_logs_filtered, list_unresolved_sync_error_breakdown,
     list_unresolved_sync_errors, published_mismatch_counts,
 };
@@ -887,12 +888,32 @@ async fn build_stloads_reconciliation_screen(
     action_filter: Option<String>,
 ) -> Result<StloadsReconciliationScreen, sqlx::Error> {
     let mismatch_counts = published_mismatch_counts(pool).await?;
+    let outbound_statuses = count_atmp_outbound_events_by_status(pool).await?;
     let error_breakdown = list_unresolved_sync_error_breakdown(pool).await?;
     let normalized_filter = action_filter
         .clone()
         .filter(|value| value != "all" && !value.trim().is_empty());
     let logs =
         list_recent_reconciliation_logs_filtered(pool, normalized_filter.as_deref(), 30).await?;
+
+    let outbound_queued = outbound_statuses
+        .iter()
+        .filter(|row| matches!(row.status.as_str(), "queued" | "retry" | "processing"))
+        .map(|row| row.count)
+        .sum::<i64>()
+        .max(0) as u64;
+    let outbound_delivered = outbound_statuses
+        .iter()
+        .filter(|row| row.status == "delivered")
+        .map(|row| row.count)
+        .sum::<i64>()
+        .max(0) as u64;
+    let outbound_dead_letter = outbound_statuses
+        .iter()
+        .filter(|row| row.status == "dead_letter")
+        .map(|row| row.count)
+        .sum::<i64>()
+        .max(0) as u64;
 
     let mismatch_cards = vec![
         MismatchCard {
@@ -930,6 +951,24 @@ async fn build_stloads_reconciliation_screen(
             value: mismatch_counts.stale_30d.max(0) as u64,
             tone: "dark".into(),
             note: "No webhook activity for more than thirty days.".into(),
+        },
+        MismatchCard {
+            label: "ATMP Delivered".into(),
+            value: outbound_delivered,
+            tone: "success".into(),
+            note: "Outbound callbacks delivered to ATMP.".into(),
+        },
+        MismatchCard {
+            label: "ATMP Queue".into(),
+            value: outbound_queued,
+            tone: "primary".into(),
+            note: "Queued, processing, or retrying callbacks.".into(),
+        },
+        MismatchCard {
+            label: "ATMP Dead Letter".into(),
+            value: outbound_dead_letter,
+            tone: "danger".into(),
+            note: "Callbacks requiring replay or operator review.".into(),
         },
     ];
 
@@ -979,7 +1018,7 @@ async fn build_stloads_reconciliation_screen(
         logs: log_rows,
         callouts: vec![
             "This screen now reads mismatch counts, unresolved sync errors, and reconciliation logs from SQLx-backed queries.".into(),
-            "Operator action filters are preserved so the staged cutover keeps the same cleanup workflow shape as Laravel.".into(),
+            "ATMP delivery status is included so admins can see queued, delivered, retrying, and dead-letter callbacks from the same reconciliation surface.".into(),
         ],
         pagination: Pagination {
             page: 1,

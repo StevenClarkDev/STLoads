@@ -33,6 +33,10 @@ pub struct RuntimeConfig {
     pub atmp_integration_require_signature: bool,
     pub atmp_integration_replay_window_seconds: u64,
     pub atmp_integration_rate_limit_per_minute: u32,
+    pub atmp_outbound_worker_enabled: bool,
+    pub atmp_outbound_interval_seconds: u64,
+    pub atmp_outbound_batch_size: i64,
+    pub atmp_outbound_max_attempts: i32,
     pub tms_shared_secret: Option<String>,
     pub tms_reconciliation_worker_enabled: bool,
     pub tms_reconciliation_interval_seconds: u64,
@@ -156,6 +160,24 @@ impl RuntimeConfig {
             .and_then(|value| value.parse::<u32>().ok())
             .unwrap_or(120)
             .clamp(1, 10_000),
+            atmp_outbound_worker_enabled: env::var("ATMP_OUTBOUND_WORKER_ENABLED")
+                .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+                .unwrap_or(true),
+            atmp_outbound_interval_seconds: env::var("ATMP_OUTBOUND_INTERVAL_SECONDS")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(30)
+                .clamp(5, 3600),
+            atmp_outbound_batch_size: env::var("ATMP_OUTBOUND_BATCH_SIZE")
+                .ok()
+                .and_then(|value| value.parse::<i64>().ok())
+                .unwrap_or(25)
+                .clamp(1, 250),
+            atmp_outbound_max_attempts: env::var("ATMP_OUTBOUND_MAX_ATTEMPTS")
+                .ok()
+                .and_then(|value| value.parse::<i32>().ok())
+                .unwrap_or(8)
+                .clamp(1, 50),
             tms_shared_secret: env::var("TMS_SHARED_SECRET").ok(),
             tms_reconciliation_worker_enabled: env::var("TMS_RECONCILIATION_WORKER_ENABLED")
                 .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
@@ -445,6 +467,10 @@ mod tests {
             atmp_integration_require_signature: true,
             atmp_integration_replay_window_seconds: 300,
             atmp_integration_rate_limit_per_minute: 120,
+            atmp_outbound_worker_enabled: true,
+            atmp_outbound_interval_seconds: 30,
+            atmp_outbound_batch_size: 25,
+            atmp_outbound_max_attempts: 8,
             tms_shared_secret: Some("shared-secret".into()),
             tms_reconciliation_worker_enabled: true,
             tms_reconciliation_interval_seconds: 21_600,

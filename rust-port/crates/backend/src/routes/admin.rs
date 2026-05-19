@@ -15,7 +15,7 @@ use db::{
         update_admin_user_profile,
     },
     dispatch::{count_admin_load_legs_filtered, list_admin_load_legs_filtered, review_load_status},
-    tms::resolve_sync_error,
+    tms::{replay_atmp_outbound_event, resolve_sync_error},
 };
 use domain::auth::{
     AccountStatus, UserRole, permission_descriptors, role_descriptors, role_permission_contracts,
@@ -31,8 +31,9 @@ use shared::{
     AdminUserDirectoryRoleOption, AdminUserDirectoryScreen, AdminUserDirectoryStatusOption,
     AdminUserDirectoryUser, AdminUserHistoryItem, AdminUserProfileFact, AdminUserProfileScreen,
     ApiResponse, KycDocumentItem, RealtimeEvent, RealtimeEventKind, RealtimeTopic,
-    ResolveSyncErrorRequest, ResolveSyncErrorResponse, ReviewOnboardingRequest,
-    ReviewOnboardingResponse, StloadsOperationsScreen, StloadsReconciliationScreen,
+    ReplayAtmpOutboundEventResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
+    ReviewOnboardingRequest, ReviewOnboardingResponse, StloadsOperationsScreen,
+    StloadsReconciliationScreen,
 };
 
 use crate::{
@@ -98,6 +99,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/stloads/sync-errors/{sync_error_id}/resolve",
             post(resolve_sync_error_handler),
+        )
+        .route(
+            "/stloads/outbound-events/{outbound_event_id}/replay",
+            post(replay_atmp_outbound_event_handler),
         )
 }
 
@@ -1599,6 +1604,52 @@ async fn resolve_sync_error_handler(
         sync_error_id,
         handoff_id: sync_error.handoff_id,
         message: "Sync error resolved from the Rust STLOADS admin route.".into(),
+    })))
+}
+
+async fn replay_atmp_outbound_event_handler(
+    State(state): State<AppState>,
+    Path(outbound_event_id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<ReplayAtmpOutboundEventResponse>>, StatusCode> {
+    let _session = require_any_permission(
+        &state,
+        &headers,
+        &["access_admin_portal", "manage_tms_operations"],
+    )
+    .await?;
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(ReplayAtmpOutboundEventResponse {
+            success: false,
+            outbound_event_id,
+            status_label: "Unavailable".into(),
+            message: format!(
+                "ATMP outbound replay is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        })));
+    };
+
+    let replayed = replay_atmp_outbound_event(pool, outbound_event_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let Some(event) = replayed else {
+        return Ok(Json(ApiResponse::ok(ReplayAtmpOutboundEventResponse {
+            success: false,
+            outbound_event_id,
+            status_label: "Missing".into(),
+            message: "The requested ATMP outbound event was not found.".into(),
+        })));
+    };
+
+    Ok(Json(ApiResponse::ok(ReplayAtmpOutboundEventResponse {
+        success: true,
+        outbound_event_id,
+        status_label: event.status,
+        message: "ATMP outbound event was returned to the delivery queue.".into(),
     })))
 }
 
