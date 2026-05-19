@@ -82,6 +82,15 @@ pub enum Permission {
     ManageTracking,
     ManagePayments,
     ManageTmsOperations,
+    ManagePostingActions,
+    ManageOfferActions,
+    ManageBookingActions,
+    ManageDocumentActions,
+    ManagePaymentActions,
+    ManageComplianceActions,
+    ManageAdminActions,
+    ManageIntegrationActions,
+    SupportImpersonation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -258,6 +267,51 @@ pub const PERMISSION_DESCRIPTORS: &[PermissionDescriptor] = &[
         label: "Manage TMS Operations",
         description: "Operate STLOADS handoffs, reconciliation, and sync monitoring.",
     },
+    PermissionDescriptor {
+        permission: Permission::ManagePostingActions,
+        label: "Manage Posting Actions",
+        description: "Create, update, publish, withdraw, close, and cancel tenant postings.",
+    },
+    PermissionDescriptor {
+        permission: Permission::ManageOfferActions,
+        label: "Manage Offer Actions",
+        description: "Create, counter, accept, decline, and audit marketplace offers.",
+    },
+    PermissionDescriptor {
+        permission: Permission::ManageBookingActions,
+        label: "Manage Booking Actions",
+        description: "Award, lock, cancel, and close bookings.",
+    },
+    PermissionDescriptor {
+        permission: Permission::ManageDocumentActions,
+        label: "Manage Document Actions",
+        description: "Upload, review, version, and validate load and compliance documents.",
+    },
+    PermissionDescriptor {
+        permission: Permission::ManagePaymentActions,
+        label: "Manage Payment Actions",
+        description: "Fund, hold, release, dispute, settle, and reconcile payments.",
+    },
+    PermissionDescriptor {
+        permission: Permission::ManageComplianceActions,
+        label: "Manage Compliance Actions",
+        description: "Review compliance documents, rules, overrides, risk flags, and eligibility.",
+    },
+    PermissionDescriptor {
+        permission: Permission::ManageAdminActions,
+        label: "Manage Admin Actions",
+        description: "Perform tenant administration and protected operational support actions.",
+    },
+    PermissionDescriptor {
+        permission: Permission::ManageIntegrationActions,
+        label: "Manage Integration Actions",
+        description: "Operate signed inbound and outbound integration contracts.",
+    },
+    PermissionDescriptor {
+        permission: Permission::SupportImpersonation,
+        label: "Support Impersonation",
+        description: "Start reason-bound, expiring support impersonation sessions with audit trail.",
+    },
 ];
 
 pub const ADMIN_PERMISSIONS: &[Permission] = &[
@@ -271,18 +325,36 @@ pub const ADMIN_PERMISSIONS: &[Permission] = &[
     Permission::ManageTracking,
     Permission::ManagePayments,
     Permission::ManageTmsOperations,
+    Permission::ManagePostingActions,
+    Permission::ManageOfferActions,
+    Permission::ManageBookingActions,
+    Permission::ManageDocumentActions,
+    Permission::ManagePaymentActions,
+    Permission::ManageComplianceActions,
+    Permission::ManageAdminActions,
+    Permission::ManageIntegrationActions,
+    Permission::SupportImpersonation,
 ];
 
 pub const SHIPPER_PERMISSIONS: &[Permission] = &[
     Permission::ManageLoads,
     Permission::ManageMarketplace,
     Permission::ManagePayments,
+    Permission::ManagePostingActions,
+    Permission::ManageOfferActions,
+    Permission::ManageBookingActions,
+    Permission::ManageDocumentActions,
+    Permission::ManagePaymentActions,
 ];
 
 pub const CARRIER_PERMISSIONS: &[Permission] = &[
     Permission::ManageMarketplace,
     Permission::ManageTracking,
     Permission::ManagePayments,
+    Permission::ManageOfferActions,
+    Permission::ManageBookingActions,
+    Permission::ManageDocumentActions,
+    Permission::ManagePaymentActions,
 ];
 
 pub const BROKER_PERMISSIONS: &[Permission] = &[
@@ -290,6 +362,12 @@ pub const BROKER_PERMISSIONS: &[Permission] = &[
     Permission::ManageMarketplace,
     Permission::ManageDispatchDesk,
     Permission::ManagePayments,
+    Permission::ManagePostingActions,
+    Permission::ManageOfferActions,
+    Permission::ManageBookingActions,
+    Permission::ManageDocumentActions,
+    Permission::ManagePaymentActions,
+    Permission::ManageComplianceActions,
 ];
 
 pub const FREIGHT_FORWARDER_PERMISSIONS: &[Permission] = &[
@@ -298,6 +376,13 @@ pub const FREIGHT_FORWARDER_PERMISSIONS: &[Permission] = &[
     Permission::ManageDispatchDesk,
     Permission::ManagePayments,
     Permission::ManageTmsOperations,
+    Permission::ManagePostingActions,
+    Permission::ManageOfferActions,
+    Permission::ManageBookingActions,
+    Permission::ManageDocumentActions,
+    Permission::ManagePaymentActions,
+    Permission::ManageComplianceActions,
+    Permission::ManageIntegrationActions,
 ];
 
 pub const ROLE_PERMISSION_CONTRACTS: &[RolePermissionContract] = &[

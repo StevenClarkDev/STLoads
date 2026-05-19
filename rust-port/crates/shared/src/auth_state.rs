@@ -7,14 +7,37 @@ pub struct AuthSessionUser {
     pub email: String,
     pub role_key: String,
     pub role_label: String,
+    pub scoped_role_key: Option<String>,
+    pub scoped_role_label: Option<String>,
     pub account_status_label: String,
     pub dashboard_href: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthTenantScope {
+    pub tenant_id: String,
+    pub organization_id: Option<u64>,
+    pub organization_type: Option<String>,
+    pub role_key: String,
+    pub role_label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthImpersonationState {
+    pub active: bool,
+    pub actor_user_id: Option<u64>,
+    pub target_user_id: Option<u64>,
+    pub reason: Option<String>,
+    pub expires_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthSessionState {
     pub authenticated: bool,
     pub user: Option<AuthSessionUser>,
+    pub tenant_scope: Option<AuthTenantScope>,
+    pub tenant_scopes: Vec<AuthTenantScope>,
+    pub impersonation: Option<AuthImpersonationState>,
     pub permissions: Vec<String>,
     pub notes: Vec<String>,
 }

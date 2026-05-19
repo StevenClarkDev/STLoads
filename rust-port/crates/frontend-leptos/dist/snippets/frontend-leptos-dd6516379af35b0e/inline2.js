@@ -1,103 +1,139 @@
 
-export async function stloadsUploadLoadDocument(url, token, documentName, documentType, inputId) {
+export async function stloadsLoadGooglePlaces(apiKey) {
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('GOOGLE_MAPS_API_KEY is not configured for the frontend build.');
+  }
+
+  if (window.google && window.google.maps && window.google.maps.places) {
+    return true;
+  }
+
+  const waitForPlaces = () => new Promise((resolve, reject) => {
+    const deadline = Date.now() + 10000;
+    const poll = () => {
+      if (window.google && window.google.maps && window.google.maps.places) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() > deadline) {
+        reject(new Error('Google Maps Places library is not loaded.'));
+        return;
+      }
+      window.setTimeout(poll, 100);
+    };
+    poll();
+  });
+
+  if (window.__stloadsGooglePlacesLoader) {
+    return window.__stloadsGooglePlacesLoader;
+  }
+
+  window.__stloadsGooglePlacesLoader = new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-stloads-google-places="true"]');
+    if (existing) {
+      existing.addEventListener('load', () => {
+        waitForPlaces().then(resolve).catch(reject);
+      }, { once: true });
+      existing.addEventListener('error', () => reject(new Error('Google Maps script failed to load.')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
+    script.async = true;
+    script.defer = true;
+    script.dataset.stloadsGooglePlaces = 'true';
+    script.onload = () => {
+      waitForPlaces().then(resolve).catch(reject);
+    };
+    script.onerror = () => reject(new Error('Google Maps script failed to load.'));
+    document.head.appendChild(script);
+  });
+
+  return window.__stloadsGooglePlacesLoader;
+}
+
+function setInputValueAndDispatch(id, value) {
+  const input = document.getElementById(id);
+  if (!input) return;
+  input.value = value || '';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+export async function stloadsAttachAddressAutocomplete(inputId, cityId, countryId, placeIdId, latitudeId, longitudeId) {
   const input = document.getElementById(inputId);
-  if (!input || !input.files || input.files.length === 0) {
-    throw new Error('Choose a file before uploading a load document.');
+  if (!input || input.dataset.googleAutocompleteAttached === 'true') {
+    return true;
   }
 
-  const file = input.files[0];
-  const form = new FormData();
-  form.append('document_name', documentName || '');
-  form.append('document_type', documentType || '');
-  form.append('file', file, file.name || 'document.bin');
-
-  const headers = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+  if (!(window.google && window.google.maps && window.google.maps.places)) {
+    throw new Error('Google Maps Places library is not loaded.');
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: form,
+  const options = {
+    types: ['geocode', 'establishment'],
+    fields: ['formatted_address', 'geometry', 'name', 'address_components', 'place_id'],
+    componentRestrictions: { country: ['us', 'ca'] },
+  };
+
+  const autocomplete = new google.maps.places.Autocomplete(input, options);
+  autocomplete.setOptions({ strictBounds: false });
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const biasDelta = 4.5;
+        autocomplete.setBounds({
+          north: latitude + biasDelta,
+          south: latitude - biasDelta,
+          east: longitude + biasDelta,
+          west: longitude - biasDelta,
+        });
+      },
+      () => {
+        // No GPS or permission denied. Leave predictions unbiased so Google returns general suggestions.
+      },
+      { enableHighAccuracy: false, maximumAge: 300000, timeout: 2500 }
+    );
+  }
+
+  input.addEventListener('input', () => input.classList.add('loading'));
+
+  autocomplete.addListener('place_changed', () => {
+    input.classList.remove('loading');
+    const place = autocomplete.getPlace();
+    if (!place || !place.formatted_address) {
+      return;
+    }
+
+    let city = '';
+    let country = '';
+    if (Array.isArray(place.address_components)) {
+      for (const component of place.address_components) {
+        if (component.types && component.types.includes('locality')) {
+          city = component.long_name;
+        } else if (component.types && component.types.includes('administrative_area_level_1') && !city) {
+          city = component.long_name;
+        }
+        if (component.types && component.types.includes('country')) {
+          country = component.long_name;
+        }
+      }
+    }
+
+    const latitude = place.geometry && place.geometry.location ? place.geometry.location.lat() : '';
+    const longitude = place.geometry && place.geometry.location ? place.geometry.location.lng() : '';
+
+    setInputValueAndDispatch(inputId, place.formatted_address || place.name || '');
+    setInputValueAndDispatch(cityId, city);
+    setInputValueAndDispatch(countryId, country);
+    setInputValueAndDispatch(placeIdId, place.place_id || '');
+    setInputValueAndDispatch(latitudeId, latitude === '' ? '' : String(latitude));
+    setInputValueAndDispatch(longitudeId, longitude === '' ? '' : String(longitude));
   });
 
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`POST ${url} returned ${response.status} ${text}`);
-  }
-
-  input.value = '';
-  return text;
-}
-
-export async function stloadsOpenProtectedDocument(url, token) {
-  const headers = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const response = await fetch(url, {
-    method: 'GET',
-    headers,
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`GET ${url} returned ${response.status} ${text}`);
-  }
-
-  const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  window.open(objectUrl, '_blank', 'noopener,noreferrer');
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+  input.dataset.googleAutocompleteAttached = 'true';
   return true;
-}
-
-export async function stloadsDownloadProtectedDocument(url, token, fileName) {
-  const headers = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const response = await fetch(url, {
-    method: 'GET',
-    headers,
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`GET ${url} returned ${response.status} ${text}`);
-  }
-
-  const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = objectUrl;
-  anchor.download = fileName || 'document.bin';
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
-  return true;
-}
-
-export async function stloadsHashSelectedFile(inputId) {
-  const input = document.getElementById(inputId);
-  if (!input || !input.files || input.files.length === 0) {
-    throw new Error('Choose a file before verifying a blockchain document.');
-  }
-
-  const file = input.files[0];
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  const hash = Array.from(new Uint8Array(digest))
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join('');
-
-  input.value = '';
-  return JSON.stringify({
-    fileName: file.name || 'document.bin',
-    hash,
-  });
 }

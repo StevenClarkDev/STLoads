@@ -79,34 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P7: Tenant, Organization, RBAC, And Session Hardening
-
-**Outcome:** Every screen and API route enforces tenant scope and least privilege.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\auth_session.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\auth.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\admin.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\auth.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\shared\src\auth_state.rs`
-
-- [ ] Add tenant and organization scope to session.
-- [ ] Add scoped roles:
-  - `platform_admin`
-  - `tenant_admin`
-  - `operations`
-  - `carrier_admin`
-  - `carrier_dispatcher`
-  - `driver`
-  - `finance`
-  - `compliance`
-  - `support`
-- [ ] Add resource permissions for posting, offer, booking, document, payment, compliance, admin, and integration actions.
-- [ ] Add support impersonation with required reason, expiry, and audit trail.
-- [ ] Ensure all DB reads include tenant scope.
-- [ ] Tests must prove cross-tenant access fails for postings, offers, docs, payments, chat, and admin screens.
-
 ### Task P8: Carrier Search, Filters, Saved Searches, And Alerts
 
 **Outcome:** Carrier-facing load board search is production-grade and real-data-backed.

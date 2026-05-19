@@ -8,11 +8,11 @@ use bcrypt::hash;
 use db::{
     auth::{
         CreateAdminUserInput, UpdateAdminUserProfileInput, create_admin_user_account,
-        delete_admin_user_account, find_user_by_id, find_user_detail_by_user_id, list_admin_users,
-        list_kyc_documents_by_user_id, list_pending_onboarding_users,
-        list_permission_names_for_role, list_user_history_entries, list_user_ids_for_role,
-        replace_role_permissions, review_onboarding_user, update_admin_user_account,
-        update_admin_user_profile,
+        create_support_impersonation_audit, delete_admin_user_account, find_user_by_id,
+        find_user_detail_by_user_id, list_admin_users, list_kyc_documents_by_user_id,
+        list_pending_onboarding_users, list_permission_names_for_role, list_user_history_entries,
+        list_user_ids_for_role, replace_role_permissions, review_onboarding_user,
+        update_admin_user_account, update_admin_user_profile,
     },
     dispatch::{count_admin_load_legs_filtered, list_admin_load_legs_filtered, review_load_status},
     tms::{replay_atmp_outbound_event, resolve_sync_error},
@@ -69,6 +69,22 @@ struct AdminLoadsQuery {
     tab: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct SupportImpersonationRequest {
+    target_user_id: i64,
+    tenant_id: String,
+    reason: String,
+    expires_minutes: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct SupportImpersonationResponse {
+    success: bool,
+    audit_id: Option<u64>,
+    expires_at: Option<String>,
+    message: String,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(index))
@@ -103,6 +119,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/stloads/outbound-events/{outbound_event_id}/replay",
             post(replay_atmp_outbound_event_handler),
+        )
+        .route(
+            "/support/impersonations",
+            post(create_support_impersonation_handler),
         )
 }
 
@@ -1653,6 +1673,70 @@ async fn replay_atmp_outbound_event_handler(
     })))
 }
 
+async fn create_support_impersonation_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<SupportImpersonationRequest>,
+) -> Result<Json<ApiResponse<SupportImpersonationResponse>>, StatusCode> {
+    let session = require_any_permission(
+        &state,
+        &headers,
+        &["support_impersonation", "manage_admin_actions"],
+    )
+    .await?;
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(SupportImpersonationResponse {
+            success: false,
+            audit_id: None,
+            expires_at: None,
+            message: format!(
+                "Support impersonation is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        })));
+    };
+
+    let Some(scope) = session.session.tenant_scope.as_ref() else {
+        return Err(StatusCode::FORBIDDEN);
+    };
+    let platform_admin = scope.role_key == "platform_admin";
+    if !platform_admin && scope.tenant_id != payload.tenant_id {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let reason = payload.reason.trim();
+    if reason.is_empty() {
+        return Ok(Json(ApiResponse::ok(SupportImpersonationResponse {
+            success: false,
+            audit_id: None,
+            expires_at: None,
+            message:
+                "Support impersonation requires a ticket, incident, or customer support reason."
+                    .into(),
+        })));
+    }
+
+    let expires_minutes = payload.expires_minutes.unwrap_or(15).clamp(1, 60);
+    let audit = create_support_impersonation_audit(
+        pool,
+        session.user.id,
+        payload.target_user_id,
+        payload.tenant_id.trim(),
+        reason,
+        expires_minutes,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(ApiResponse::ok(SupportImpersonationResponse {
+        success: true,
+        audit_id: Some(audit.id.max(0) as u64),
+        expires_at: Some(audit.expires_at.to_string()),
+        message: "Support impersonation audit was created with a bounded expiry.".into(),
+    })))
+}
+
 async fn require_any_permission(
     state: &AppState,
     headers: &HeaderMap,
@@ -2075,6 +2159,15 @@ fn admin_permission_key(permission: domain::auth::Permission) -> &'static str {
         domain::auth::Permission::ManageTracking => "manage_tracking",
         domain::auth::Permission::ManagePayments => "manage_payments",
         domain::auth::Permission::ManageTmsOperations => "manage_tms_operations",
+        domain::auth::Permission::ManagePostingActions => "manage_posting_actions",
+        domain::auth::Permission::ManageOfferActions => "manage_offer_actions",
+        domain::auth::Permission::ManageBookingActions => "manage_booking_actions",
+        domain::auth::Permission::ManageDocumentActions => "manage_document_actions",
+        domain::auth::Permission::ManagePaymentActions => "manage_payment_actions",
+        domain::auth::Permission::ManageComplianceActions => "manage_compliance_actions",
+        domain::auth::Permission::ManageAdminActions => "manage_admin_actions",
+        domain::auth::Permission::ManageIntegrationActions => "manage_integration_actions",
+        domain::auth::Permission::SupportImpersonation => "support_impersonation",
     }
 }
 

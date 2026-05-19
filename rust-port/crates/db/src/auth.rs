@@ -215,6 +215,35 @@ pub struct RoleTotalRecord {
     pub total: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct TenantScopeRecord {
+    pub tenant_id: String,
+    pub organization_id: Option<i64>,
+    pub scoped_role_key: String,
+    pub organization_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TenantResourceKind {
+    Posting,
+    Offer,
+    Document,
+    Payment,
+    Chat,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct SupportImpersonationAuditRecord {
+    pub id: i64,
+    pub tenant_id: String,
+    pub actor_user_id: i64,
+    pub target_user_id: i64,
+    pub reason: String,
+    pub started_at: NaiveDateTime,
+    pub expires_at: NaiveDateTime,
+    pub ended_at: Option<NaiveDateTime>,
+}
+
 pub async fn find_user_by_email(
     pool: &DbPool,
     email: &str,
@@ -1670,4 +1699,162 @@ pub async fn update_admin_user_account(
 
     tx.commit().await?;
     find_user_by_id(pool, updated_user_id).await
+}
+
+pub async fn list_tenant_scopes_for_user(
+    pool: &DbPool,
+    user_id: i64,
+) -> Result<Vec<TenantScopeRecord>, sqlx::Error> {
+    sqlx::query_as::<_, TenantScopeRecord>(
+        "SELECT
+            membership.tenant_id,
+            membership.organization_id,
+            membership.role_key AS scoped_role_key,
+            organization.organization_type
+         FROM organization_memberships membership
+         INNER JOIN organizations organization
+            ON organization.id = membership.organization_id
+           AND organization.tenant_id = membership.tenant_id
+           AND organization.deleted_at IS NULL
+         INNER JOIN tenants tenant
+            ON tenant.id = membership.tenant_id
+           AND tenant.deleted_at IS NULL
+         WHERE membership.user_id = $1
+           AND membership.status = 'active'
+           AND membership.deleted_at IS NULL
+         ORDER BY
+            CASE WHEN membership.role_key = 'platform_admin' THEN 0 ELSE 1 END,
+            membership.created_at ASC",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn find_primary_tenant_scope_for_user(
+    pool: &DbPool,
+    user_id: i64,
+) -> Result<Option<TenantScopeRecord>, sqlx::Error> {
+    Ok(list_tenant_scopes_for_user(pool, user_id)
+        .await?
+        .into_iter()
+        .next())
+}
+
+pub async fn tenant_can_access_resource(
+    pool: &DbPool,
+    tenant_id: &str,
+    kind: TenantResourceKind,
+    resource_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let exists = match kind {
+        TenantResourceKind::Posting => {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (
+                    SELECT 1 FROM stloads_postings
+                    WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+                 )",
+            )
+            .bind(resource_id)
+            .bind(tenant_id)
+            .fetch_one(pool)
+            .await?
+        }
+        TenantResourceKind::Offer => {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (
+                    SELECT 1
+                    FROM offers offer
+                    LEFT JOIN stloads_postings posting ON posting.id = offer.posting_id
+                    WHERE offer.id = $1
+                      AND COALESCE(offer.tenant_id, posting.tenant_id) = $2
+                 )",
+            )
+            .bind(resource_id)
+            .bind(tenant_id)
+            .fetch_one(pool)
+            .await?
+        }
+        TenantResourceKind::Document => {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (
+                    SELECT 1 FROM document_versions
+                    WHERE id = $1 AND tenant_id = $2
+                 )",
+            )
+            .bind(resource_id)
+            .bind(tenant_id)
+            .fetch_one(pool)
+            .await?
+        }
+        TenantResourceKind::Payment => {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (
+                    SELECT 1 FROM settlements
+                    WHERE id = $1 AND tenant_id = $2
+                 )",
+            )
+            .bind(resource_id)
+            .bind(tenant_id)
+            .fetch_one(pool)
+            .await?
+        }
+        TenantResourceKind::Chat => {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (
+                    SELECT 1
+                    FROM conversations conversation
+                    INNER JOIN offers offer ON offer.conversation_id = conversation.id
+                    LEFT JOIN stloads_postings posting ON posting.id = offer.posting_id
+                    WHERE conversation.id = $1
+                      AND COALESCE(offer.tenant_id, posting.tenant_id) = $2
+                 )",
+            )
+            .bind(resource_id)
+            .bind(tenant_id)
+            .fetch_one(pool)
+            .await?
+        }
+    };
+
+    Ok(exists)
+}
+
+pub fn tenant_scope_can_admin_tenant(scope: &TenantScopeRecord, target_tenant_id: &str) -> bool {
+    scope.scoped_role_key == "platform_admin" || scope.tenant_id == target_tenant_id
+}
+
+pub async fn create_support_impersonation_audit(
+    pool: &DbPool,
+    actor_user_id: i64,
+    target_user_id: i64,
+    tenant_id: &str,
+    reason: &str,
+    expires_minutes: i64,
+) -> Result<SupportImpersonationAuditRecord, sqlx::Error> {
+    let reason = reason.trim();
+    if reason.is_empty() || expires_minutes <= 0 {
+        return Err(sqlx::Error::Protocol(
+            "support impersonation requires a reason and positive expiry".into(),
+        ));
+    }
+
+    sqlx::query_as::<_, SupportImpersonationAuditRecord>(
+        "INSERT INTO support_impersonation_audits
+            (tenant_id, actor_user_id, target_user_id, reason, started_at, expires_at, created_at, updated_at)
+         VALUES (
+            $1, $2, $3, $4, CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP + ($5::text || ' minutes')::interval,
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+         )
+         RETURNING id, tenant_id, actor_user_id, target_user_id, reason, started_at, expires_at, ended_at",
+    )
+    .bind(tenant_id)
+    .bind(actor_user_id)
+    .bind(target_user_id)
+    .bind(reason)
+    .bind(expires_minutes)
+    .fetch_one(pool)
+    .await
 }

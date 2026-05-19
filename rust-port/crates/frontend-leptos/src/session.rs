@@ -138,6 +138,9 @@ fn unauthenticated_session(note: &str) -> AuthSessionState {
     AuthSessionState {
         authenticated: false,
         user: None,
+        tenant_scope: None,
+        tenant_scopes: Vec::new(),
+        impersonation: None,
         permissions: Vec::new(),
         notes: vec![note.to_string()],
     }
