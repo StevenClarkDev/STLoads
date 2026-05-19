@@ -1,3 +1,4 @@
+pub mod atmp_contract;
 pub mod auth;
 pub mod dispatch;
 pub mod marketplace;

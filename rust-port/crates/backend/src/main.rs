@@ -1,19 +1,5 @@
 use tracing::info;
 
-mod app;
-mod auth_session;
-mod config;
-mod document_storage;
-mod email;
-mod realtime_bus;
-mod routes;
-mod screen_data;
-mod state;
-mod stripe;
-#[cfg(test)]
-mod test_support;
-mod tms_scheduler;
-
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -23,9 +9,9 @@ async fn main() {
         )
         .init();
 
-    let state = state::AppState::from_env().await;
+    let state = backend::state::AppState::from_env().await;
     let bind_target = format!("{}:{}", state.config.bind_addr, state.config.port);
-    let app = app::router(state.clone());
+    let app = backend::app::router(state.clone());
 
     let listener = tokio::net::TcpListener::bind(&bind_target)
         .await

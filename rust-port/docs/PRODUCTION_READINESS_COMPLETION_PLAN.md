@@ -79,29 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P4: ATMP Contract Adapter And Inbound API
-
-**Outcome:** ATMP can publish, update, withdraw, close, and status-sync STLoads postings through the existing contract.
-
-**Files:**
-
-- Create: `C:\New folder\STLoads-api-review\rust-port\crates\domain\src\atmp_contract.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\tms.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\tms.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\shared\src\actions.rs`
-- Test: `C:\New folder\STLoads-api-review\rust-port\crates\backend\tests\atmp_contract.rs`
-
-- [ ] Implement contract version parsing.
-- [ ] Implement payload validation for publish, update, withdraw, close, cancel, status, document, and finance signals.
-- [ ] Persist raw payload, normalized payload, payload hash, idempotency key, event id, correlation id, tenant id, ATMP load id, and validation result.
-- [ ] Map valid ATMP publish payloads into one active STLoads posting.
-- [ ] Map ATMP update payloads into new posting versions.
-- [ ] Map ATMP withdraw/cancel into carrier-hidden terminal states.
-- [ ] Map ATMP close into closed posting state.
-- [ ] Reject unsupported contract versions with explicit JSON errors.
-- [ ] Reject missing tenant, missing ATMP load id, missing idempotency key, and invalid release gate.
-- [ ] Tests must prove replaying the same publish does not duplicate listings.
-
 ### Task P5: Integration Authentication Middleware
 
 **Outcome:** ATMP/STLoads API traffic is authenticated, signed, replay-protected, and rate-limited.
@@ -578,26 +555,24 @@ Do not call STLoads market-ready until every item below is true:
 
 ## Recommended Execution Order
 
-1. P3 Database schema baseline.
-2. P4 ATMP contract adapter and inbound API.
-3. P5 Integration authentication middleware.
-4. P6 Outbound event publisher.
-5. P7 Tenant/RBAC/session hardening.
-6. P16 Placeholder/demo data purge.
-7. P8 Carrier search and alerts.
-8. P9 Compliance and eligibility.
-9. P10 Offers, tenders, and booking.
-10. P11 Chat and notifications.
-11. P12 Execution and tracking.
-12. P13 Documents.
-13. P14 Payments.
-14. P15 Admin ops and reconciliation.
-15. P17 Realtime.
-16. P18 Observability and audit.
-17. P19 Security hardening.
-18. P20 Build and tests.
-19. P21 IBM deployment.
-20. P22 Launch documentation.
+1. P5 Integration authentication middleware.
+2. P6 Outbound event publisher.
+3. P7 Tenant/RBAC/session hardening.
+4. P16 Placeholder/demo data purge.
+5. P8 Carrier search and alerts.
+6. P9 Compliance and eligibility.
+7. P10 Offers, tenders, and booking.
+8. P11 Chat and notifications.
+9. P12 Execution and tracking.
+10. P13 Documents.
+11. P14 Payments.
+12. P15 Admin ops and reconciliation.
+13. P17 Realtime.
+14. P18 Observability and audit.
+15. P19 Security hardening.
+16. P20 Build and tests.
+17. P21 IBM deployment.
+18. P22 Launch documentation.
 
 ## Definition Of Done
 

@@ -358,3 +358,15 @@ pub struct TmsBulkStatusWebhookResponse {
     pub failed: usize,
     pub messages: Vec<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AtmpContractResponse {
+    pub success: bool,
+    pub action: String,
+    pub inbound_event_id: Option<i64>,
+    pub posting_id: Option<i64>,
+    pub handoff_id: Option<i64>,
+    pub status_label: String,
+    pub replayed: bool,
+    pub message: String,
+}

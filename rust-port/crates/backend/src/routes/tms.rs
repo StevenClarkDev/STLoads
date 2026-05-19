@@ -5,10 +5,11 @@ use axum::{
     routing::{get, post},
 };
 use db::tms::{
-    MaterializedHandoffResult, TmsWebhookMutationResult, apply_status_webhook, close_handoff,
-    create_sync_error, find_active_handoff_by_tms_load, find_handoff_by_id, push_handoff,
-    queue_handoff, requeue_handoff, withdraw_handoff,
+    MaterializedHandoffResult, TmsWebhookMutationResult, apply_atmp_contract_event,
+    apply_status_webhook, close_handoff, create_sync_error, find_active_handoff_by_tms_load,
+    find_handoff_by_id, push_handoff, queue_handoff, requeue_handoff, withdraw_handoff,
 };
+use domain::atmp_contract::AtmpContractEnvelope;
 use domain::tms::{
     HandoffStatus, HandoffStatusDescriptor, ReconciliationActionDescriptor, TmsModuleContract,
     TmsStatus, TmsStatusDescriptor, TmsWebhookSurfaceDescriptor, handoff_status_descriptors,
@@ -16,10 +17,12 @@ use domain::tms::{
     tms_webhook_surfaces,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use shared::{
-    ApiResponse, RealtimeEvent, RealtimeEventKind, RealtimeTopic, TmsBulkStatusWebhookRequest,
-    TmsBulkStatusWebhookResponse, TmsCloseRequest, TmsHandoffPayload, TmsHandoffResponse,
-    TmsRequeueRequest, TmsStatusWebhookRequest, TmsWebhookResponse, TmsWithdrawRequest,
+    ApiResponse, AtmpContractResponse, RealtimeEvent, RealtimeEventKind, RealtimeTopic,
+    TmsBulkStatusWebhookRequest, TmsBulkStatusWebhookResponse, TmsCloseRequest, TmsHandoffPayload,
+    TmsHandoffResponse, TmsRequeueRequest, TmsStatusWebhookRequest, TmsWebhookResponse,
+    TmsWithdrawRequest,
 };
 
 use crate::{
@@ -54,10 +57,71 @@ pub fn integration_router() -> Router<crate::state::AppState> {
         .route("/requeue", post(requeue))
         .route("/withdraw", post(withdraw))
         .route("/close", post(close))
+        .route("/contract", post(atmp_contract))
         .route("/webhook/status", post(webhook_status))
         .route("/webhook/bulk-status", post(webhook_bulk_status))
         .route("/webhook/cancel", post(webhook_cancel))
         .route("/webhook/close", post(webhook_close))
+}
+
+async fn atmp_contract(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> Result<Json<ApiResponse<AtmpContractResponse>>, StatusCode> {
+    let _actor_session = authorize_tms_lifecycle_request(&state, &headers).await?;
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(AtmpContractResponse {
+            success: false,
+            action: "unknown".into(),
+            inbound_event_id: None,
+            posting_id: None,
+            handoff_id: None,
+            status_label: "Unavailable".into(),
+            replayed: false,
+            message: format!(
+                "ATMP contract handling is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        })));
+    };
+
+    if let Err(error) = AtmpContractEnvelope::try_from_value(payload.clone()) {
+        return Ok(Json(ApiResponse::ok(AtmpContractResponse {
+            success: false,
+            action: "invalid".into(),
+            inbound_event_id: None,
+            posting_id: None,
+            handoff_id: None,
+            status_label: error.code().into(),
+            replayed: false,
+            message: error.to_string(),
+        })));
+    }
+
+    match apply_atmp_contract_event(pool, payload).await {
+        Ok(result) => Ok(Json(ApiResponse::ok(AtmpContractResponse {
+            success: true,
+            action: result.action,
+            inbound_event_id: result.inbound_event_id,
+            posting_id: result.posting_id,
+            handoff_id: result.handoff_id,
+            status_label: result.status_label,
+            replayed: result.replayed,
+            message: result.message,
+        }))),
+        Err(error) => Ok(Json(ApiResponse::ok(AtmpContractResponse {
+            success: false,
+            action: "error".into(),
+            inbound_event_id: None,
+            posting_id: None,
+            handoff_id: None,
+            status_label: "Contract Failed".into(),
+            replayed: false,
+            message: format!("ATMP contract failed: {error}"),
+        }))),
+    }
 }
 
 fn metadata_router() -> Router<crate::state::AppState> {

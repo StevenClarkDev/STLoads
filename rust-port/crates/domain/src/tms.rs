@@ -225,6 +225,22 @@ pub const TMS_STATUS_DESCRIPTORS: &[TmsStatusDescriptor] = &[
 pub const TMS_WEBHOOK_SURFACES: &[TmsWebhookSurfaceDescriptor] = &[
     TmsWebhookSurfaceDescriptor {
         method: "POST",
+        route: "/api/stloads/contract",
+        purpose: "ATMP contract envelope for publish, update, withdraw, close, cancel, status, document, and finance signals.",
+        payload_keys: &[
+            "contract_version",
+            "action",
+            "tenant_id",
+            "event_id",
+            "correlation_id",
+            "idempotency_key",
+            "atmp_load_id",
+            "release_gate",
+            "payload",
+        ],
+    },
+    TmsWebhookSurfaceDescriptor {
+        method: "POST",
         route: "/api/stloads/webhook/status",
         purpose: "Single status reconciliation webhook from the upstream TMS.",
         payload_keys: &[

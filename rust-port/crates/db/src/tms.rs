@@ -1,9 +1,12 @@
 use chrono::NaiveDateTime;
-use domain::tms::{
-    HandoffStatus, HandoffStatusDescriptor, ReconciliationAction, ReconciliationActionDescriptor,
-    TmsModuleContract, TmsStatus, TmsStatusDescriptor, TmsWebhookSurfaceDescriptor,
-    handoff_status_descriptors, reconciliation_action_descriptors, tms_module_contract,
-    tms_status_descriptors, tms_webhook_surfaces,
+use domain::{
+    atmp_contract::{AtmpContractAction, AtmpContractEnvelope, stable_json_hash},
+    tms::{
+        HandoffStatus, HandoffStatusDescriptor, ReconciliationAction,
+        ReconciliationActionDescriptor, TmsModuleContract, TmsStatus, TmsStatusDescriptor,
+        TmsWebhookSurfaceDescriptor, handoff_status_descriptors, reconciliation_action_descriptors,
+        tms_module_contract, tms_status_descriptors, tms_webhook_surfaces,
+    },
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -179,6 +182,17 @@ pub struct StloadsMismatchCountsRecord {
     pub tms_invoiced: i64,
     pub no_tms_status: i64,
     pub stale_30d: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct AtmpContractApplyResult {
+    pub inbound_event_id: Option<i64>,
+    pub posting_id: Option<i64>,
+    pub handoff_id: Option<i64>,
+    pub action: String,
+    pub status_label: String,
+    pub replayed: bool,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -415,6 +429,123 @@ pub async fn webhook_surface_catalog() -> &'static [TmsWebhookSurfaceDescriptor]
 
 pub async fn reconciliation_action_catalog() -> &'static [ReconciliationActionDescriptor] {
     reconciliation_action_descriptors()
+}
+
+pub async fn apply_atmp_contract_event(
+    pool: &DbPool,
+    raw_payload: Value,
+) -> Result<AtmpContractApplyResult, sqlx::Error> {
+    let envelope = AtmpContractEnvelope::try_from_value(raw_payload.clone())
+        .map_err(|error| sqlx::Error::Protocol(format!("{}: {}", error.code(), error).into()))?;
+
+    if let Some(existing) = find_inbound_event_by_idempotency(
+        pool,
+        &envelope.tenant_id,
+        &envelope.idempotency_key,
+        envelope.action.as_str(),
+    )
+    .await?
+    {
+        return Ok(existing);
+    }
+
+    let normalized_payload = envelope.normalized_payload();
+    let payload_hash = envelope.payload_hash();
+    let mut tx = pool.begin().await?;
+
+    ensure_contract_tenant(&mut tx, &envelope.tenant_id).await?;
+
+    let inbound_event_id = insert_atmp_inbound_event(
+        &mut tx,
+        &envelope,
+        &raw_payload,
+        &normalized_payload,
+        &payload_hash,
+        "validated",
+    )
+    .await?;
+
+    insert_contract_payload(
+        &mut tx,
+        &envelope.tenant_id,
+        inbound_event_id,
+        &envelope.contract_version,
+        &payload_hash,
+        &normalized_payload,
+    )
+    .await?;
+
+    let (posting_id, status_label, message) = match envelope.action {
+        AtmpContractAction::Publish => {
+            let posting_id = upsert_atmp_posting(&mut tx, &envelope, &payload_hash, true).await?;
+            (
+                Some(posting_id),
+                "Published".into(),
+                "ATMP publish mapped to one active STLoads posting.".into(),
+            )
+        }
+        AtmpContractAction::Update => {
+            let posting_id = upsert_atmp_posting(&mut tx, &envelope, &payload_hash, false).await?;
+            (
+                Some(posting_id),
+                "Updated".into(),
+                "ATMP update mapped into a new STLoads posting version.".into(),
+            )
+        }
+        AtmpContractAction::Withdraw | AtmpContractAction::Cancel | AtmpContractAction::Close => {
+            let posting_id = transition_atmp_posting(&mut tx, &envelope).await?;
+            let status_label = envelope
+                .action
+                .terminal_status()
+                .unwrap_or("terminal")
+                .replace('_', " ");
+            (
+                posting_id,
+                status_label,
+                "ATMP terminal signal applied to the STLoads posting.".into(),
+            )
+        }
+        AtmpContractAction::Status | AtmpContractAction::Document | AtmpContractAction::Finance => {
+            let posting_id = find_posting_id_for_atmp_load(
+                &mut tx,
+                &envelope.tenant_id,
+                &envelope.atmp_load_id,
+                envelope.atmp_leg_id.as_deref(),
+            )
+            .await?;
+            if let Some(posting_id) = posting_id {
+                append_posting_version(&mut tx, &envelope, posting_id, &payload_hash).await?;
+            }
+            (
+                posting_id,
+                envelope.action.as_str().into(),
+                "ATMP signal persisted and linked when a posting exists.".into(),
+            )
+        }
+    };
+
+    sqlx::query(
+        "UPDATE atmp_inbound_events
+         SET validation_status = 'processed',
+             processed_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1",
+    )
+    .bind(inbound_event_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(AtmpContractApplyResult {
+        inbound_event_id: Some(inbound_event_id),
+        posting_id,
+        handoff_id: None,
+        action: envelope.action.as_str().into(),
+        status_label,
+        replayed: false,
+        message,
+    })
 }
 
 pub async fn find_sync_error_by_id(
@@ -1665,4 +1796,455 @@ fn sanitize_load_token(value: &str) -> String {
     } else {
         sanitized.to_uppercase()
     }
+}
+
+async fn find_inbound_event_by_idempotency(
+    pool: &DbPool,
+    tenant_id: &str,
+    idempotency_key: &str,
+    action: &str,
+) -> Result<Option<AtmpContractApplyResult>, sqlx::Error> {
+    let existing = sqlx::query_as::<_, (i64, Option<String>)>(
+        "SELECT id, atmp_load_id
+         FROM atmp_inbound_events
+         WHERE tenant_id = $1 AND idempotency_key = $2
+         LIMIT 1",
+    )
+    .bind(tenant_id)
+    .bind(idempotency_key)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some((inbound_event_id, atmp_load_id)) = existing else {
+        return Ok(None);
+    };
+
+    let posting_id = if let Some(atmp_load_id) = atmp_load_id {
+        find_posting_id_for_atmp_load_pool(pool, tenant_id, &atmp_load_id).await?
+    } else {
+        None
+    };
+
+    Ok(Some(AtmpContractApplyResult {
+        inbound_event_id: Some(inbound_event_id),
+        posting_id,
+        handoff_id: None,
+        action: action.into(),
+        status_label: "Replay".into(),
+        replayed: true,
+        message: "Idempotent ATMP contract replay returned the existing result.".into(),
+    }))
+}
+
+async fn ensure_contract_tenant(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO tenants (id, name, slug, status, created_at, updated_at)
+         VALUES ($1, $2, $3, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         ON CONFLICT (id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP",
+    )
+    .bind(tenant_id)
+    .bind(tenant_id)
+    .bind(tenant_id.to_ascii_lowercase().replace('_', "-"))
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn insert_atmp_inbound_event(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    envelope: &AtmpContractEnvelope,
+    raw_payload: &Value,
+    normalized_payload: &Value,
+    payload_hash: &str,
+    validation_status: &str,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        "INSERT INTO atmp_inbound_events (
+            tenant_id, event_id, correlation_id, idempotency_key, contract_version, action,
+            atmp_load_id, atmp_leg_id, payload_hash, raw_payload, normalized_payload,
+            validation_status, validation_errors, created_at, updated_at
+         ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10, $11,
+            $12, '[]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+         )
+         RETURNING id",
+    )
+    .bind(&envelope.tenant_id)
+    .bind(&envelope.event_id)
+    .bind(&envelope.correlation_id)
+    .bind(&envelope.idempotency_key)
+    .bind(&envelope.contract_version)
+    .bind(envelope.action.as_str())
+    .bind(&envelope.atmp_load_id)
+    .bind(envelope.atmp_leg_id.as_deref())
+    .bind(payload_hash)
+    .bind(raw_payload)
+    .bind(normalized_payload)
+    .bind(validation_status)
+    .fetch_one(&mut **tx)
+    .await
+}
+
+async fn insert_contract_payload(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: &str,
+    inbound_event_id: i64,
+    contract_version: &str,
+    payload_hash: &str,
+    payload: &Value,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO atmp_contract_payloads (
+            tenant_id, inbound_event_id, contract_version, direction, payload_hash, payload, created_at
+         ) VALUES ($1, $2, $3, 'inbound', $4, $5, CURRENT_TIMESTAMP)",
+    )
+    .bind(tenant_id)
+    .bind(inbound_event_id)
+    .bind(contract_version)
+    .bind(payload_hash)
+    .bind(payload)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn upsert_atmp_posting(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    envelope: &AtmpContractEnvelope,
+    payload_hash: &str,
+    publish: bool,
+) -> Result<i64, sqlx::Error> {
+    let source_leg_id = normalized_source_leg_id(envelope);
+    let title = envelope
+        .payload
+        .get("title")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&envelope.atmp_load_id);
+    let freight_mode = string_payload(&envelope.payload, "freight_mode", "road");
+    let equipment_type = optional_string_payload(&envelope.payload, "equipment_type");
+    let commodity_description = optional_string_payload(&envelope.payload, "commodity_description");
+    let weight = envelope.payload.get("weight").and_then(Value::as_f64);
+    let weight_unit = string_payload(&envelope.payload, "weight_unit", "lbs");
+    let status = if publish { "published" } else { "updated" };
+    let visibility = if publish { "public" } else { "private" };
+    let readiness = string_payload(&envelope.payload, "readiness", "ready");
+    let is_hazardous = envelope
+        .payload
+        .get("is_hazardous")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let is_temperature_controlled = envelope
+        .payload
+        .get("is_temperature_controlled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let posting_number = format!("ATMP-{}-{}", envelope.atmp_load_id, source_leg_id);
+
+    let posting_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO stloads_postings (
+            tenant_id, source_system, source_load_id, source_leg_id, posting_number, title,
+            freight_mode, equipment_type, commodity_description, weight, weight_unit,
+            status, visibility, release_gate, readiness, is_hazardous, is_temperature_controlled,
+            published_at, metadata, created_at, updated_at
+         ) VALUES (
+            $1, 'atmp', $2, $3, $4, $5,
+            $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15, $16,
+            CASE WHEN $17 THEN CURRENT_TIMESTAMP ELSE NULL END,
+            $18, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+         )
+         ON CONFLICT (tenant_id, posting_number) DO UPDATE SET
+            title = EXCLUDED.title,
+            freight_mode = EXCLUDED.freight_mode,
+            equipment_type = EXCLUDED.equipment_type,
+            commodity_description = EXCLUDED.commodity_description,
+            weight = EXCLUDED.weight,
+            weight_unit = EXCLUDED.weight_unit,
+            status = EXCLUDED.status,
+            visibility = EXCLUDED.visibility,
+            release_gate = EXCLUDED.release_gate,
+            readiness = EXCLUDED.readiness,
+            is_hazardous = EXCLUDED.is_hazardous,
+            is_temperature_controlled = EXCLUDED.is_temperature_controlled,
+            published_at = COALESCE(stloads_postings.published_at, EXCLUDED.published_at),
+            metadata = EXCLUDED.metadata,
+            updated_at = CURRENT_TIMESTAMP
+         RETURNING id",
+    )
+    .bind(&envelope.tenant_id)
+    .bind(&envelope.atmp_load_id)
+    .bind(&source_leg_id)
+    .bind(&posting_number)
+    .bind(title)
+    .bind(freight_mode)
+    .bind(equipment_type.as_deref())
+    .bind(commodity_description.as_deref())
+    .bind(weight)
+    .bind(weight_unit)
+    .bind(status)
+    .bind(visibility)
+    .bind(envelope.release_gate.as_deref())
+    .bind(readiness)
+    .bind(is_hazardous)
+    .bind(is_temperature_controlled)
+    .bind(publish)
+    .bind(serde_json::json!({
+        "atmp_event_id": envelope.event_id,
+        "atmp_correlation_id": envelope.correlation_id,
+        "payload_hash": payload_hash,
+    }))
+    .fetch_one(&mut **tx)
+    .await?;
+
+    append_posting_stops_and_rate(tx, envelope, posting_id).await?;
+    append_posting_version(tx, envelope, posting_id, payload_hash).await?;
+    Ok(posting_id)
+}
+
+async fn append_posting_stops_and_rate(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    envelope: &AtmpContractEnvelope,
+    posting_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM stloads_posting_stops WHERE tenant_id = $1 AND posting_id = $2")
+        .bind(&envelope.tenant_id)
+        .bind(posting_id)
+        .execute(&mut **tx)
+        .await?;
+
+    for (sequence, stop_type, prefix) in
+        [(1_i32, "pickup", "pickup"), (2_i32, "dropoff", "dropoff")]
+    {
+        sqlx::query(
+            "INSERT INTO stloads_posting_stops (
+                tenant_id, posting_id, stop_sequence, stop_type, address_line1, city,
+                state_region, postal_code, country_code, window_start, window_end,
+                instructions, created_at, updated_at
+             ) VALUES (
+                $1, $2, $3, $4, $5, $6,
+                $7, $8, $9, $10::timestamp, $11::timestamp,
+                $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+             )",
+        )
+        .bind(&envelope.tenant_id)
+        .bind(posting_id)
+        .bind(sequence)
+        .bind(stop_type)
+        .bind(string_payload(
+            &envelope.payload,
+            &format!("{prefix}_address"),
+            "",
+        ))
+        .bind(string_payload(
+            &envelope.payload,
+            &format!("{prefix}_city"),
+            "",
+        ))
+        .bind(optional_string_payload(&envelope.payload, &format!("{prefix}_state")).as_deref())
+        .bind(optional_string_payload(&envelope.payload, &format!("{prefix}_zip")).as_deref())
+        .bind(string_payload(
+            &envelope.payload,
+            &format!("{prefix}_country"),
+            "US",
+        ))
+        .bind(
+            optional_string_payload(&envelope.payload, &format!("{prefix}_window_start"))
+                .as_deref(),
+        )
+        .bind(
+            optional_string_payload(&envelope.payload, &format!("{prefix}_window_end")).as_deref(),
+        )
+        .bind(
+            optional_string_payload(&envelope.payload, &format!("{prefix}_instructions"))
+                .as_deref(),
+        )
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    let amount = envelope
+        .payload
+        .get("board_rate")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let currency = string_payload(&envelope.payload, "rate_currency", "USD");
+    sqlx::query(
+        "INSERT INTO stloads_posting_rates (
+            tenant_id, posting_id, rate_type, currency, amount, accessorial_policy,
+            is_book_now, effective_at, created_at, updated_at
+         ) VALUES ($1, $2, 'flat', $3, $4, $5, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(&envelope.tenant_id)
+    .bind(posting_id)
+    .bind(currency)
+    .bind(amount)
+    .bind(envelope.payload.get("accessorial_flags").cloned().unwrap_or_else(|| serde_json::json!({})))
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+async fn append_posting_version(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    envelope: &AtmpContractEnvelope,
+    posting_id: i64,
+    payload_hash: &str,
+) -> Result<i64, sqlx::Error> {
+    let next_version: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(version_number), 0) + 1
+         FROM stloads_posting_versions
+         WHERE tenant_id = $1 AND posting_id = $2",
+    )
+    .bind(&envelope.tenant_id)
+    .bind(posting_id)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    let version_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO stloads_posting_versions (
+            tenant_id, posting_id, version_number, change_reason, normalized_payload,
+            payload_hash, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+         RETURNING id",
+    )
+    .bind(&envelope.tenant_id)
+    .bind(posting_id)
+    .bind(next_version)
+    .bind(envelope.action.as_str())
+    .bind(envelope.normalized_payload())
+    .bind(payload_hash)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE stloads_postings
+         SET active_version = $1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2",
+    )
+    .bind(version_id)
+    .bind(posting_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(version_id)
+}
+
+async fn transition_atmp_posting(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    envelope: &AtmpContractEnvelope,
+) -> Result<Option<i64>, sqlx::Error> {
+    let Some(status) = envelope.action.terminal_status() else {
+        return Ok(None);
+    };
+    let source_leg_id = normalized_source_leg_id(envelope);
+    let timestamp_column = match envelope.action {
+        AtmpContractAction::Close => "closed_at",
+        AtmpContractAction::Cancel => "canceled_at",
+        _ => "withdrawn_at",
+    };
+    let sql = format!(
+        "UPDATE stloads_postings
+         SET status = $1,
+             visibility = 'private',
+             {timestamp_column} = CURRENT_TIMESTAMP,
+             metadata = COALESCE(metadata, '{{}}'::jsonb) || $2::jsonb,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE tenant_id = $3 AND source_system = 'atmp' AND source_load_id = $4 AND source_leg_id = $5
+         RETURNING id"
+    );
+
+    let posting_id = sqlx::query_scalar::<_, i64>(&sql)
+        .bind(status)
+        .bind(serde_json::json!({
+            "terminal_event_id": envelope.event_id,
+            "terminal_action": envelope.action.as_str(),
+        }))
+        .bind(&envelope.tenant_id)
+        .bind(&envelope.atmp_load_id)
+        .bind(&source_leg_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+
+    if let Some(posting_id) = posting_id {
+        let hash = stable_json_hash(&envelope.normalized_payload());
+        append_posting_version(tx, envelope, posting_id, &hash).await?;
+    }
+
+    Ok(posting_id)
+}
+
+async fn find_posting_id_for_atmp_load(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: &str,
+    atmp_load_id: &str,
+    atmp_leg_id: Option<&str>,
+) -> Result<Option<i64>, sqlx::Error> {
+    let source_leg_id = atmp_leg_id.unwrap_or("primary");
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id
+         FROM stloads_postings
+         WHERE tenant_id = $1 AND source_system = 'atmp' AND source_load_id = $2 AND source_leg_id = $3
+         ORDER BY id DESC
+         LIMIT 1",
+    )
+    .bind(tenant_id)
+    .bind(atmp_load_id)
+    .bind(source_leg_id)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+async fn find_posting_id_for_atmp_load_pool(
+    pool: &DbPool,
+    tenant_id: &str,
+    atmp_load_id: &str,
+) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id
+         FROM stloads_postings
+         WHERE tenant_id = $1 AND source_system = 'atmp' AND source_load_id = $2
+         ORDER BY id DESC
+         LIMIT 1",
+    )
+    .bind(tenant_id)
+    .bind(atmp_load_id)
+    .fetch_optional(pool)
+    .await
+}
+
+fn normalized_source_leg_id(envelope: &AtmpContractEnvelope) -> String {
+    envelope
+        .atmp_leg_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("primary")
+        .to_string()
+}
+
+fn string_payload(payload: &Value, key: &str, fallback: &str) -> String {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn optional_string_payload(payload: &Value, key: &str) -> Option<String> {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
