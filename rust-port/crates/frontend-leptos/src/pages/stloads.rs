@@ -2,9 +2,9 @@ use futures_util::future::AbortHandle;
 use leptos::{prelude::*, tachys::view::any_view::IntoAny, task::spawn_local};
 use leptos_router::components::A;
 use shared::{
-    RealtimeEventKind, RealtimeTopic, ResolveSyncErrorRequest, StloadsOperationsScreen,
-    TmsCloseRequest, TmsHandoffPayload, TmsRequeueRequest, TmsStatusWebhookRequest,
-    TmsWithdrawRequest,
+    AdminReasonRequest, RealtimeEventKind, RealtimeTopic, ResolveSyncErrorRequest,
+    StloadsOperationsScreen, TmsCloseRequest, TmsHandoffPayload, TmsRequeueRequest,
+    TmsStatusWebhookRequest, TmsWithdrawRequest,
 };
 
 use crate::{
@@ -102,6 +102,7 @@ pub fn StloadsOperationsPage() -> impl IntoView {
     let error_message = RwSignal::new(None::<String>);
     let action_message = RwSignal::new(None::<String>);
     let pending_sync_error_id = RwSignal::new(None::<u64>);
+    let pending_dead_letter_id = RwSignal::new(None::<u64>);
     let refresh_nonce = RwSignal::new(0_u64);
     let ws_connected = RwSignal::new(false);
     let ws_handle = RwSignal::new(None::<AbortHandle>);
@@ -396,6 +397,50 @@ pub fn StloadsOperationsPage() -> impl IntoView {
         });
     };
 
+    let force_withdraw_handoff = move |_| {
+        let handoff_id = match selected_handoff_id.get().trim().parse::<u64>() {
+            Ok(value) => value,
+            Err(_) => {
+                action_message.set(Some(
+                    "Select or enter a valid handoff id before force-withdrawing.".into(),
+                ));
+                return;
+            }
+        };
+        let reason = operator_reason.get();
+        if reason.trim().len() < 8 {
+            action_message.set(Some(
+                "Force-withdraw requires an operator reason of at least 8 characters.".into(),
+            ));
+            return;
+        }
+
+        pending_action.set(Some("force_withdraw".into()));
+        action_message.set(None);
+        let auth = auth.clone();
+        let request = AdminReasonRequest { reason };
+        spawn_local(async move {
+            match api::force_withdraw_handoff(handoff_id, &request).await {
+                Ok(result) => {
+                    action_message.set(Some(result.message));
+                    if result.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            pending_action.set(None);
+        });
+    };
+
     let close_handoff = move |_| {
         let handoff_id = match selected_handoff_id.get().trim().parse::<i64>() {
             Ok(value) => value,
@@ -494,6 +539,36 @@ pub fn StloadsOperationsPage() -> impl IntoView {
         });
     };
 
+    let replay_dead_letter = move |dead_letter_id: u64| {
+        if pending_dead_letter_id.get().is_some() {
+            return;
+        }
+
+        pending_dead_letter_id.set(Some(dead_letter_id));
+        action_message.set(None);
+        let auth = auth.clone();
+        spawn_local(async move {
+            match api::replay_dead_letter_event(dead_letter_id).await {
+                Ok(result) => {
+                    action_message.set(Some(result.message));
+                    if result.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            pending_dead_letter_id.set(None);
+        });
+    };
+
     view! {
         {move || {
             if let Some(guard) = admin_guard_view(&auth, "STLOADS Operations", &["access_admin_portal", "manage_tms_operations"]) {
@@ -516,6 +591,18 @@ pub fn StloadsOperationsPage() -> impl IntoView {
                         <section style="padding:1rem;border:1px solid #fecaca;border-radius:1rem;background:#fff7f7;display:grid;gap:0.5rem;">
                             <strong>{move || screen.get().map(|value| format!("{} unresolved sync issues", value.sync_issue_summary.total)).unwrap_or_else(|| "Loading unresolved sync issues...".into())}</strong>
                             <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">{move || screen.get().map(|value| view! { <><span style=tone_style("danger")>{format!("{} critical", value.sync_issue_summary.critical)}</span><span style=tone_style("warning")>{format!("{} error", value.sync_issue_summary.error)}</span><span style=tone_style("info")>{format!("{} warning", value.sync_issue_summary.warning)}</span></> })}</div>
+                        </section>
+
+                        <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.85rem;">
+                            {move || screen.get().map(|value| value.health_cards.into_iter().map(|card| {
+                                view! {
+                                    <div style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.35rem;">
+                                        <span style=tone_style(&card.tone)>{card.label}</span>
+                                        <strong style="font-size:1.25rem;">{card.value}</strong>
+                                        <small>{card.note}</small>
+                                    </div>
+                                }
+                            }).collect_view())}
                         </section>
 
                         <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.85rem;">
@@ -548,6 +635,7 @@ pub fn StloadsOperationsPage() -> impl IntoView {
                                 <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
                                     <button type="button" on:click=requeue_handoff disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #6d28d9;border-radius:0.85rem;background:#f5f3ff;color:#6d28d9;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("requeue") { "Requeueing..." } else { "Requeue" }}</button>
                                     <button type="button" on:click=withdraw_handoff disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #d97706;border-radius:0.85rem;background:#fff7ed;color:#b45309;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("withdraw") { "Withdrawing..." } else { "Withdraw" }}</button>
+                                    <button type="button" on:click=force_withdraw_handoff disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #be123c;border-radius:0.85rem;background:#fff1f2;color:#be123c;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("force_withdraw") { "Force-withdrawing..." } else { "Force withdraw" }}</button>
                                     <button type="button" on:click=close_handoff disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #0f766e;border-radius:0.85rem;background:#ecfdf5;color:#0f766e;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("close") { "Closing..." } else { "Close" }}</button>
                                 </div>
                                 <hr style="border:none;border-top:1px solid #e5e7eb;width:100%;" />
@@ -576,6 +664,30 @@ pub fn StloadsOperationsPage() -> impl IntoView {
                                 }).collect_view().into_any()).unwrap_or_else(|| view! { <p style="margin:0;">"No STLOADS issue data is available yet."</p> }.into_any()) }}
                             </div>
 
+                            <div style="border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#fcfcfb;display:grid;gap:0.75rem;">
+                                <strong>"Dead-letter queue"</strong>
+                                {move || if is_loading.get() && screen.get().is_none() { view! { <p style="margin:0;">"Loading dead-letter events from the Rust backend..."</p> }.into_any() } else { screen.get().map(|value| {
+                                    if value.dead_letter_events.is_empty() {
+                                        view! { <p style="margin:0;">"No unresolved dead-letter events."</p> }.into_any()
+                                    } else {
+                                        value.dead_letter_events.into_iter().map(|event| {
+                                            let event_id = event.id;
+                                            let is_replaying = Signal::derive(move || pending_dead_letter_id.get() == Some(event_id));
+                                            view! {
+                                                <div style="padding:0.85rem;border:1px solid #e5e7eb;border-radius:0.9rem;display:grid;gap:0.5rem;">
+                                                    <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;flex-wrap:wrap;"><code>{format!("#{} {}", event.id, event.source_queue)}</code><small>{event.parked_at_label}</small></div>
+                                                    <span>{event.event_type}</span>
+                                                    <small>{event.error_label}</small>
+                                                    <button type="button" style="padding:0.5rem 0.8rem;border-radius:0.75rem;border:1px solid #6d28d9;background:#f5f3ff;color:#6d28d9;cursor:pointer;justify-self:end;" disabled=move || is_replaying.get() on:click=move |_| replay_dead_letter(event_id)>{move || if is_replaying.get() { "Replaying..." } else { "Replay" }}</button>
+                                                </div>
+                                            }
+                                        }).collect_view().into_any()
+                                    }
+                                }).unwrap_or_else(|| view! { <p style="margin:0;">"No dead-letter data is available yet."</p> }.into_any()) }}
+                            </div>
+                        </section>
+
+                        <section style="display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start;">
                             <div style="overflow:auto;border:1px solid #e5e7eb;border-radius:1rem;">
                                 <div style="padding:1rem;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:center;">
                                     <div><strong>"Handoff records"</strong><p style="margin:0.35rem 0 0;">{move || screen.get().map(|value| format!("Showing {} handoffs", value.active_filter.unwrap_or_else(|| "all".into()))).unwrap_or_else(|| "Loading handoff filter...".into())}</p></div>

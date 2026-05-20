@@ -1,7 +1,7 @@
 use futures_util::future::AbortHandle;
 use leptos::{prelude::*, tachys::view::any_view::IntoAny, task::spawn_local};
 use leptos_router::components::A;
-use shared::{RealtimeEventKind, RealtimeTopic};
+use shared::{AdminCarrierStatusRequest, AdminReasonRequest, RealtimeEventKind, RealtimeTopic};
 
 use crate::{
     api::{self, AdminOverview},
@@ -21,6 +21,12 @@ pub fn AdminDashboardPage() -> impl IntoView {
     let refresh_nonce = RwSignal::new(0_u64);
     let ws_connected = RwSignal::new(false);
     let ws_handle = RwSignal::new(None::<AbortHandle>);
+    let support_user_id = RwSignal::new(String::new());
+    let support_carrier_profile_id = RwSignal::new(String::new());
+    let support_tenant_id = RwSignal::new(String::new());
+    let support_carrier_status = RwSignal::new("paused".to_string());
+    let support_reason = RwSignal::new(String::new());
+    let support_pending = RwSignal::new(None::<String>);
 
     let can_view = Signal::derive(move || {
         session::has_permission(&auth, "access_admin_portal")
@@ -60,6 +66,108 @@ pub fn AdminDashboardPage() -> impl IntoView {
             is_loading.set(false);
         });
     });
+
+    let revoke_sessions = move |_| {
+        let user_id = match support_user_id.get().trim().parse::<u64>() {
+            Ok(value) => value,
+            Err(_) => {
+                action_message.set(Some(
+                    "Enter a valid user id before revoking sessions.".into(),
+                ));
+                return;
+            }
+        };
+        let reason = support_reason.get();
+        if reason.trim().len() < 8 {
+            action_message.set(Some(
+                "Enter an operator reason of at least 8 characters.".into(),
+            ));
+            return;
+        }
+        support_pending.set(Some("revoke".into()));
+        action_message.set(None);
+        let auth = auth.clone();
+        spawn_local(async move {
+            match api::revoke_admin_user_sessions(user_id, &AdminReasonRequest { reason }).await {
+                Ok(result) => action_message.set(Some(result.message)),
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            support_pending.set(None);
+        });
+    };
+
+    let update_carrier_status = move |_| {
+        let carrier_profile_id = match support_carrier_profile_id.get().trim().parse::<u64>() {
+            Ok(value) => value,
+            Err(_) => {
+                action_message.set(Some(
+                    "Enter a valid carrier profile id before changing status.".into(),
+                ));
+                return;
+            }
+        };
+        let tenant_id = support_tenant_id.get();
+        let reason = support_reason.get();
+        if tenant_id.trim().is_empty() || reason.trim().len() < 8 {
+            action_message.set(Some(
+                "Carrier status needs tenant id and an operator reason of at least 8 characters."
+                    .into(),
+            ));
+            return;
+        }
+        support_pending.set(Some("carrier".into()));
+        action_message.set(None);
+        let auth = auth.clone();
+        let request = AdminCarrierStatusRequest {
+            tenant_id,
+            status: support_carrier_status.get(),
+            reason,
+        };
+        spawn_local(async move {
+            match api::update_carrier_status(carrier_profile_id, &request).await {
+                Ok(result) => {
+                    action_message.set(Some(result.message));
+                    if result.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            support_pending.set(None);
+        });
+    };
+
+    let export_audit = move |_| {
+        support_pending.set(Some("audit".into()));
+        action_message.set(None);
+        let auth = auth.clone();
+        spawn_local(async move {
+            match api::export_admin_audit().await {
+                Ok(result) => action_message.set(Some(format!(
+                    "Audit export generated {} rows. CSV bytes: {}.",
+                    result.total_rows,
+                    result.csv.len()
+                ))),
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            support_pending.set(None);
+        });
+    };
 
     Effect::new(move |_| {
         let current_session = auth.session.get();
@@ -150,6 +258,9 @@ pub fn AdminDashboardPage() -> impl IntoView {
 
                         {move || error_message.get().map(|message| view! {
                             <section class="auth-notice" style="border-color:#fecaca;background:#fff1f2;color:#be123c;">{message}</section>
+                        })}
+                        {move || action_message.get().map(|message| view! {
+                            <section class="auth-notice">{message}</section>
                         })}
 
                         <section class="php-grid columns-3">
@@ -246,6 +357,26 @@ pub fn AdminDashboardPage() -> impl IntoView {
                                                 .into_any())
                                         }
                                     }}
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="php-card">
+                            <div class="php-card-body">
+                                <h5 style="margin:0 0 1rem;">"Support Controls"</h5>
+                                <div class="php-grid columns-3">
+                                    <label style="display:grid;gap:0.35rem;"><span>"User ID"</span><input prop:value=move || support_user_id.get() on:input=move |ev| support_user_id.set(event_target_value(&ev)) style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
+                                    <label style="display:grid;gap:0.35rem;"><span>"Carrier Profile ID"</span><input prop:value=move || support_carrier_profile_id.get() on:input=move |ev| support_carrier_profile_id.set(event_target_value(&ev)) style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
+                                    <label style="display:grid;gap:0.35rem;"><span>"Tenant ID"</span><input prop:value=move || support_tenant_id.get() on:input=move |ev| support_tenant_id.set(event_target_value(&ev)) style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
+                                </div>
+                                <div class="php-grid columns-2" style="margin-top:0.75rem;">
+                                    <label style="display:grid;gap:0.35rem;"><span>"Carrier status"</span><select prop:value=move || support_carrier_status.get() on:change=move |ev| support_carrier_status.set(event_target_value(&ev)) style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"><option value="paused">"Paused"</option><option value="blocked">"Blocked"</option><option value="active">"Active"</option></select></label>
+                                    <label style="display:grid;gap:0.35rem;"><span>"Operator reason"</span><input prop:value=move || support_reason.get() on:input=move |ev| support_reason.set(event_target_value(&ev)) style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
+                                </div>
+                                <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:0.9rem;">
+                                    <button type="button" on:click=revoke_sessions disabled=move || support_pending.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #be123c;border-radius:0.85rem;background:#fff1f2;color:#be123c;cursor:pointer;">{move || if support_pending.get().as_deref() == Some("revoke") { "Revoking..." } else { "Revoke sessions" }}</button>
+                                    <button type="button" on:click=update_carrier_status disabled=move || support_pending.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #d97706;border-radius:0.85rem;background:#fff7ed;color:#b45309;cursor:pointer;">{move || if support_pending.get().as_deref() == Some("carrier") { "Updating..." } else { "Update carrier status" }}</button>
+                                    <button type="button" on:click=export_audit disabled=move || support_pending.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #111827;border-radius:0.85rem;background:#111827;color:white;cursor:pointer;">{move || if support_pending.get().as_deref() == Some("audit") { "Exporting..." } else { "Export audit" }}</button>
                                 </div>
                             </div>
                         </section>

@@ -16,25 +16,26 @@ use db::{
     },
     dispatch::{count_admin_load_legs_filtered, list_admin_load_legs_filtered, review_load_status},
     eligibility::create_compliance_override,
-    tms::{replay_atmp_outbound_event, resolve_sync_error},
+    tms::{replay_atmp_outbound_event, resolve_sync_error, withdraw_handoff},
 };
 use domain::auth::{
     AccountStatus, UserRole, permission_descriptors, role_descriptors, role_permission_contracts,
 };
 use serde::{Deserialize, Serialize};
 use shared::{
+    AdminAuditExportResponse, AdminAuditExportRow, AdminCarrierStatusRequest,
     AdminCreateUserRequest, AdminCreateUserResponse, AdminDeleteUserResponse, AdminLoadListScreen,
     AdminLoadRow, AdminLoadTab, AdminOnboardingReviewScreen, AdminOnboardingReviewUser,
-    AdminReviewLoadRequest, AdminReviewLoadResponse, AdminRolePermissionOption,
+    AdminReasonRequest, AdminReviewLoadRequest, AdminReviewLoadResponse, AdminRolePermissionOption,
     AdminRolePermissionRow, AdminRolePermissionScreen, AdminUpdateRolePermissionsRequest,
     AdminUpdateRolePermissionsResponse, AdminUpdateUserProfileRequest,
     AdminUpdateUserProfileResponse, AdminUpdateUserRequest, AdminUpdateUserResponse,
     AdminUserDirectoryRoleOption, AdminUserDirectoryScreen, AdminUserDirectoryStatusOption,
     AdminUserDirectoryUser, AdminUserHistoryItem, AdminUserProfileFact, AdminUserProfileScreen,
-    ApiResponse, KycDocumentItem, RealtimeEvent, RealtimeEventKind, RealtimeTopic,
-    ReplayAtmpOutboundEventResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
-    ReviewOnboardingRequest, ReviewOnboardingResponse, StloadsOperationsScreen,
-    StloadsReconciliationScreen,
+    AdminWorkflowResponse, ApiResponse, KycDocumentItem, RealtimeEvent, RealtimeEventKind,
+    RealtimeTopic, ReplayAtmpOutboundEventResponse, ResolveSyncErrorRequest,
+    ResolveSyncErrorResponse, ReviewOnboardingRequest, ReviewOnboardingResponse,
+    StloadsOperationsScreen, StloadsReconciliationScreen, TmsHandoffResponse,
 };
 
 use crate::{
@@ -138,6 +139,23 @@ pub fn router() -> Router<AppState> {
             "/stloads/outbound-events/{outbound_event_id}/replay",
             post(replay_atmp_outbound_event_handler),
         )
+        .route(
+            "/stloads/dead-letter-events/{dead_letter_id}/replay",
+            post(replay_dead_letter_event_handler),
+        )
+        .route(
+            "/stloads/handoffs/{handoff_id}/force-withdraw",
+            post(force_withdraw_handoff_handler),
+        )
+        .route(
+            "/carriers/{carrier_profile_id}/status",
+            post(update_carrier_status_handler),
+        )
+        .route(
+            "/users/{user_id}/sessions/revoke",
+            post(revoke_user_sessions_handler),
+        )
+        .route("/audit/export", get(export_admin_audit_handler))
         .route(
             "/support/impersonations",
             post(create_support_impersonation_handler),
@@ -1695,6 +1713,386 @@ async fn replay_atmp_outbound_event_handler(
     })))
 }
 
+async fn replay_dead_letter_event_handler(
+    State(state): State<AppState>,
+    Path(dead_letter_id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<AdminWorkflowResponse>>, StatusCode> {
+    let session = require_any_permission(
+        &state,
+        &headers,
+        &["access_admin_portal", "manage_tms_operations"],
+    )
+    .await?;
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(AdminWorkflowResponse {
+            success: false,
+            entity_id: Some(dead_letter_id),
+            status_label: "Unavailable".into(),
+            message: format!(
+                "Dead-letter replay is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        })));
+    };
+
+    let row = sqlx::query_as::<_, (String, serde_json::Value)>(
+        "SELECT source_queue, payload FROM dead_letter_events WHERE id = $1 AND resolved = FALSE",
+    )
+    .bind(dead_letter_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let Some((source_queue, payload)) = row else {
+        return Ok(Json(ApiResponse::ok(AdminWorkflowResponse {
+            success: false,
+            entity_id: Some(dead_letter_id),
+            status_label: "Missing".into(),
+            message: "The requested unresolved dead-letter event was not found.".into(),
+        })));
+    };
+
+    if source_queue == "atmp_outbound" {
+        if let Some(outbound_event_id) = payload
+            .get("outbound_event_id")
+            .and_then(|value| value.as_i64())
+        {
+            let _ = replay_atmp_outbound_event(pool, outbound_event_id)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        }
+    }
+
+    sqlx::query(
+        "UPDATE dead_letter_events
+         SET resolved = TRUE, resolved_by = $1, resolved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2",
+    )
+    .bind(session.user.id)
+    .bind(dead_letter_id)
+    .execute(pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    publish_admin_refresh(
+        &state,
+        session.user.id,
+        format!(
+            "{} replayed dead-letter event #{}.",
+            session.user.name, dead_letter_id
+        ),
+    );
+
+    Ok(Json(ApiResponse::ok(AdminWorkflowResponse {
+        success: true,
+        entity_id: Some(dead_letter_id),
+        status_label: "Replayed".into(),
+        message: "Dead-letter event was marked resolved and returned to its replay path when a replay target was available.".into(),
+    })))
+}
+
+async fn force_withdraw_handoff_handler(
+    State(state): State<AppState>,
+    Path(handoff_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<AdminReasonRequest>,
+) -> Result<Json<ApiResponse<TmsHandoffResponse>>, StatusCode> {
+    let session = require_any_permission(
+        &state,
+        &headers,
+        &["access_admin_portal", "manage_tms_operations"],
+    )
+    .await?;
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(TmsHandoffResponse {
+            success: false,
+            handoff_id: Some(handoff_id),
+            load_id: None,
+            load_number: None,
+            status_label: "Unavailable".into(),
+            message: format!(
+                "Force-withdraw is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        })));
+    };
+    let reason = payload.reason.trim();
+    if reason.len() < 8 {
+        return Ok(Json(ApiResponse::ok(TmsHandoffResponse {
+            success: false,
+            handoff_id: Some(handoff_id),
+            load_id: None,
+            load_number: None,
+            status_label: "Reason Required".into(),
+            message: "Force-withdraw requires an operator reason of at least 8 characters.".into(),
+        })));
+    }
+
+    let performed_by = format!("{} <{}>", session.user.name, session.user.email);
+    match withdraw_handoff(
+        pool,
+        handoff_id,
+        Some(reason),
+        Some(&performed_by),
+        Some("admin_force_withdraw"),
+    )
+    .await
+    {
+        Ok(Some(handoff)) => {
+            publish_admin_refresh(
+                &state,
+                session.user.id,
+                format!(
+                    "{} force-withdrew STLOADS handoff #{}.",
+                    session.user.name, handoff_id
+                ),
+            );
+            Ok(Json(ApiResponse::ok(TmsHandoffResponse {
+                success: true,
+                handoff_id: Some(handoff.id),
+                load_id: handoff.load_id,
+                load_number: None,
+                status_label: handoff.status,
+                message: "Handoff force-withdrawn with an auditable operator reason.".into(),
+            })))
+        }
+        Ok(None) => Ok(Json(ApiResponse::ok(TmsHandoffResponse {
+            success: false,
+            handoff_id: Some(handoff_id),
+            load_id: None,
+            load_number: None,
+            status_label: "Missing".into(),
+            message: "The requested handoff was not found.".into(),
+        }))),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+async fn update_carrier_status_handler(
+    State(state): State<AppState>,
+    Path(carrier_profile_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<AdminCarrierStatusRequest>,
+) -> Result<Json<ApiResponse<AdminWorkflowResponse>>, StatusCode> {
+    let session = require_any_permission(
+        &state,
+        &headers,
+        &[
+            "access_admin_portal",
+            "manage_compliance_actions",
+            "manage_admin_actions",
+        ],
+    )
+    .await?;
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(AdminWorkflowResponse {
+            success: false,
+            entity_id: Some(carrier_profile_id),
+            status_label: "Unavailable".into(),
+            message: format!(
+                "Carrier status update is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        })));
+    };
+    let tenant_id = payload.tenant_id.trim();
+    let status = payload.status.trim().to_ascii_lowercase();
+    let reason = payload.reason.trim();
+    if tenant_id.is_empty()
+        || reason.len() < 8
+        || !matches!(status.as_str(), "active" | "paused" | "blocked")
+    {
+        return Ok(Json(ApiResponse::ok(AdminWorkflowResponse {
+            success: false,
+            entity_id: Some(carrier_profile_id),
+            status_label: "Invalid".into(),
+            message: "Carrier status requires tenant, active/paused/blocked status, and an operator reason.".into(),
+        })));
+    }
+
+    let updated_id = sqlx::query_scalar::<_, i64>(
+        "UPDATE carrier_profiles
+         SET status = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE tenant_id = $2 AND id = $3 AND deleted_at IS NULL
+         RETURNING id",
+    )
+    .bind(&status)
+    .bind(tenant_id)
+    .bind(carrier_profile_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let Some(updated_id) = updated_id else {
+        return Ok(Json(ApiResponse::ok(AdminWorkflowResponse {
+            success: false,
+            entity_id: Some(carrier_profile_id),
+            status_label: "Missing".into(),
+            message: "The requested carrier profile was not found for that tenant.".into(),
+        })));
+    };
+
+    if matches!(status.as_str(), "paused" | "blocked") {
+        sqlx::query(
+            "INSERT INTO carrier_risk_flags (
+                tenant_id, carrier_profile_id, flag_type, severity, title, detail, source_system,
+                status, created_at, updated_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, 'admin_support', 'open', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .bind(tenant_id)
+        .bind(carrier_profile_id)
+        .bind(format!("carrier_{}", status))
+        .bind(if status == "blocked" { "blocker" } else { "warning" })
+        .bind(format!("Carrier {}", title_case_label(&status)))
+        .bind(reason)
+        .execute(pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
+    publish_admin_refresh(
+        &state,
+        session.user.id,
+        format!(
+            "{} set carrier profile #{} to {}.",
+            session.user.name, carrier_profile_id, status
+        ),
+    );
+
+    Ok(Json(ApiResponse::ok(AdminWorkflowResponse {
+        success: true,
+        entity_id: Some(updated_id),
+        status_label: title_case_label(&status),
+        message: "Carrier profile status was updated with an auditable operator reason.".into(),
+    })))
+}
+
+async fn revoke_user_sessions_handler(
+    State(state): State<AppState>,
+    Path(user_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<AdminReasonRequest>,
+) -> Result<Json<ApiResponse<AdminWorkflowResponse>>, StatusCode> {
+    let session = require_any_permission(
+        &state,
+        &headers,
+        &[
+            "access_admin_portal",
+            "manage_admin_actions",
+            "manage_users",
+        ],
+    )
+    .await?;
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(AdminWorkflowResponse {
+            success: false,
+            entity_id: Some(user_id),
+            status_label: "Unavailable".into(),
+            message: format!(
+                "Session revocation is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        })));
+    };
+    let reason = payload.reason.trim();
+    if reason.len() < 8 {
+        return Ok(Json(ApiResponse::ok(AdminWorkflowResponse {
+            success: false,
+            entity_id: Some(user_id),
+            status_label: "Reason Required".into(),
+            message: "Session revocation requires an operator reason of at least 8 characters."
+                .into(),
+        })));
+    }
+
+    let token_result = sqlx::query(
+        "DELETE FROM personal_access_tokens WHERE tokenable_type = 'App\\Models\\User' AND tokenable_id = $1",
+    )
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let session_result = sqlx::query("DELETE FROM sessions WHERE user_id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    sqlx::query(
+        "INSERT INTO user_history (user_id, admin_id, status, remarks, created_at, updated_at)
+         SELECT id, $1, status, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM users WHERE id = $3",
+    )
+    .bind(session.user.id)
+    .bind(format!("Rust admin revoked active sessions: {}", reason))
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    state.publish_realtime(
+        RoutedRealtimeEvent::new(RealtimeEvent {
+            kind: RealtimeEventKind::SessionInvalidated,
+            leg_id: None,
+            conversation_id: None,
+            offer_id: None,
+            message_id: None,
+            actor_user_id: Some(user_id.max(0) as u64),
+            subject_user_id: Some(user_id.max(0) as u64),
+            presence_state: None,
+            last_read_message_id: None,
+            summary: "Your active STLoads sessions were revoked by an administrator.".into(),
+        })
+        .for_user_ids([user_id.max(0) as u64]),
+    );
+
+    Ok(Json(ApiResponse::ok(AdminWorkflowResponse {
+        success: true,
+        entity_id: Some(user_id),
+        status_label: "Revoked".into(),
+        message: format!(
+            "Revoked {} API tokens and {} browser sessions.",
+            token_result.rows_affected(),
+            session_result.rows_affected()
+        ),
+    })))
+}
+
+async fn export_admin_audit_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<AdminAuditExportResponse>>, StatusCode> {
+    let _session = require_any_permission(
+        &state,
+        &headers,
+        &["access_admin_portal", "manage_admin_actions"],
+    )
+    .await?;
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(AdminAuditExportResponse {
+            generated_at_label: chrono::Utc::now().naive_utc().to_string(),
+            total_rows: 0,
+            rows: Vec::new(),
+            csv: "source,id,actor,subject,action,detail,created_at\n".into(),
+        })));
+    };
+
+    let rows = load_admin_audit_export_rows(pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let csv = audit_rows_to_csv(&rows);
+    Ok(Json(ApiResponse::ok(AdminAuditExportResponse {
+        generated_at_label: chrono::Utc::now().naive_utc().to_string(),
+        total_rows: rows.len() as u64,
+        rows,
+        csv,
+    })))
+}
+
 async fn create_support_impersonation_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2423,6 +2821,182 @@ fn push_profile_fact(facts: &mut Vec<AdminUserProfileFact>, label: &str, value: 
     }
 }
 
+fn publish_admin_refresh(state: &AppState, actor_user_id: i64, summary: String) {
+    state.publish_realtime(
+        RoutedRealtimeEvent::new(RealtimeEvent {
+            kind: RealtimeEventKind::AdminDashboardUpdated,
+            leg_id: None,
+            conversation_id: None,
+            offer_id: None,
+            message_id: None,
+            actor_user_id: Some(actor_user_id.max(0) as u64),
+            subject_user_id: None,
+            presence_state: None,
+            last_read_message_id: None,
+            summary: summary.clone(),
+        })
+        .for_permission_keys(["access_admin_portal", "manage_admin_actions"])
+        .with_topics([RealtimeTopic::AdminDashboard.as_key()]),
+    );
+    state.publish_realtime(
+        RoutedRealtimeEvent::new(RealtimeEvent {
+            kind: RealtimeEventKind::TmsOperationsUpdated,
+            leg_id: None,
+            conversation_id: None,
+            offer_id: None,
+            message_id: None,
+            actor_user_id: Some(actor_user_id.max(0) as u64),
+            subject_user_id: None,
+            presence_state: None,
+            last_read_message_id: None,
+            summary,
+        })
+        .for_permission_keys(["manage_tms_operations"])
+        .with_topics([RealtimeTopic::AdminTmsOperations.as_key()]),
+    );
+}
+
+async fn load_admin_audit_export_rows(
+    pool: &db::DbPool,
+) -> Result<Vec<AdminAuditExportRow>, sqlx::Error> {
+    #[derive(sqlx::FromRow)]
+    struct AuditRow {
+        source: String,
+        id: i64,
+        actor_label: Option<String>,
+        subject_label: Option<String>,
+        action_label: String,
+        detail: String,
+        created_at: chrono::NaiveDateTime,
+    }
+
+    let mut rows = Vec::new();
+    rows.extend(
+        sqlx::query_as::<_, AuditRow>(
+            "SELECT 'support_impersonation'::text AS source,
+                    audit.id,
+                    actor.email AS actor_label,
+                    target.email AS subject_label,
+                    'support_impersonation_started'::text AS action_label,
+                    audit.reason AS detail,
+                    audit.started_at AS created_at
+             FROM support_impersonation_audits audit
+             LEFT JOIN users actor ON actor.id = audit.actor_user_id
+             LEFT JOIN users target ON target.id = audit.target_user_id
+             ORDER BY audit.started_at DESC
+             LIMIT 50",
+        )
+        .fetch_all(pool)
+        .await?,
+    );
+    rows.extend(
+        sqlx::query_as::<_, AuditRow>(
+            "SELECT 'reconciliation'::text AS source,
+                    log.id,
+                    log.triggered_by AS actor_label,
+                    ('handoff #' || log.handoff_id)::text AS subject_label,
+                    log.action AS action_label,
+                    COALESCE(log.detail, 'No detail provided.') AS detail,
+                    log.created_at
+             FROM stloads_reconciliation_log log
+             ORDER BY log.created_at DESC
+             LIMIT 50",
+        )
+        .fetch_all(pool)
+        .await?,
+    );
+    rows.extend(
+        sqlx::query_as::<_, AuditRow>(
+            "SELECT 'document_audit'::text AS source,
+                    event.id,
+                    actor.email AS actor_label,
+                    (event.document_scope || ':' || event.document_scope_id)::text AS subject_label,
+                    event.event_type AS action_label,
+                    COALESCE(event.event_note, 'No detail provided.') AS detail,
+                    event.created_at
+             FROM document_audit_events event
+             LEFT JOIN users actor ON actor.id = event.actor_user_id
+             ORDER BY event.created_at DESC
+             LIMIT 50",
+        )
+        .fetch_all(pool)
+        .await?,
+    );
+    rows.extend(
+        sqlx::query_as::<_, AuditRow>(
+            "SELECT 'dead_letter'::text AS source,
+                    event.id,
+                    resolver.email AS actor_label,
+                    event.source_queue AS subject_label,
+                    CASE WHEN event.resolved THEN 'dead_letter_resolved' ELSE 'dead_letter_parked' END AS action_label,
+                    event.error_message AS detail,
+                    event.created_at
+             FROM dead_letter_events event
+             LEFT JOIN users resolver ON resolver.id = event.resolved_by
+             ORDER BY event.created_at DESC
+             LIMIT 50",
+        )
+        .fetch_all(pool)
+        .await?,
+    );
+
+    rows.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    rows.truncate(100);
+
+    Ok(rows
+        .into_iter()
+        .map(|row| AdminAuditExportRow {
+            source: row.source,
+            id: row.id,
+            actor_label: row.actor_label,
+            subject_label: row.subject_label,
+            action_label: row.action_label,
+            detail: row.detail,
+            created_at_label: format_datetime(&row.created_at),
+        })
+        .collect())
+}
+
+fn audit_rows_to_csv(rows: &[AdminAuditExportRow]) -> String {
+    let mut csv = "source,id,actor,subject,action,detail,created_at\n".to_string();
+    for row in rows {
+        csv.push_str(&format!(
+            "{},{},{},{},{},{},{}\n",
+            csv_escape(&row.source),
+            row.id,
+            csv_escape(row.actor_label.as_deref().unwrap_or("")),
+            csv_escape(row.subject_label.as_deref().unwrap_or("")),
+            csv_escape(&row.action_label),
+            csv_escape(&row.detail),
+            csv_escape(&row.created_at_label),
+        ));
+    }
+    csv
+}
+
+fn csv_escape(value: &str) -> String {
+    if value.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
+
+fn title_case_label(value: &str) -> String {
+    value
+        .split(['_', '-'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn format_datetime(value: &chrono::NaiveDateTime) -> String {
     value.format("%b %d, %Y %H:%M").to_string()
 }
@@ -2528,6 +3102,166 @@ mod tests {
         assert_eq!(response.status_label, "Approved");
         assert!(response.message.contains("Email notification logged"));
         assert_eq!(read_leg_status(&pool, fixture.leg_id).await?, 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_support_tools_replay_revoke_export_and_force_withdraw()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let admin_user = insert_user_with_role_status(
+            &pool,
+            "Admin Support",
+            "admin-support@example.com",
+            UserRole::Admin,
+            AccountStatus::Approved,
+        )
+        .await?;
+        let target_user = insert_user_with_role_status(
+            &pool,
+            "Target Carrier",
+            "target-carrier@example.com",
+            UserRole::Carrier,
+            AccountStatus::Approved,
+        )
+        .await?;
+        let admin_headers = auth_headers_for_user(&state, &admin_user).await?;
+
+        sqlx::query(
+            "INSERT INTO tenants (id, name, slug, status, created_at, updated_at)
+             VALUES ('tenant-p15', 'Tenant P15', 'tenant-p15', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .execute(&pool)
+        .await?;
+        let carrier_profile_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO carrier_profiles (tenant_id, user_id, display_name, status, created_at, updated_at)
+             VALUES ('tenant-p15', $1, 'Target Carrier', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             RETURNING id",
+        )
+        .bind(target_user.id)
+        .fetch_one(&pool)
+        .await?;
+        let handoff_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO stloads_handoffs (
+                tms_load_id, tenant_id, status, party_type, freight_mode, equipment_type,
+                weight_unit, pickup_country, dropoff_country, rate_currency, bid_type,
+                compliance_passed, readiness, raw_payload, created_at, updated_at
+             ) VALUES (
+                'TMS-P15', 'tenant-p15', 'published', 'shipper', 'FTL', 'Dry Van',
+                'lbs', 'US', 'US', 'USD', 'open', TRUE, 'ready', '{}'::jsonb,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+             )
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO personal_access_tokens (
+                tokenable_type, tokenable_id, name, token, abilities, created_at, updated_at
+             ) VALUES ('App\\Models\\User', $1, 'test-token', 'token-p15', '[]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .bind(target_user.id)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO sessions (id, user_id, ip_address, user_agent, payload, last_activity)
+             VALUES ('session-p15', $1, '127.0.0.1', 'test', '', 1)",
+        )
+        .bind(target_user.id)
+        .execute(&pool)
+        .await?;
+        let dead_letter_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO dead_letter_events (
+                tenant_id, source_queue, event_type, payload, error_message, retry_count,
+                created_at, updated_at
+             ) VALUES (
+                'tenant-p15', 'atmp_outbound', 'callback_failed', $1, 'callback failed', 2,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+             )
+             RETURNING id",
+        )
+        .bind(serde_json::json!({"outbound_event_id": 999999}))
+        .fetch_one(&pool)
+        .await?;
+
+        let carrier_response = update_carrier_status_handler(
+            State(state.clone()),
+            Path(carrier_profile_id),
+            admin_headers.clone(),
+            Json(AdminCarrierStatusRequest {
+                tenant_id: "tenant-p15".into(),
+                status: "blocked".into(),
+                reason: "Compliance hold from P15 test.".into(),
+            }),
+        )
+        .await
+        .expect("carrier status route should return")
+        .0
+        .data;
+        assert!(carrier_response.success);
+
+        let revoke_response = revoke_user_sessions_handler(
+            State(state.clone()),
+            Path(target_user.id),
+            admin_headers.clone(),
+            Json(AdminReasonRequest {
+                reason: "Security reset from P15 test.".into(),
+            }),
+        )
+        .await
+        .expect("session revocation route should return")
+        .0
+        .data;
+        assert!(revoke_response.success);
+
+        let dead_letter_response = replay_dead_letter_event_handler(
+            State(state.clone()),
+            Path(dead_letter_id),
+            admin_headers.clone(),
+        )
+        .await
+        .expect("dead-letter replay route should return")
+        .0
+        .data;
+        assert!(dead_letter_response.success);
+
+        let withdraw_response = force_withdraw_handoff_handler(
+            State(state.clone()),
+            Path(handoff_id),
+            admin_headers.clone(),
+            Json(AdminReasonRequest {
+                reason: "Customer cancelled during P15 support test.".into(),
+            }),
+        )
+        .await
+        .expect("force withdraw route should return")
+        .0
+        .data;
+        assert!(withdraw_response.success);
+        assert_eq!(withdraw_response.status_label, "withdrawn");
+
+        let audit_response = export_admin_audit_handler(State(state), admin_headers)
+            .await
+            .expect("audit export route should return")
+            .0
+            .data;
+        assert!(audit_response.total_rows >= 2);
+        assert!(audit_response.csv.contains("dead_letter"));
+        assert!(audit_response.csv.contains("reconciliation"));
+
+        let remaining_tokens = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM personal_access_tokens WHERE tokenable_id = $1",
+        )
+        .bind(target_user.id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(remaining_tokens, 0);
 
         Ok(())
     }

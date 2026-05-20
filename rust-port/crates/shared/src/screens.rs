@@ -47,12 +47,34 @@ pub struct HandoffRow {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeadLetterEventRow {
+    pub id: u64,
+    pub tenant_id: Option<String>,
+    pub source_queue: String,
+    pub event_type: String,
+    pub error_label: String,
+    pub retry_count: u64,
+    pub parked_at_label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OperationalHealthCard {
+    pub key: String,
+    pub label: String,
+    pub value: u64,
+    pub tone: String,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StloadsOperationsScreen {
     pub title: String,
     pub active_filter: Option<String>,
     pub sync_issue_summary: SyncIssueSummary,
+    pub health_cards: Vec<OperationalHealthCard>,
     pub status_cards: Vec<StatusCard>,
     pub recent_sync_issues: Vec<SyncIssueRow>,
+    pub dead_letter_events: Vec<DeadLetterEventRow>,
     pub handoffs: Vec<HandoffRow>,
     pub notes: Vec<String>,
     pub pagination: Pagination,
@@ -506,6 +528,13 @@ pub fn sample_stloads_operations_screen() -> StloadsOperationsScreen {
             error: 3,
             warning: 2,
         },
+        health_cards: vec![
+            OperationalHealthCard { key: "queue_depth".into(), label: "Queue Depth".into(), value: 0, tone: "success".into(), note: "Queued and retrying ATMP callbacks.".into() },
+            OperationalHealthCard { key: "webhook_failures".into(), label: "Webhook Failures".into(), value: 0, tone: "success".into(), note: "Failed inbound contract events.".into() },
+            OperationalHealthCard { key: "stale_postings".into(), label: "Stale Postings".into(), value: 0, tone: "success".into(), note: "Published board rows past the stale window.".into() },
+            OperationalHealthCard { key: "payment_failures".into(), label: "Payment Failures".into(), value: 0, tone: "success".into(), note: "Payment disputes and failed escrows.".into() },
+            OperationalHealthCard { key: "document_failures".into(), label: "Document Failures".into(), value: 0, tone: "success".into(), note: "Rejected or blocked document reviews.".into() },
+        ],
         status_cards: vec![
             StatusCard { key: "queued".into(), label: "Queued".into(), value: 14, tone: "warning".into(), note: Some("Awaiting the next push cycle.".into()), is_active: false },
             StatusCard { key: "push_in_progress".into(), label: "In Progress".into(), value: 5, tone: "info".into(), note: Some("Currently publishing into STLOADS.".into()), is_active: false },
@@ -520,6 +549,7 @@ pub fn sample_stloads_operations_screen() -> StloadsOperationsScreen {
             SyncIssueRow { id: 8407, severity: "error".into(), error_class: "delivered_still_open".into(), title: "Delivery completed upstream, but STLOADS still shows the lane as published.".into(), handoff_ref: Some("#8407".into()), created_at_label: "18 minutes ago".into() },
             SyncIssueRow { id: 8394, severity: "warning".into(), error_class: "rate_mismatch".into(), title: "Rate update arrived from TMS after the original publish payload.".into(), handoff_ref: Some("#8394".into()), created_at_label: "42 minutes ago".into() },
         ],
+        dead_letter_events: Vec::new(),
         handoffs: vec![
             HandoffRow { handoff_id: 8421, handoff_ref: "#8421".into(), tms_load_id: "TMS-110204".into(), route_label: "Dallas, TX -> Joliet, IL".into(), freight_mode: "FTL".into(), equipment_type: "Dry Van".into(), rate_label: "$2,450".into(), status_key: "published".into(), status_label: "Published".into(), status_tone: "success".into(), load_number: Some("LD-24017".into()), retry_count: 0, pushed_at_label: "Apr 5, 09:10".into() },
             HandoffRow { handoff_id: 8407, handoff_ref: "#8407".into(), tms_load_id: "TMS-110166".into(), route_label: "Houston, TX -> Memphis, TN".into(), freight_mode: "Reefer".into(), equipment_type: "53 ft Reefer".into(), rate_label: "$3,180".into(), status_key: "push_failed".into(), status_label: "Push Failed".into(), status_tone: "danger".into(), load_number: None, retry_count: 2, pushed_at_label: "Apr 5, 08:31".into() },

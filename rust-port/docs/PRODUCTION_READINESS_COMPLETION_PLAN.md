@@ -79,28 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P15: Admin Operations, Reconciliation, And Support Tools
-
-**Outcome:** Operators can run the board safely without database access.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\admin.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\admin.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\reconciliation.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\stloads.rs`
-
-- [ ] Add ATMP sync reconciliation dashboard.
-- [ ] Add failed inbound payload queue.
-- [ ] Add failed outbound callback queue.
-- [ ] Add dead-letter replay.
-- [ ] Add force-withdraw with reason.
-- [ ] Add carrier pause/block.
-- [ ] Add session revocation.
-- [ ] Add support impersonation with reason.
-- [ ] Add audit export.
-- [ ] Add operational health cards for queue depth, webhook failures, stale postings, stale tracking, payment failures, and document failures.
-
 ### Task P16: Frontend Placeholder And Demo Data Purge
 
 **Outcome:** The production frontend displays only real API data or honest empty states.
@@ -315,13 +293,12 @@ Do not call STLoads market-ready until every item below is true:
 1. P7 Tenant/RBAC/session hardening.
 2. P16 Placeholder/demo data purge.
 3. P8 Carrier search and alerts.
-4. P15 Admin ops and reconciliation.
-5. P17 Realtime.
-6. P18 Observability and audit.
-7. P19 Security hardening.
-8. P20 Build and tests.
-9. P21 IBM deployment.
-10. P22 Launch documentation.
+4. P17 Realtime.
+5. P18 Observability and audit.
+6. P19 Security hardening.
+7. P20 Build and tests.
+8. P21 IBM deployment.
+9. P22 Launch documentation.
 
 ## Definition Of Done
 

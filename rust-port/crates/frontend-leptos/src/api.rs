@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use shared::{
-    AccessorialRequestPayload, AdminCreateUserRequest, AdminCreateUserResponse,
-    AdminDeleteUserResponse, AdminLoadListScreen, AdminOnboardingReviewScreen,
-    AdminReviewLoadRequest, AdminReviewLoadResponse, AdminRolePermissionScreen,
-    AdminUpdateRolePermissionsRequest, AdminUpdateRolePermissionsResponse,
-    AdminUpdateUserProfileRequest, AdminUpdateUserProfileResponse, AdminUpdateUserRequest,
-    AdminUpdateUserResponse, AdminUserDirectoryScreen, AdminUserProfileScreen, ApiResponse,
+    AccessorialRequestPayload, AdminAuditExportResponse, AdminCarrierStatusRequest,
+    AdminCreateUserRequest, AdminCreateUserResponse, AdminDeleteUserResponse, AdminLoadListScreen,
+    AdminOnboardingReviewScreen, AdminReasonRequest, AdminReviewLoadRequest,
+    AdminReviewLoadResponse, AdminRolePermissionScreen, AdminUpdateRolePermissionsRequest,
+    AdminUpdateRolePermissionsResponse, AdminUpdateUserProfileRequest,
+    AdminUpdateUserProfileResponse, AdminUpdateUserRequest, AdminUpdateUserResponse,
+    AdminUserDirectoryScreen, AdminUserProfileScreen, AdminWorkflowResponse, ApiResponse,
     AuthOnboardingScreen, AuthSessionState, BookLoadLegRequest, BookLoadLegResponse,
     BookNowRequest, CarrierCancellationRequest, ChangePasswordRequest, ChangePasswordResponse,
     ChatSendMessageRequest, ChatSendMessageResponse, ChatWorkspaceScreen, CityUpsertRequest,
@@ -511,6 +512,44 @@ pub async fn resolve_sync_error(
 ) -> Result<ResolveSyncErrorResponse, String> {
     let path = format!("/admin/stloads/sync-errors/{}/resolve", sync_error_id);
     post_api(&path, payload).await
+}
+
+pub async fn replay_dead_letter_event(
+    dead_letter_id: u64,
+) -> Result<AdminWorkflowResponse, String> {
+    let path = format!(
+        "/admin/stloads/dead-letter-events/{}/replay",
+        dead_letter_id
+    );
+    post_api(&path, &serde_json::json!({})).await
+}
+
+pub async fn force_withdraw_handoff(
+    handoff_id: u64,
+    payload: &AdminReasonRequest,
+) -> Result<TmsHandoffResponse, String> {
+    let path = format!("/admin/stloads/handoffs/{}/force-withdraw", handoff_id);
+    post_api(&path, payload).await
+}
+
+pub async fn update_carrier_status(
+    carrier_profile_id: u64,
+    payload: &AdminCarrierStatusRequest,
+) -> Result<AdminWorkflowResponse, String> {
+    let path = format!("/admin/carriers/{}/status", carrier_profile_id);
+    post_api(&path, payload).await
+}
+
+pub async fn revoke_admin_user_sessions(
+    user_id: u64,
+    payload: &AdminReasonRequest,
+) -> Result<AdminWorkflowResponse, String> {
+    let path = format!("/admin/users/{}/sessions/revoke", user_id);
+    post_api(&path, payload).await
+}
+
+pub async fn export_admin_audit() -> Result<AdminAuditExportResponse, String> {
+    get_api("/admin/audit/export").await
 }
 
 pub async fn fetch_admin_onboarding_reviews() -> Result<AdminOnboardingReviewScreen, String> {

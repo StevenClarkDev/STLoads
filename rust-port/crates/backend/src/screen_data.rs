@@ -26,13 +26,13 @@ use domain::dispatch::LegacyLoadLegStatusCode;
 use domain::marketplace::OfferStatus;
 use domain::tms::reconciliation_action_descriptors;
 use shared::{
-    ChatConversationItem, ChatMessageItem, ChatOfferItem, ChatWorkspaceScreen, DispatchDeskLink,
-    DispatchDeskRow, DispatchDeskScreen, ErrorBreakdownRow, HandoffRow, LoadBoardFilterState,
-    LoadBoardMetric, LoadBoardRow, LoadBoardSavedSearchItem, LoadBoardScreen, LoadBoardTab,
-    MismatchCard, Pagination, ReconciliationLogRow, StatusCard, StloadsOperationsScreen,
-    StloadsReconciliationScreen, SyncIssueRow, SyncIssueSummary, load_board_sort_options,
-    load_board_visibility_options, sample_stloads_operations_screen,
-    sample_stloads_reconciliation_screen,
+    ChatConversationItem, ChatMessageItem, ChatOfferItem, ChatWorkspaceScreen, DeadLetterEventRow,
+    DispatchDeskLink, DispatchDeskRow, DispatchDeskScreen, ErrorBreakdownRow, HandoffRow,
+    LoadBoardFilterState, LoadBoardMetric, LoadBoardRow, LoadBoardSavedSearchItem, LoadBoardScreen,
+    LoadBoardTab, MismatchCard, OperationalHealthCard, Pagination, ReconciliationLogRow,
+    StatusCard, StloadsOperationsScreen, StloadsReconciliationScreen, SyncIssueRow,
+    SyncIssueSummary, load_board_sort_options, load_board_visibility_options,
+    sample_stloads_operations_screen, sample_stloads_reconciliation_screen,
 };
 use tracing::warn;
 
@@ -851,6 +851,8 @@ async fn build_stloads_operations_screen(
     let status_counts = count_handoffs_by_status(pool).await?;
     let handoffs = list_recent_handoffs_filtered(pool, status_filter.as_deref(), 25).await?;
     let unresolved_errors = list_unresolved_sync_errors(pool).await?;
+    let health_cards = list_operational_health_cards(pool).await?;
+    let dead_letter_events = list_unresolved_dead_letter_events(pool, 10).await?;
 
     let count_map: HashMap<String, u64> = status_counts
         .into_iter()
@@ -931,8 +933,10 @@ async fn build_stloads_operations_screen(
         title: "STLOADS Operations".into(),
         active_filter: status_filter,
         sync_issue_summary,
+        health_cards,
         status_cards,
         recent_sync_issues,
+        dead_letter_events,
         handoffs: handoff_rows,
         notes: vec![
             "This screen is now populated from the Rust SQLx layer when DATABASE_URL is configured.".into(),
@@ -944,6 +948,142 @@ async fn build_stloads_operations_screen(
             total: total_records,
         },
     })
+}
+
+async fn list_operational_health_cards(
+    pool: &db::DbPool,
+) -> Result<Vec<OperationalHealthCard>, sqlx::Error> {
+    let queue_depth = query_count(
+        pool,
+        "SELECT COUNT(*) FROM atmp_outbound_events WHERE status IN ('queued', 'retry', 'processing')",
+    )
+    .await?;
+    let webhook_failures = query_count(
+        pool,
+        "SELECT COUNT(*) FROM atmp_inbound_events WHERE validation_status IN ('failed', 'invalid') OR failed_at IS NOT NULL",
+    )
+    .await?;
+    let stale_postings = query_count(
+        pool,
+        "SELECT COUNT(*) FROM stloads_handoffs WHERE status = 'published' AND created_at < CURRENT_TIMESTAMP - INTERVAL '30 days' AND (last_webhook_at IS NULL OR last_webhook_at < CURRENT_TIMESTAMP - INTERVAL '30 days')",
+    )
+    .await?;
+    let stale_tracking = query_count(
+        pool,
+        "SELECT COUNT(*) FROM load_legs WHERE status_id IN (5, 6, 7, 9) AND updated_at < CURRENT_TIMESTAMP - INTERVAL '12 hours'",
+    )
+    .await?;
+    let payment_failures = query_count(
+        pool,
+        "SELECT (SELECT COUNT(*) FROM escrows WHERE status = 'failed') + (SELECT COUNT(*) FROM payment_disputes WHERE status = 'open')",
+    )
+    .await?;
+    let document_failures = query_count(
+        pool,
+        "SELECT COUNT(*) FROM load_documents WHERE review_status = 'rejected' OR malware_scan_status = 'failed' OR payment_ready_blocked = TRUE",
+    )
+    .await?;
+
+    Ok(vec![
+        health_card(
+            "queue_depth",
+            "Queue Depth",
+            queue_depth,
+            "Queued, retrying, or processing ATMP callbacks.",
+        ),
+        health_card(
+            "webhook_failures",
+            "Webhook Failures",
+            webhook_failures,
+            "Inbound contract events that failed validation or processing.",
+        ),
+        health_card(
+            "stale_postings",
+            "Stale Postings",
+            stale_postings,
+            "Published STLOADS handoffs with no recent webhook movement.",
+        ),
+        health_card(
+            "stale_tracking",
+            "Stale Tracking",
+            stale_tracking,
+            "In-progress legs with no recent status movement.",
+        ),
+        health_card(
+            "payment_failures",
+            "Payment Failures",
+            payment_failures,
+            "Failed escrows and open payment disputes.",
+        ),
+        health_card(
+            "document_failures",
+            "Document Failures",
+            document_failures,
+            "Rejected, blocked, or failed document review records.",
+        ),
+    ])
+}
+
+fn health_card(key: &str, label: &str, value: u64, note: &str) -> OperationalHealthCard {
+    let tone = if value == 0 {
+        "success"
+    } else if value < 5 {
+        "warning"
+    } else {
+        "danger"
+    };
+    OperationalHealthCard {
+        key: key.into(),
+        label: label.into(),
+        value,
+        tone: tone.into(),
+        note: note.into(),
+    }
+}
+
+async fn query_count(pool: &db::DbPool, sql: &str) -> Result<u64, sqlx::Error> {
+    let count = sqlx::query_scalar::<_, i64>(sql).fetch_one(pool).await?;
+    Ok(count.max(0) as u64)
+}
+
+async fn list_unresolved_dead_letter_events(
+    pool: &db::DbPool,
+    limit: i64,
+) -> Result<Vec<DeadLetterEventRow>, sqlx::Error> {
+    #[derive(sqlx::FromRow)]
+    struct DeadLetterRecord {
+        id: i64,
+        tenant_id: Option<String>,
+        source_queue: String,
+        event_type: String,
+        error_message: String,
+        retry_count: i32,
+        parked_at: chrono::NaiveDateTime,
+    }
+
+    let rows = sqlx::query_as::<_, DeadLetterRecord>(
+        "SELECT id, tenant_id, source_queue, event_type, error_message, retry_count, parked_at
+         FROM dead_letter_events
+         WHERE resolved = FALSE
+         ORDER BY parked_at DESC, id DESC
+         LIMIT $1",
+    )
+    .bind(limit.clamp(1, 50))
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| DeadLetterEventRow {
+            id: row.id.max(0) as u64,
+            tenant_id: row.tenant_id,
+            source_queue: row.source_queue,
+            event_type: row.event_type,
+            error_label: row.error_message,
+            retry_count: row.retry_count.max(0) as u64,
+            parked_at_label: format_datetime(&row.parked_at),
+        })
+        .collect())
 }
 
 async fn build_stloads_reconciliation_screen(

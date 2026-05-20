@@ -318,6 +318,45 @@ pub struct ReplayAtmpOutboundEventResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminReasonRequest {
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminCarrierStatusRequest {
+    pub tenant_id: String,
+    pub status: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminWorkflowResponse {
+    pub success: bool,
+    pub entity_id: Option<i64>,
+    pub status_label: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAuditExportRow {
+    pub source: String,
+    pub id: i64,
+    pub actor_label: Option<String>,
+    pub subject_label: Option<String>,
+    pub action_label: String,
+    pub detail: String,
+    pub created_at_label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAuditExportResponse {
+    pub generated_at_label: String,
+    pub total_rows: u64,
+    pub rows: Vec<AdminAuditExportRow>,
+    pub csv: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EscrowFundRequest {
     pub amount_cents: Option<i64>,
     pub currency: Option<String>,
