@@ -116,6 +116,7 @@ pub fn test_state(pool: DbPool) -> AppState {
         stripe,
         integration_auth: crate::integration_auth::IntegrationAuthState::default(),
         realtime_tx,
+        security: crate::state::SecurityState::default(),
     }
 }
 

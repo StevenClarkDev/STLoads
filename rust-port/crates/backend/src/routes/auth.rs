@@ -217,8 +217,19 @@ async fn login(
     };
 
     let email = payload.email.trim().to_lowercase();
+    if let Some(message) = state.auth_failure_locked_message(&email) {
+        log_auth_failure("login", &email, "temporary account login lockout");
+        return Json(ApiResponse::ok(LoginResponse {
+            success: false,
+            token: None,
+            session: auth_session::unauthenticated_session_state(&message),
+            message,
+        }));
+    }
+
     let Some(user) = find_user_by_email(pool, &email).await.unwrap_or(None) else {
         log_auth_failure("login", &email, "user not found");
+        state.record_auth_failure(&email);
         return Json(ApiResponse::ok(LoginResponse {
             success: false,
             token: None,
@@ -234,6 +245,7 @@ async fn login(
 
     if !password_matches {
         log_auth_failure("login", &email, "password verification failed");
+        state.record_auth_failure(&email);
         return Json(ApiResponse::ok(LoginResponse {
             success: false,
             token: None,
@@ -247,6 +259,7 @@ async fn login(
     match auth_session::issue_session_token(&state, &user).await {
         Ok(token) => {
             log_auth_success("login", &email, Some(user.id));
+            state.clear_auth_failures(&email);
             let session = auth_session::build_session_state(&state, &user).await;
             Json(ApiResponse::ok(LoginResponse {
                 success: true,
@@ -2877,19 +2890,67 @@ async fn parse_kyc_document_upload(
     if bytes.is_empty() {
         return Err("Uploaded KYC files cannot be empty.".into());
     }
+    if bytes.len() > max_kyc_upload_bytes() {
+        return Err(format!(
+            "KYC uploads are limited to {} MB.",
+            max_kyc_upload_bytes() / 1024 / 1024
+        ));
+    }
+
+    let original_name = original_name
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "document.bin".into());
+    let mime_type = mime_type
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    if let Some(mime_type) = mime_type.as_deref() {
+        if !is_supported_kyc_mime_type(mime_type) {
+            return Err(format!(
+                "KYC MIME type {} is not allowed for production upload.",
+                mime_type
+            ));
+        }
+    }
+
+    if !is_supported_kyc_extension(&original_name) {
+        return Err("KYC uploads must be PDF, JPG, JPEG, PNG, TXT, DOC, or DOCX files.".into());
+    }
 
     Ok(ParsedKycDocumentUpload {
         document_name,
         document_type,
-        original_name: original_name
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "document.bin".into()),
-        mime_type: mime_type
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty()),
+        original_name,
+        mime_type,
         bytes,
     })
+}
+
+fn max_kyc_upload_bytes() -> usize {
+    25 * 1024 * 1024
+}
+
+fn is_supported_kyc_mime_type(mime_type: &str) -> bool {
+    matches!(
+        mime_type.trim().to_ascii_lowercase().as_str(),
+        "application/pdf"
+            | "image/jpeg"
+            | "image/png"
+            | "text/plain"
+            | "application/msword"
+            | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+}
+
+fn is_supported_kyc_extension(file_name: &str) -> bool {
+    let Some(extension) = file_name.rsplit('.').next() else {
+        return false;
+    };
+    matches!(
+        extension.trim().to_ascii_lowercase().as_str(),
+        "pdf" | "jpg" | "jpeg" | "png" | "txt" | "doc" | "docx"
+    )
 }
 
 fn normalize_storage_provider(file_path: &str) -> &str {
@@ -2952,6 +3013,14 @@ mod tests {
     use crate::test_support::{fetch_password_reset_token, prepare_pool, test_state};
     use serial_test::serial;
     use shared::{ForgotPasswordRequest, LoginRequest, RegisterRequest};
+
+    #[test]
+    fn kyc_upload_validation_rejects_unsafe_file_types() {
+        assert!(is_supported_kyc_mime_type("application/pdf"));
+        assert!(is_supported_kyc_extension("carrier-packet.pdf"));
+        assert!(!is_supported_kyc_mime_type("application/x-msdownload"));
+        assert!(!is_supported_kyc_extension("payload.exe"));
+    }
 
     #[tokio::test]
     #[serial]

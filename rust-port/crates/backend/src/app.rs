@@ -7,7 +7,7 @@ use axum::{
         header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
     },
     middleware::{self, Next},
-    response::Response,
+    response::{IntoResponse, Response},
     routing::get,
 };
 use db::inventory;
@@ -75,6 +75,10 @@ pub fn router(state: AppState) -> Router {
         .nest("/admin", routes::admin::router())
         .nest("/master-data", routes::master_data::router())
         .nest("/realtime", routes::realtime::router())
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            security_middleware,
+        ))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             observability_middleware,
@@ -257,6 +261,163 @@ async fn observability_middleware(
     response
 }
 
+async fn security_middleware(
+    State(state): State<AppState>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let route = request.uri().path().to_string();
+    let method = request.method().clone();
+    let headers = request.headers();
+    let class = security_class_for_route(&route);
+    let rate_key = rate_limit_key(headers, class);
+
+    if let Err(message) = state.enforce_rate_limit(class, &rate_key, rate_limit_per_minute(class)) {
+        return with_security_headers((StatusCode::TOO_MANY_REQUESTS, message).into_response());
+    }
+
+    if let Some(content_length) = headers
+        .get("content-length")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        let max_body_bytes = max_body_bytes_for_class(class);
+        if content_length > max_body_bytes {
+            return with_security_headers(
+                (
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    format!("Request body exceeds the {} byte limit.", max_body_bytes),
+                )
+                    .into_response(),
+            );
+        }
+    }
+
+    if let Err(message) = validate_cookie_origin_strategy(&state.config, &method, headers) {
+        return with_security_headers((StatusCode::FORBIDDEN, message).into_response());
+    }
+
+    with_security_headers(next.run(request).await)
+}
+
+fn with_security_headers(mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    let header_values = [
+        ("x-content-type-options", "nosniff"),
+        ("x-frame-options", "DENY"),
+        ("referrer-policy", "strict-origin-when-cross-origin"),
+        ("cross-origin-opener-policy", "same-origin"),
+        ("cross-origin-resource-policy", "same-site"),
+        (
+            "permissions-policy",
+            "camera=(), microphone=(), geolocation=(self), payment=(self)",
+        ),
+        (
+            "content-security-policy",
+            "default-src 'self'; connect-src 'self' https: wss:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'",
+        ),
+    ];
+
+    for (name, value) in header_values {
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_lowercase(name.as_bytes()),
+            HeaderValue::from_str(value),
+        ) {
+            headers.insert(name, value);
+        }
+    }
+
+    response
+}
+
+fn security_class_for_route(route: &str) -> &'static str {
+    match route {
+        path if path == "/auth/login" => "login",
+        path if path.contains("/otp") || path.contains("password") => "otp",
+        path if path.contains("/book") => "booking",
+        path if path.contains("/offers") => "offer",
+        path if path.contains("saved-search")
+            || path.contains("search")
+            || path.contains("/load-board") =>
+        {
+            "search"
+        }
+        path if path.contains("upload") || path.contains("documents") => "upload",
+        path if path.contains("webhook")
+            || path.contains("/api/stloads")
+            || path.contains("/tms/") =>
+        {
+            "webhook"
+        }
+        path if path.contains("/admin/")
+            && (path.contains("replay") || path.contains("resolve")) =>
+        {
+            "admin_replay"
+        }
+        _ => "default",
+    }
+}
+
+fn rate_limit_per_minute(class: &str) -> u32 {
+    match class {
+        "login" | "otp" => 10,
+        "search" => 120,
+        "offer" => 60,
+        "booking" => 30,
+        "upload" => 20,
+        "webhook" => 120,
+        "admin_replay" => 20,
+        _ => 600,
+    }
+}
+
+fn max_body_bytes_for_class(class: &str) -> u64 {
+    match class {
+        "upload" => 25 * 1024 * 1024,
+        "webhook" => 2 * 1024 * 1024,
+        "offer" | "booking" | "admin_replay" => 512 * 1024,
+        "login" | "otp" => 64 * 1024,
+        _ => 1024 * 1024,
+    }
+}
+
+fn rate_limit_key(headers: &HeaderMap, class: &str) -> String {
+    let client = header_value(headers, "x-forwarded-for")
+        .and_then(|value| value.split(',').next().map(str::trim).map(str::to_string))
+        .filter(|value| !value.is_empty())
+        .or_else(|| header_value(headers, "x-real-ip"))
+        .unwrap_or_else(|| "anonymous".into());
+    format!("{class}:{client}")
+}
+
+fn validate_cookie_origin_strategy(
+    config: &RuntimeConfig,
+    method: &Method,
+    headers: &HeaderMap,
+) -> Result<(), String> {
+    if matches!(method, &Method::GET | &Method::HEAD | &Method::OPTIONS) {
+        return Ok(());
+    }
+
+    if headers.get("cookie").is_none() {
+        return Ok(());
+    }
+
+    let Some(origin) = header_value(headers, "origin") else {
+        return Err("Cookie-authenticated unsafe requests require an Origin header.".into());
+    };
+
+    if config
+        .cors_allowed_origins
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(&origin))
+    {
+        Ok(())
+    } else {
+        Err("Cookie-authenticated unsafe request origin is not allowed.".into())
+    }
+}
+
 fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get(name)
@@ -366,6 +527,7 @@ mod tests {
             pool: None,
             integration_auth: IntegrationAuthState::default(),
             realtime_tx,
+            security: crate::state::SecurityState::default(),
         }
     }
 
@@ -441,6 +603,81 @@ mod tests {
         for (route, expected) in routes {
             assert_eq!(audit_category_for_route(route), expected);
         }
+    }
+
+    #[test]
+    fn security_class_limits_cover_p19_route_groups() {
+        let routes = [
+            ("/auth/login", "login", 10, 64 * 1024),
+            ("/auth/otp/resend", "otp", 10, 64 * 1024),
+            ("/dispatch/load-board", "search", 120, 1024 * 1024),
+            ("/marketplace/postings/4/offers", "offer", 60, 512 * 1024),
+            ("/dispatch/load-board/4/book", "booking", 30, 512 * 1024),
+            (
+                "/dispatch/loads/4/documents/upload",
+                "upload",
+                20,
+                25 * 1024 * 1024,
+            ),
+            ("/tms/webhook/status", "webhook", 120, 2 * 1024 * 1024),
+            (
+                "/admin/stloads/outbound-events/4/replay",
+                "admin_replay",
+                20,
+                512 * 1024,
+            ),
+        ];
+
+        for (route, class, expected_limit, expected_body_limit) in routes {
+            assert_eq!(security_class_for_route(route), class);
+            assert_eq!(rate_limit_per_minute(class), expected_limit);
+            assert_eq!(max_body_bytes_for_class(class), expected_body_limit);
+        }
+    }
+
+    #[test]
+    fn cookie_unsafe_requests_require_allowed_origin() {
+        let config = test_config("production");
+        let mut headers = HeaderMap::new();
+        headers.insert("cookie", HeaderValue::from_static("sid=test"));
+
+        assert!(validate_cookie_origin_strategy(&config, &Method::POST, &headers).is_err());
+
+        headers.insert("origin", HeaderValue::from_static("https://evil.test"));
+        assert!(validate_cookie_origin_strategy(&config, &Method::POST, &headers).is_err());
+
+        headers.insert(
+            "origin",
+            HeaderValue::from_static("https://portal.stloads.test"),
+        );
+        assert!(validate_cookie_origin_strategy(&config, &Method::POST, &headers).is_ok());
+    }
+
+    #[test]
+    fn security_headers_are_attached_to_responses() {
+        let response = with_security_headers(StatusCode::OK.into_response());
+        let headers = response.headers();
+
+        assert_eq!(headers.get("x-frame-options").unwrap(), "DENY");
+        assert_eq!(headers.get("x-content-type-options").unwrap(), "nosniff");
+        assert!(headers.get("content-security-policy").is_some());
+    }
+
+    #[test]
+    fn auth_failure_lockout_triggers_after_repeated_failures() {
+        let state = test_state(test_config("development"));
+        let email = "locked@example.test";
+
+        for _ in 0..4 {
+            state.record_auth_failure(email);
+            assert!(state.auth_failure_locked_message(email).is_none());
+        }
+
+        state.record_auth_failure(email);
+        assert!(state.auth_failure_locked_message(email).is_some());
+
+        state.clear_auth_failures(email);
+        assert!(state.auth_failure_locked_message(email).is_none());
     }
 }
 

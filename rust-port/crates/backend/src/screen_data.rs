@@ -2658,6 +2658,7 @@ mod tests {
             config,
             pool: None,
             realtime_tx,
+            security: crate::state::SecurityState::default(),
         }
     }
 

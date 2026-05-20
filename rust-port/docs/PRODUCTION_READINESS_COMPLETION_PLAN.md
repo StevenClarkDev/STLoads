@@ -79,26 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P19: Security And Abuse Hardening
-
-**Outcome:** STLoads can safely face real users and carriers.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\app.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\auth_session.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\auth.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\marketplace.rs`
-
-- [ ] Add rate limits for login, OTP, search, offer, booking, upload, webhooks, and admin replay.
-- [ ] Add account lockout or throttling for repeated auth failures.
-- [ ] Add secure headers.
-- [ ] Add file upload MIME and extension validation.
-- [ ] Add maximum body sizes per route class.
-- [ ] Add CSRF/same-origin strategy if cookie auth is used.
-- [ ] Add CORS allowlist for production.
-- [ ] Add tests for RBAC bypass attempts and cross-tenant data leakage.
-
 ### Task P20: Build, CI, And Test Coverage
 
 **Outcome:** The repo can prove production readiness repeatedly.
@@ -227,10 +207,9 @@ Do not call STLoads market-ready until every item below is true:
 
 1. P7 Tenant/RBAC/session hardening.
 2. P8 Carrier search and alerts.
-3. P19 Security hardening.
-4. P20 Build and tests.
-5. P21 IBM deployment.
-6. P22 Launch documentation.
+3. P20 Build and tests.
+4. P21 IBM deployment.
+5. P22 Launch documentation.
 
 ## Definition Of Done
 
