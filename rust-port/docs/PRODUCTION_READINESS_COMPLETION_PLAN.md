@@ -79,20 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task E3: Marketplace Booking Workflow Proof
-
-**Outcome:** Offer, counter, tender, book-now, cancellation, and duplicate-booking protection are proven end to end.
-
-- [ ] Verify carrier offer creation.
-- [ ] Verify broker/shipper/forwarder counter flow.
-- [ ] Verify tender flow.
-- [ ] Verify book-now flow.
-- [ ] Verify cancellation or withdrawal behavior after marketplace activity exists.
-- [ ] Verify booking lock prevents duplicate awards under concurrent requests.
-- [ ] Verify audit events are written for every booking-state transition.
-- [ ] Add or update automated tests for booking concurrency and workflow state.
-- [ ] Browser-test the flow through the developer UI/UX without redesigning it.
-
 ### Task E4: Documents, Tracking, And Exception Sync Proof
 
 **Outcome:** Marketplace documents, execution tracking, and exceptions are production-safe and reconcile with ATMP.
@@ -165,10 +151,9 @@ Do not call STLoads market-ready until every item below is true:
 
 ## Recommended Execution Order
 
-1. E3 Marketplace booking workflow proof.
-2. E4 Documents, tracking, and exception sync proof.
-3. E5 Payments and recovery proof.
-4. E7 Final IBM staging launch gate.
+1. E4 Documents, tracking, and exception sync proof.
+2. E5 Payments and recovery proof.
+3. E7 Final IBM staging launch gate.
 
 ## Definition Of Done
 

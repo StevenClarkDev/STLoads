@@ -425,6 +425,25 @@ pub async fn respond_to_counteroffer(
     }
 
     tx.commit().await?;
+    enqueue_marketplace_event(
+        pool,
+        tenant_id,
+        match decision {
+            CounterofferDecision::Accept => "counteroffer_accepted",
+            CounterofferDecision::Reject => "counteroffer_rejected",
+        },
+        counter.posting_id,
+        None,
+        json!({
+            "counteroffer_id": counter.id,
+            "offer_id": counter.offer_id,
+            "posting_id": counter.posting_id,
+            "decision": status,
+            "amount": counter.amount,
+            "currency": counter.currency,
+        }),
+    )
+    .await?;
     Ok(counter)
 }
 
@@ -480,6 +499,21 @@ pub async fn create_tender_invite(
 
     let record = find_tender_invite_tx(&mut tx, invite_id).await?;
     tx.commit().await?;
+    enqueue_marketplace_event(
+        pool,
+        input.tenant_id,
+        "tender_sent",
+        input.posting_id,
+        None,
+        json!({
+            "tender_id": tender_id,
+            "tender_invite_id": invite_id,
+            "posting_id": input.posting_id,
+            "carrier_profile_id": input.carrier_profile_id,
+            "tender_type": input.tender_type,
+        }),
+    )
+    .await?;
     Ok(record)
 }
 
@@ -544,6 +578,24 @@ pub async fn respond_to_tender_invite(
 
     let updated = find_tender_invite_tx(&mut tx, invite_id).await?;
     tx.commit().await?;
+    enqueue_marketplace_event(
+        pool,
+        tenant_id,
+        match decision {
+            TenderDecision::Accept => "tender_accepted",
+            TenderDecision::Reject => "tender_declined",
+        },
+        updated.posting_id,
+        None,
+        json!({
+            "tender_id": updated.tender_id,
+            "tender_invite_id": updated.invite_id,
+            "posting_id": updated.posting_id,
+            "carrier_profile_id": updated.carrier_profile_id,
+            "decision": invite_status,
+        }),
+    )
+    .await?;
     Ok(updated)
 }
 

@@ -57,6 +57,55 @@ async fn offers_tenders_book_now_and_cancellations_emit_events_and_lock_booking(
     .unwrap();
     assert_eq!(accepted_counter.status, "accepted");
 
+    for (party, amount) in [("broker", 2535.0), ("forwarder", 2545.0)] {
+        let counter = db::marketplace::create_counteroffer(
+            &pool,
+            db::marketplace::CreateCounterofferInput {
+                tenant_id: "tenant-p10",
+                offer_id: offer.id,
+                from_party_type: party,
+                to_party_type: "carrier",
+                amount,
+                currency: "USD",
+                message: Some("Alternate commercial desk counter."),
+                created_by: fixture.shipper_user_id,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(counter.status, "pending");
+
+        let rejected_counter = db::marketplace::respond_to_counteroffer(
+            &pool,
+            "tenant-p10",
+            counter.id,
+            "reject",
+            Some("Rejected to preserve the accepted shipper terms."),
+            fixture.carrier_one_user_id,
+        )
+        .await
+        .unwrap();
+        assert_eq!(rejected_counter.status, "rejected");
+    }
+
+    let counter_parties = sqlx::query_scalar::<_, String>(
+        "SELECT DISTINCT from_party_type FROM counteroffers WHERE tenant_id = 'tenant-p10' AND offer_id = $1 ORDER BY from_party_type",
+    )
+    .bind(offer.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(counter_parties, vec!["broker", "forwarder", "shipper"]);
+
+    let offer_versions = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM offer_versions WHERE tenant_id = 'tenant-p10' AND offer_id = $1",
+    )
+    .bind(offer.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(offer_versions, 2);
+
     let tender = db::marketplace::create_tender_invite(
         &pool,
         db::marketplace::CreateTenderInviteInput {
@@ -138,6 +187,23 @@ async fn offers_tenders_book_now_and_cancellations_emit_events_and_lock_booking(
     .unwrap();
     assert_eq!(active_awards, 1);
 
+    let booking_lock_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM booking_locks WHERE tenant_id = 'tenant-p10' AND posting_id = $1 AND released_at IS NULL",
+    )
+    .bind(fixture.posting_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(booking_lock_count, 1);
+
+    let booked_leg_history = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM load_history WHERE remarks = 'STLoads book-now awarded this posting.'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(booked_leg_history >= 1);
+
     let cancellation = db::marketplace::request_carrier_cancellation(
         &pool,
         db::marketplace::CarrierCancellationInput {
@@ -161,11 +227,24 @@ async fn offers_tenders_book_now_and_cancellations_emit_events_and_lock_booking(
     .unwrap();
     assert!(event_types.contains(&"offer_submitted".to_string()));
     assert!(event_types.contains(&"counteroffer_submitted".to_string()));
+    assert!(event_types.contains(&"counteroffer_accepted".to_string()));
+    assert!(event_types.contains(&"counteroffer_rejected".to_string()));
+    assert!(event_types.contains(&"tender_sent".to_string()));
+    assert!(event_types.contains(&"tender_accepted".to_string()));
     if award.offer_id.is_some() {
         assert!(event_types.contains(&"offer_accepted".to_string()));
     }
     assert!(event_types.contains(&"carrier_booked".to_string()));
     assert!(event_types.contains(&"booking_canceled".to_string()));
+
+    let transition_event_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM atmp_outbound_events WHERE tenant_id = 'tenant-p10' AND posting_id = $1",
+    )
+    .bind(fixture.posting_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(transition_event_count >= 10);
 }
 
 #[tokio::test]
