@@ -10,13 +10,13 @@ use axum::{
 use chrono::{NaiveDate, NaiveDateTime};
 use db::{
     dispatch::{
-        CreateLoadLegParams, CreateLoadParams, LoadBoardSearchFilters, UpsertLoadDocumentParams,
-        append_dispatch_desk_follow_up, book_load_leg,
+        CreateLoadLegParams, CreateLoadParams, DocumentReviewDecision, LoadBoardSearchFilters,
+        UpsertLoadDocumentParams, append_dispatch_desk_follow_up, book_load_leg,
         create_load_document as insert_load_document, create_load_with_legs, find_load_by_id,
         find_load_document_by_id, find_load_document_scope, find_load_id_and_status_for_leg,
         find_load_leg_by_id, find_load_leg_scope, list_load_board_saved_searches,
         list_load_builder_legs_for_load, list_load_documents_for_load, list_load_history_for_load,
-        list_load_legs_for_load, list_load_profile_legs_for_load,
+        list_load_legs_for_load, list_load_profile_legs_for_load, review_load_document,
         update_load_document as persist_load_document_updates, update_load_with_legs,
         upsert_load_board_alert_rule, upsert_load_board_saved_search,
         verify_load_document_blockchain as persist_load_document_blockchain_verification,
@@ -35,15 +35,17 @@ use domain::{
     },
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use shared::{
     ApiResponse, BookLoadLegRequest, BookLoadLegResponse, CreateLoadRequest, CreateLoadResponse,
     DispatchDeskFollowUpRequest, DispatchDeskFollowUpResponse, DispatchDeskScreen,
     LoadBoardFilterState, LoadBoardSavedSearchItem, LoadBoardScreen, LoadBuilderDraft,
     LoadBuilderLegDraft, LoadBuilderOption, LoadBuilderScreen, LoadDocumentRow, LoadHandoffSummary,
     LoadHistoryRow, LoadProfileField, LoadProfileLegRow, LoadProfileScreen, RealtimeEvent,
-    RealtimeEventKind, RealtimeTopic, SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse,
-    UpsertLoadBoardAlertRequest, UpsertLoadBoardAlertResponse, UpsertLoadDocumentRequest,
-    UpsertLoadDocumentResponse, VerifyLoadDocumentRequest, VerifyLoadDocumentResponse,
+    RealtimeEventKind, RealtimeTopic, ReviewLoadDocumentRequest, ReviewLoadDocumentResponse,
+    SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse, UpsertLoadBoardAlertRequest,
+    UpsertLoadBoardAlertResponse, UpsertLoadDocumentRequest, UpsertLoadDocumentResponse,
+    VerifyLoadDocumentRequest, VerifyLoadDocumentResponse,
 };
 use std::collections::HashMap;
 use tracing::{info, warn};
@@ -227,6 +229,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/documents/{document_id}/verify-blockchain",
             post(verify_load_document_handler),
+        )
+        .route(
+            "/documents/{document_id}/review",
+            post(review_load_document_handler),
         )
         .route("/load-board/{leg_id}/book", post(book_leg))
 }
@@ -1223,6 +1229,7 @@ async fn upload_load_document_handler(
         original_name: Some(upload.original_name),
         mime_type: upload.mime_type,
         file_size: Some(upload.bytes.len() as i64),
+        file_hash: Some(sha256_hex(&upload.bytes)),
     };
 
     match insert_load_document(pool, load_id, &params, Some(session.user.id)).await {
@@ -1859,6 +1866,133 @@ async fn verify_load_document_handler(
                 message: format!("Blockchain verification failed: {}", error),
             }))
         }
+    }
+}
+
+async fn review_load_document_handler(
+    State(state): State<AppState>,
+    Path(document_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<ReviewLoadDocumentRequest>,
+) -> Json<ApiResponse<ReviewLoadDocumentResponse>> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(ReviewLoadDocumentResponse {
+            success: false,
+            load_id: 0,
+            document_id,
+            review_status: "unauthorized".into(),
+            malware_scan_status: "unknown".into(),
+            payment_ready_blocked: true,
+            message: "Sign in before reviewing load documents.".into(),
+        }));
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(ReviewLoadDocumentResponse {
+            success: false,
+            load_id: 0,
+            document_id,
+            review_status: "unavailable".into(),
+            malware_scan_status: "unknown".into(),
+            payment_ready_blocked: true,
+            message: format!(
+                "Document review is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        }));
+    };
+
+    let Some(scope) = find_load_document_scope(pool, document_id)
+        .await
+        .unwrap_or_default()
+    else {
+        return Json(ApiResponse::ok(ReviewLoadDocumentResponse {
+            success: false,
+            load_id: 0,
+            document_id,
+            review_status: "missing".into(),
+            malware_scan_status: "unknown".into(),
+            payment_ready_blocked: true,
+            message: format!("Document #{} was not found.", document_id),
+        }));
+    };
+
+    if !can_manage_load_documents(&session, scope.load_owner_user_id) {
+        return Json(ApiResponse::ok(ReviewLoadDocumentResponse {
+            success: false,
+            load_id: scope.load_id,
+            document_id,
+            review_status: "forbidden".into(),
+            malware_scan_status: "unknown".into(),
+            payment_ready_blocked: true,
+            message: "The authenticated session cannot review this load document.".into(),
+        }));
+    }
+
+    let decision = match payload.decision.trim().to_ascii_lowercase().as_str() {
+        "approve" | "approved" => DocumentReviewDecision::Approve,
+        "reject" | "rejected" => DocumentReviewDecision::Reject,
+        "request_revision" | "revision" | "revision_requested" => {
+            DocumentReviewDecision::RequestRevision
+        }
+        _ => {
+            return Json(ApiResponse::ok(ReviewLoadDocumentResponse {
+                success: false,
+                load_id: scope.load_id,
+                document_id,
+                review_status: "invalid".into(),
+                malware_scan_status: "unknown".into(),
+                payment_ready_blocked: true,
+                message: "Document review decision must be approve, reject, or request_revision."
+                    .into(),
+            }));
+        }
+    };
+
+    let note = payload
+        .note
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    match review_load_document(pool, document_id, decision, note, Some(session.user.id)).await {
+        Ok(Some(document)) => Json(ApiResponse::ok(ReviewLoadDocumentResponse {
+            success: true,
+            load_id: document.load_id,
+            document_id: document.id,
+            review_status: document.review_status.clone(),
+            malware_scan_status: document.malware_scan_status.clone(),
+            payment_ready_blocked: document.payment_ready_blocked,
+            message: format!(
+                "{} marked {} as {}.",
+                session.user.name,
+                document.document_name,
+                profile_title_case(&document.review_status)
+            ),
+        })),
+        Ok(None) => Json(ApiResponse::ok(ReviewLoadDocumentResponse {
+            success: false,
+            load_id: scope.load_id,
+            document_id,
+            review_status: "missing".into(),
+            malware_scan_status: "unknown".into(),
+            payment_ready_blocked: true,
+            message: "The requested document disappeared before review completed.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(ReviewLoadDocumentResponse {
+            success: false,
+            load_id: scope.load_id,
+            document_id,
+            review_status: "failed".into(),
+            malware_scan_status: "unknown".into(),
+            payment_ready_blocked: true,
+            message: format!("Document review failed: {}", error),
+        })),
     }
 }
 async fn book_leg(
@@ -2657,6 +2791,9 @@ fn validate_load_document_payload(
     if document_type.is_empty() {
         return Err("Choose a document type before saving the load profile document row.".into());
     }
+    if !is_supported_load_document_type(&document_type) {
+        return Err("Document type must be rate_confirmation, bill_of_lading, delivery_pod, invoice, lumper_receipt, insurance_certificate, carrier_packet, customs_document, blockchain, or other.".into());
+    }
 
     let file_path = payload.file_path.trim().to_string();
     if file_path.is_empty() {
@@ -2665,6 +2802,25 @@ fn validate_load_document_payload(
 
     if payload.file_size.unwrap_or(0) < 0 {
         return Err("File size cannot be negative.".into());
+    }
+    if payload.file_size.unwrap_or(0) as usize > max_document_upload_bytes() {
+        return Err(format!(
+            "Document metadata cannot exceed {} MB.",
+            max_document_upload_bytes() / 1024 / 1024
+        ));
+    }
+    if let Some(mime_type) = payload
+        .mime_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if !is_supported_document_mime_type(mime_type) {
+            return Err(format!(
+                "Document MIME type {} is not allowed for production upload.",
+                mime_type
+            ));
+        }
     }
 
     Ok(UpsertLoadDocumentParams {
@@ -2685,7 +2841,13 @@ fn validate_load_document_payload(
             .filter(|value| !value.is_empty())
             .map(str::to_string),
         file_size: payload.file_size,
+        file_hash: None,
     })
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn normalize_storage_provider(file_path: &str) -> String {
@@ -2696,6 +2858,16 @@ fn normalize_storage_provider(file_path: &str) -> String {
         "external_url".into()
     } else {
         "local".into()
+    }
+}
+
+fn document_review_tone(status: &str) -> &'static str {
+    match status {
+        "approved" => "success",
+        "rejected" => "danger",
+        "revision_requested" => "warning",
+        "pending_review" => "warning",
+        _ => "secondary",
     }
 }
 
@@ -2748,9 +2920,27 @@ async fn parse_document_upload(mut multipart: Multipart) -> Result<ParsedUploade
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "Choose a document type before uploading a file.".to_string())?;
+    if !is_supported_load_document_type(&document_type) {
+        return Err("Document type must be rate_confirmation, bill_of_lading, delivery_pod, invoice, lumper_receipt, insurance_certificate, carrier_packet, customs_document, or other.".into());
+    }
     let bytes = bytes.ok_or_else(|| "Choose a file before uploading a document.".to_string())?;
     if bytes.is_empty() {
         return Err("Uploaded document files cannot be empty.".into());
+    }
+    if bytes.len() > max_document_upload_bytes() {
+        return Err(format!(
+            "Uploaded document files cannot exceed {} MB.",
+            max_document_upload_bytes() / 1024 / 1024
+        ));
+    }
+
+    if let Some(mime_type) = mime_type.as_deref() {
+        if !is_supported_document_mime_type(mime_type) {
+            return Err(format!(
+                "Document MIME type {} is not allowed for production upload.",
+                mime_type
+            ));
+        }
     }
 
     Ok(ParsedUploadedDocument {
@@ -2765,6 +2955,34 @@ async fn parse_document_upload(mut multipart: Multipart) -> Result<ParsedUploade
             .filter(|value| !value.is_empty()),
         bytes,
     })
+}
+
+fn max_document_upload_bytes() -> usize {
+    25 * 1024 * 1024
+}
+
+fn is_supported_load_document_type(document_type: &str) -> bool {
+    matches!(
+        document_type,
+        "rate_confirmation"
+            | "bill_of_lading"
+            | "delivery_pod"
+            | "invoice"
+            | "lumper_receipt"
+            | "insurance_certificate"
+            | "carrier_packet"
+            | "customs_document"
+            | "blockchain"
+            | "other"
+    )
+}
+
+fn is_supported_document_mime_type(mime_type: &str) -> bool {
+    let normalized = mime_type.trim().to_ascii_lowercase();
+    normalized == "application/pdf"
+        || normalized == "image/jpeg"
+        || normalized == "image/png"
+        || normalized == "text/plain"
 }
 
 fn text_response(status: StatusCode, message: &str) -> Response {
@@ -3068,6 +3286,11 @@ async fn build_load_profile_screen(
                 blockchain_hash_preview,
                 can_edit: can_manage_documents,
                 can_verify_blockchain: can_manage_documents && !has_hash,
+                review_status_label: profile_title_case(&document.review_status),
+                review_status_tone: document_review_tone(&document.review_status).into(),
+                malware_scan_status_label: profile_title_case(&document.malware_scan_status),
+                payment_ready_blocked: document.payment_ready_blocked,
+                can_review: can_manage_documents,
                 uploaded_at_label: format_profile_datetime(&document.created_at),
             }
         })

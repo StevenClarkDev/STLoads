@@ -79,28 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P13: Documents, Review, Versioning, And Storage Safety
-
-**Outcome:** STLoads document flows are safe enough for production freight.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\document_storage.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\dispatch.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\execution.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\document_upload.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\load_profile.rs`
-
-- [ ] Add required document rules by tenant/customer/mode/status/payment.
-- [ ] Add document upload validation by type and size.
-- [ ] Add object storage persistence.
-- [ ] Add document versioning.
-- [ ] Add approve/reject/request revision.
-- [ ] Add immutable audit history.
-- [ ] Add malware scan status field and block unscanned docs from payment-ready state in production.
-- [ ] Emit ATMP document events.
-- [ ] Tests must prove document replacement preserves prior version.
-
 ### Task P14: Payments, Stripe Connect, Settlement, And Disputes
 
 **Outcome:** Payment workflows are production-safe and reconcilable.
@@ -361,15 +339,14 @@ Do not call STLoads market-ready until every item below is true:
 1. P7 Tenant/RBAC/session hardening.
 2. P16 Placeholder/demo data purge.
 3. P8 Carrier search and alerts.
-4. P13 Documents.
-5. P14 Payments.
-6. P15 Admin ops and reconciliation.
-7. P17 Realtime.
-8. P18 Observability and audit.
-9. P19 Security hardening.
-10. P20 Build and tests.
-11. P21 IBM deployment.
-12. P22 Launch documentation.
+4. P14 Payments.
+5. P15 Admin ops and reconciliation.
+6. P17 Realtime.
+7. P18 Observability and audit.
+8. P19 Security hardening.
+9. P20 Build and tests.
+10. P21 IBM deployment.
+11. P22 Launch documentation.
 
 ## Definition Of Done
 

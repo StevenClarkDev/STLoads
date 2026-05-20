@@ -7,7 +7,7 @@ use axum::{
 };
 use db::{
     auth::find_user_by_id,
-    dispatch::{find_load_leg_by_id, find_load_leg_scope},
+    dispatch::{find_load_leg_by_id, find_load_leg_scope, load_has_payment_blocking_documents},
     payments::{
         EscrowTransitionParams, apply_escrow_transition, find_escrow_by_payment_intent_id,
         find_escrow_for_leg, set_user_stripe_connect_account_id, update_user_connect_state,
@@ -655,6 +655,22 @@ async fn release_leg_escrow(
             "The load owner could not be resolved for this leg.",
         )));
     };
+
+    if load_has_payment_blocking_documents(pool, scope.load_id)
+        .await
+        .unwrap_or(true)
+    {
+        return Json(ApiResponse::ok(EscrowLifecycleResponse {
+            success: false,
+            leg_id,
+            escrow_id: Some(existing_escrow.id),
+            payment_intent_id: existing_escrow.payment_intent_id,
+            client_secret: None,
+            transfer_id: existing_escrow.transfer_id,
+            status_label: "Documents Pending".into(),
+            message: "Payment release is blocked until required load documents are approved and malware scan status is clean.".into(),
+        }));
+    }
 
     let transfer_id = match payload
         .transfer_id

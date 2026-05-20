@@ -3,9 +3,13 @@ use domain::dispatch::{
     LegExecutionStatus, LegPostingStatus, LegacyLoadLegStatusCode, load_module_contract,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::{FromRow, Postgres, QueryBuilder};
 
-use crate::DbPool;
+use crate::{
+    DbPool,
+    tms::{EnqueueAtmpOutboundEvent, enqueue_atmp_outbound_event},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct CountryRecord {
@@ -100,6 +104,13 @@ pub struct LoadDocumentRecord {
     pub hash_algorithm: Option<String>,
     pub mock_blockchain_tx: Option<String>,
     pub mock_blockchain_timestamp: Option<NaiveDateTime>,
+    pub review_status: String,
+    pub review_note: Option<String>,
+    pub reviewed_by_user_id: Option<i64>,
+    pub reviewed_at: Option<NaiveDateTime>,
+    pub malware_scan_status: String,
+    pub malware_scan_note: Option<String>,
+    pub payment_ready_blocked: bool,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -440,6 +451,39 @@ pub struct UpsertLoadDocumentParams {
     pub original_name: Option<String>,
     pub mime_type: Option<String>,
     pub file_size: Option<i64>,
+    pub file_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DocumentReviewDecision {
+    Approve,
+    Reject,
+    RequestRevision,
+}
+
+impl DocumentReviewDecision {
+    fn status(self) -> &'static str {
+        match self {
+            Self::Approve => "approved",
+            Self::Reject => "rejected",
+            Self::RequestRevision => "revision_requested",
+        }
+    }
+
+    fn audit_event(self) -> &'static str {
+        match self {
+            Self::Approve => "approved",
+            Self::Reject => "rejected",
+            Self::RequestRevision => "revision_requested",
+        }
+    }
+
+    fn atmp_event(self) -> &'static str {
+        match self {
+            Self::Approve => "document_approved",
+            Self::Reject | Self::RequestRevision => "document_rejected",
+        }
+    }
 }
 
 pub async fn list_recent_loads(pool: &DbPool, limit: i64) -> Result<Vec<LoadRecord>, sqlx::Error> {
@@ -632,7 +676,7 @@ pub async fn list_load_documents_for_load(
     sqlx::query_as::<_, LoadDocumentRecord>(
         "SELECT id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
                 original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
-                mock_blockchain_timestamp, created_at, updated_at
+                mock_blockchain_timestamp, review_status, review_note, reviewed_by_user_id, reviewed_at, malware_scan_status, malware_scan_note, payment_ready_blocked, created_at, updated_at
          FROM load_documents
          WHERE load_id = $1
          ORDER BY id DESC",
@@ -649,7 +693,7 @@ pub async fn find_load_document_by_id(
     sqlx::query_as::<_, LoadDocumentRecord>(
         "SELECT id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
                 original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
-                mock_blockchain_timestamp, created_at, updated_at
+                mock_blockchain_timestamp, review_status, review_note, reviewed_by_user_id, reviewed_at, malware_scan_status, malware_scan_note, payment_ready_blocked, created_at, updated_at
          FROM load_documents
          WHERE id = $1
          LIMIT 1",
@@ -712,7 +756,7 @@ pub async fn create_load_document(
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
              original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
-             mock_blockchain_timestamp, created_at, updated_at",
+             mock_blockchain_timestamp, review_status, review_note, reviewed_by_user_id, reviewed_at, malware_scan_status, malware_scan_note, payment_ready_blocked, created_at, updated_at",
     )
     .bind(load_id)
     .bind(&params.document_name)
@@ -725,6 +769,23 @@ pub async fn create_load_document(
     .bind(params.file_size)
     .fetch_one(&mut *tx)
     .await?;
+
+    ensure_document_tenant_tx(&mut tx, "default").await?;
+    let version_id =
+        insert_load_document_version_tx(&mut tx, "default", &created, params, 1, actor_user_id)
+            .await?;
+    insert_document_audit_event_tx(
+        &mut tx,
+        "default",
+        "load_document",
+        &created.id.to_string(),
+        Some(version_id),
+        "uploaded",
+        actor_user_id,
+        Some("Initial document upload."),
+    )
+    .await?;
+    insert_document_review_tx(&mut tx, "default", version_id, "pending", None, None).await?;
 
     sqlx::query(
         "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
@@ -741,6 +802,15 @@ pub async fn create_load_document(
     .await?;
 
     tx.commit().await?;
+    enqueue_load_document_atmp_event(
+        pool,
+        "document_uploaded",
+        load_row.id,
+        created.id,
+        &created.document_type,
+        actor_user_id,
+    )
+    .await?;
     Ok(Some(created))
 }
 
@@ -772,6 +842,25 @@ pub async fn update_load_document(
         return Ok(None);
     };
 
+    let Some(existing) = sqlx::query_as::<_, LoadDocumentRecord>(
+        "SELECT id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
+                original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
+                mock_blockchain_timestamp, review_status, review_note, reviewed_by_user_id, reviewed_at, malware_scan_status, malware_scan_note, payment_ready_blocked, created_at, updated_at
+         FROM load_documents
+         WHERE id = $1
+         LIMIT 1",
+    )
+    .bind(document_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    ensure_document_tenant_tx(&mut tx, "default").await?;
+    backfill_current_load_document_version_tx(&mut tx, "default", &existing, actor_user_id).await?;
+
     sqlx::query(
         "UPDATE load_documents
          SET document_name = $1,
@@ -781,6 +870,13 @@ pub async fn update_load_document(
              original_name = $5,
              mime_type = $6,
              file_size = $7,
+             review_status = 'pending_review',
+             review_note = NULL,
+             reviewed_by_user_id = NULL,
+             reviewed_at = NULL,
+             malware_scan_status = 'pending_scan',
+             malware_scan_note = NULL,
+             payment_ready_blocked = TRUE,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = $8",
     )
@@ -794,6 +890,9 @@ pub async fn update_load_document(
     .bind(document_id)
     .execute(&mut *tx)
     .await?;
+
+    let version_number =
+        next_load_document_version_number_tx(&mut tx, "default", document_id).await?;
 
     sqlx::query(
         "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
@@ -812,7 +911,7 @@ pub async fn update_load_document(
     let updated = sqlx::query_as::<_, LoadDocumentRecord>(
         "SELECT id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
                 original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
-                mock_blockchain_timestamp, created_at, updated_at
+                mock_blockchain_timestamp, review_status, review_note, reviewed_by_user_id, reviewed_at, malware_scan_status, malware_scan_note, payment_ready_blocked, created_at, updated_at
          FROM load_documents
          WHERE id = $1
          LIMIT 1",
@@ -821,7 +920,42 @@ pub async fn update_load_document(
     .fetch_optional(&mut *tx)
     .await?;
 
+    if let Some(updated_document) = updated.as_ref() {
+        let version_id = insert_load_document_version_tx(
+            &mut tx,
+            "default",
+            updated_document,
+            params,
+            version_number,
+            actor_user_id,
+        )
+        .await?;
+        insert_document_audit_event_tx(
+            &mut tx,
+            "default",
+            "load_document",
+            &updated_document.id.to_string(),
+            Some(version_id),
+            "revision_uploaded",
+            actor_user_id,
+            Some("Document file or metadata was replaced."),
+        )
+        .await?;
+        insert_document_review_tx(&mut tx, "default", version_id, "pending", None, None).await?;
+    }
+
     tx.commit().await?;
+    if let Some(updated_document) = updated.as_ref() {
+        enqueue_load_document_atmp_event(
+            pool,
+            "document_uploaded",
+            updated_document.load_id,
+            updated_document.id,
+            &updated_document.document_type,
+            actor_user_id,
+        )
+        .await?;
+    }
     Ok(updated)
 }
 
@@ -904,7 +1038,7 @@ pub async fn verify_load_document_blockchain(
     let updated = sqlx::query_as::<_, LoadDocumentRecord>(
         "SELECT id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
                 original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
-                mock_blockchain_timestamp, created_at, updated_at
+                mock_blockchain_timestamp, review_status, review_note, reviewed_by_user_id, reviewed_at, malware_scan_status, malware_scan_note, payment_ready_blocked, created_at, updated_at
          FROM load_documents
          WHERE id = $1
          LIMIT 1",
@@ -916,6 +1050,181 @@ pub async fn verify_load_document_blockchain(
     tx.commit().await?;
     Ok(updated)
 }
+
+pub async fn review_load_document(
+    pool: &DbPool,
+    document_id: i64,
+    decision: DocumentReviewDecision,
+    note: Option<&str>,
+    actor_user_id: Option<i64>,
+) -> Result<Option<LoadDocumentRecord>, sqlx::Error> {
+    #[derive(FromRow)]
+    struct DocumentLoadRow {
+        load_id: i64,
+        status: i16,
+    }
+
+    let mut tx = pool.begin().await?;
+    let Some(load_row) = sqlx::query_as::<_, DocumentLoadRow>(
+        "SELECT document.load_id, load.status
+         FROM load_documents document
+         INNER JOIN loads load ON load.id = document.load_id AND load.deleted_at IS NULL
+         WHERE document.id = $1
+         LIMIT 1",
+    )
+    .bind(document_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    ensure_document_tenant_tx(&mut tx, "default").await?;
+    let review_status = decision.status();
+    let payment_ready_blocked = !matches!(decision, DocumentReviewDecision::Approve);
+    let malware_scan_status = if matches!(decision, DocumentReviewDecision::Approve) {
+        "clean"
+    } else {
+        "pending_scan"
+    };
+
+    sqlx::query(
+        "UPDATE load_documents
+         SET review_status = $1,
+             review_note = $2,
+             reviewed_by_user_id = $3,
+             reviewed_at = CURRENT_TIMESTAMP,
+             malware_scan_status = $4,
+             payment_ready_blocked = $5,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $6",
+    )
+    .bind(review_status)
+    .bind(note)
+    .bind(actor_user_id)
+    .bind(malware_scan_status)
+    .bind(payment_ready_blocked)
+    .bind(document_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let version_id = latest_load_document_version_id_tx(&mut tx, "default", document_id).await?;
+    if let Some(version_id) = version_id {
+        insert_document_review_tx(
+            &mut tx,
+            "default",
+            version_id,
+            review_status,
+            note,
+            actor_user_id,
+        )
+        .await?;
+    }
+    insert_document_audit_event_tx(
+        &mut tx,
+        "default",
+        "load_document",
+        &document_id.to_string(),
+        version_id,
+        decision.audit_event(),
+        actor_user_id,
+        note,
+    )
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(load_row.load_id)
+    .bind(actor_user_id)
+    .bind(load_row.status)
+    .bind(format!(
+        "Rust document review marked document #{} as {}.",
+        document_id, review_status
+    ))
+    .execute(&mut *tx)
+    .await?;
+
+    let updated = sqlx::query_as::<_, LoadDocumentRecord>(
+        "SELECT id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id,
+                original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
+                mock_blockchain_timestamp, review_status, review_note, reviewed_by_user_id, reviewed_at, malware_scan_status, malware_scan_note, payment_ready_blocked, created_at, updated_at
+         FROM load_documents
+         WHERE id = $1
+         LIMIT 1",
+    )
+    .bind(document_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    if let Some(document) = updated.as_ref() {
+        enqueue_load_document_atmp_event(
+            pool,
+            decision.atmp_event(),
+            document.load_id,
+            document.id,
+            &document.document_type,
+            actor_user_id,
+        )
+        .await?;
+    }
+    Ok(updated)
+}
+
+pub async fn load_has_payment_blocking_documents(
+    pool: &DbPool,
+    load_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let blocking_existing = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM load_documents
+         WHERE load_id = $1
+           AND (
+                payment_ready_blocked = TRUE
+                OR review_status <> 'approved'
+                OR malware_scan_status <> 'clean'
+           )",
+    )
+    .bind(load_id)
+    .fetch_one(pool)
+    .await?
+        > 0;
+    if blocking_existing {
+        return Ok(true);
+    }
+
+    let missing_required = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM required_document_rules rule
+         INNER JOIN loads load ON load.id = $1 AND load.deleted_at IS NULL
+         WHERE rule.tenant_id = 'default'
+           AND rule.active = TRUE
+           AND rule.is_required = TRUE
+           AND rule.applies_to IN ('load', 'payment', 'freight')
+           AND (rule.customer_user_id IS NULL OR rule.customer_user_id = load.user_id)
+           AND (rule.load_status_id IS NULL OR rule.load_status_id = load.status)
+           AND (rule.payment_phase IS NULL OR rule.payment_phase IN ('payment_ready', 'release'))
+           AND NOT EXISTS (
+                SELECT 1
+                FROM load_documents document
+                WHERE document.load_id = load.id
+                  AND document.document_type = rule.document_type
+                  AND document.review_status = 'approved'
+                  AND document.malware_scan_status = 'clean'
+                  AND document.payment_ready_blocked = FALSE
+           )",
+    )
+    .bind(load_id)
+    .fetch_one(pool)
+    .await?
+        > 0;
+
+    Ok(missing_required)
+}
+
 pub async fn list_load_history_for_load(
     pool: &DbPool,
     load_id: i64,
@@ -2017,4 +2326,233 @@ pub async fn update_load_with_legs(
         load_number,
         leg_count: legs.len() as u64,
     }))
+}
+
+async fn ensure_document_tenant_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    tenant_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO tenants (id, name, slug, status, created_at, updated_at)
+         VALUES ($1, $2, $3, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(tenant_id)
+    .bind("Default STLoads Tenant")
+    .bind(tenant_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn backfill_current_load_document_version_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    tenant_id: &str,
+    document: &LoadDocumentRecord,
+    actor_user_id: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    let existing_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM document_versions
+         WHERE tenant_id = $1 AND document_scope = 'load_document' AND document_scope_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(document.id.to_string())
+    .fetch_one(&mut **tx)
+    .await?;
+    if existing_count > 0 {
+        return Ok(());
+    }
+
+    let params = UpsertLoadDocumentParams {
+        document_name: document.document_name.clone(),
+        document_type: document.document_type.clone(),
+        file_path: document.file_path.clone(),
+        storage_provider: document.storage_provider.clone(),
+        original_name: document.original_name.clone(),
+        mime_type: document.mime_type.clone(),
+        file_size: document.file_size,
+        file_hash: document.hash.clone(),
+    };
+    let version_id =
+        insert_load_document_version_tx(tx, tenant_id, document, &params, 1, actor_user_id).await?;
+    insert_document_audit_event_tx(
+        tx,
+        tenant_id,
+        "load_document",
+        &document.id.to_string(),
+        Some(version_id),
+        "version_backfilled",
+        actor_user_id,
+        Some("Backfilled current document as version 1 before replacement."),
+    )
+    .await?;
+    Ok(())
+}
+
+async fn next_load_document_version_number_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    tenant_id: &str,
+    document_id: i64,
+) -> Result<i32, sqlx::Error> {
+    let current = sqlx::query_scalar::<_, Option<i32>>(
+        "SELECT MAX(version_number)
+         FROM document_versions
+         WHERE tenant_id = $1 AND document_scope = 'load_document' AND document_scope_id = $2",
+    )
+    .bind(tenant_id)
+    .bind(document_id.to_string())
+    .fetch_one(&mut **tx)
+    .await?;
+    Ok(current.unwrap_or(0) + 1)
+}
+
+async fn latest_load_document_version_id_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    tenant_id: &str,
+    document_id: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id
+         FROM document_versions
+         WHERE tenant_id = $1 AND document_scope = 'load_document' AND document_scope_id = $2
+         ORDER BY version_number DESC, id DESC
+         LIMIT 1",
+    )
+    .bind(tenant_id)
+    .bind(document_id.to_string())
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+async fn insert_load_document_version_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    tenant_id: &str,
+    document: &LoadDocumentRecord,
+    params: &UpsertLoadDocumentParams,
+    version_number: i32,
+    actor_user_id: Option<i64>,
+) -> Result<i64, sqlx::Error> {
+    let file_name = params
+        .original_name
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| document.document_name.clone());
+    let file_hash = params
+        .file_hash
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| document.hash.clone())
+        .unwrap_or_else(|| {
+            format!(
+                "stloads-pending-hash:{}:{}:{}",
+                params.file_path,
+                params.file_size.unwrap_or_default(),
+                file_name
+            )
+        });
+
+    sqlx::query_scalar::<_, i64>(
+        "INSERT INTO document_versions (
+            tenant_id, document_scope, document_scope_id, version_number, storage_key,
+            file_name, mime_type, file_size, file_hash, uploaded_by, created_at
+         ) VALUES ($1, 'load_document', $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+         RETURNING id",
+    )
+    .bind(tenant_id)
+    .bind(document.id.to_string())
+    .bind(version_number)
+    .bind(&params.file_path)
+    .bind(file_name)
+    .bind(params.mime_type.as_deref())
+    .bind(params.file_size)
+    .bind(file_hash)
+    .bind(actor_user_id)
+    .fetch_one(&mut **tx)
+    .await
+}
+
+async fn insert_document_review_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    tenant_id: &str,
+    document_version_id: i64,
+    status: &str,
+    note: Option<&str>,
+    reviewed_by: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO document_reviews (
+            tenant_id, document_version_id, status, review_note, reviewed_by, reviewed_at, created_at, updated_at
+         ) VALUES (
+            $1, $2, $3, $4, $5,
+            CASE WHEN $5::bigint IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END,
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+         )",
+    )
+    .bind(tenant_id)
+    .bind(document_version_id)
+    .bind(status)
+    .bind(note)
+    .bind(reviewed_by)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn insert_document_audit_event_tx(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    tenant_id: &str,
+    scope: &str,
+    scope_id: &str,
+    document_version_id: Option<i64>,
+    event_type: &str,
+    actor_user_id: Option<i64>,
+    note: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO document_audit_events (
+            tenant_id, document_scope, document_scope_id, document_version_id,
+            event_type, actor_user_id, event_note, metadata, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, '{}'::jsonb, CURRENT_TIMESTAMP)",
+    )
+    .bind(tenant_id)
+    .bind(scope)
+    .bind(scope_id)
+    .bind(document_version_id)
+    .bind(event_type)
+    .bind(actor_user_id)
+    .bind(note)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn enqueue_load_document_atmp_event(
+    pool: &DbPool,
+    event_type: &str,
+    load_id: i64,
+    document_id: i64,
+    document_type: &str,
+    actor_user_id: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    enqueue_atmp_outbound_event(
+        pool,
+        EnqueueAtmpOutboundEvent {
+            tenant_id: "default",
+            event_type,
+            posting_id: None,
+            booking_award_id: None,
+            target_url: None,
+            payload: json!({
+                "event_type": event_type,
+                "load_id": load_id,
+                "document_id": document_id,
+                "document_type": document_type,
+                "actor_user_id": actor_user_id,
+            }),
+            correlation_id: None,
+        },
+    )
+    .await
+    .map(|_| ())
 }

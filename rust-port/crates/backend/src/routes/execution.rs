@@ -1324,6 +1324,9 @@ async fn parse_document_upload(mut multipart: Multipart) -> Result<ParsedUploade
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "Choose a document type before uploading a file.".to_string())?;
+    if !is_supported_execution_document_type(&document_type) {
+        return Err("Execution document type must be pickup_bol, pickup_photo, delivery_pod, delivery_photo, or other.".into());
+    }
     let document_name = document_name
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -1331,6 +1334,20 @@ async fn parse_document_upload(mut multipart: Multipart) -> Result<ParsedUploade
     let bytes = bytes.ok_or_else(|| "Choose a file before uploading a document.".to_string())?;
     if bytes.is_empty() {
         return Err("Uploaded document files cannot be empty.".into());
+    }
+    if bytes.len() > 25 * 1024 * 1024 {
+        return Err("Execution document uploads are limited to 25 MB.".into());
+    }
+    if let Some(mime_type) = mime_type.as_deref() {
+        if !matches!(
+            mime_type.trim().to_ascii_lowercase().as_str(),
+            "application/pdf" | "image/jpeg" | "image/png" | "text/plain"
+        ) {
+            return Err(format!(
+                "Execution document MIME type {} is not allowed.",
+                mime_type
+            ));
+        }
     }
 
     Ok(ParsedUploadedDocument {

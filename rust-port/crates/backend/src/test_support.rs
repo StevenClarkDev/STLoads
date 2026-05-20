@@ -287,6 +287,7 @@ async fn reset_database(pool: &DbPool) -> Result<(), sqlx::Error> {
             settlement_lines,
             settlements,
             required_document_rules,
+            document_audit_events,
             document_reviews,
             document_versions,
             carrier_risk_flags,

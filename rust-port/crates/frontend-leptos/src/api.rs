@@ -23,16 +23,17 @@ use shared::{
     MasterDataScreen, OfferReviewRequest, OfferReviewResponse, PortalRoleCountsResponse,
     RealtimeTopic, RegisterRequest, RegisterResponse, ResendOtpRequest, ResendOtpResponse,
     ResetPasswordRequest, ResetPasswordResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
-    RespondCounterofferRequest, RespondTenderInviteRequest, ReviewOnboardingRequest,
-    ReviewOnboardingResponse, SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse,
-    SelfProfileScreen, SimpleCatalogUpsertRequest, StloadsOperationsScreen,
-    StloadsReconciliationScreen, StripeWebhookRequest, StripeWebhookResponse, SubmitOfferRequest,
-    SubmitOnboardingRequest, SubmitOnboardingResponse, TmsCloseRequest, TmsHandoffPayload,
-    TmsHandoffResponse, TmsRequeueRequest, TmsStatusWebhookRequest, TmsWebhookResponse,
-    TmsWithdrawRequest, UpdateSelfProfileRequest, UpdateSelfProfileResponse,
-    UpsertKycDocumentRequest, UpsertKycDocumentResponse, UpsertLoadDocumentRequest,
-    UpsertLoadDocumentResponse, VerifyKycDocumentRequest, VerifyKycDocumentResponse,
-    VerifyLoadDocumentRequest, VerifyLoadDocumentResponse, VerifyOtpRequest, VerifyOtpResponse,
+    RespondCounterofferRequest, RespondTenderInviteRequest, ReviewLoadDocumentRequest,
+    ReviewLoadDocumentResponse, ReviewOnboardingRequest, ReviewOnboardingResponse,
+    SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse, SelfProfileScreen,
+    SimpleCatalogUpsertRequest, StloadsOperationsScreen, StloadsReconciliationScreen,
+    StripeWebhookRequest, StripeWebhookResponse, SubmitOfferRequest, SubmitOnboardingRequest,
+    SubmitOnboardingResponse, TmsCloseRequest, TmsHandoffPayload, TmsHandoffResponse,
+    TmsRequeueRequest, TmsStatusWebhookRequest, TmsWebhookResponse, TmsWithdrawRequest,
+    UpdateSelfProfileRequest, UpdateSelfProfileResponse, UpsertKycDocumentRequest,
+    UpsertKycDocumentResponse, UpsertLoadDocumentRequest, UpsertLoadDocumentResponse,
+    VerifyKycDocumentRequest, VerifyKycDocumentResponse, VerifyLoadDocumentRequest,
+    VerifyLoadDocumentResponse, VerifyOtpRequest, VerifyOtpResponse,
 };
 
 use crate::runtime_config;
@@ -357,6 +358,14 @@ pub async fn verify_load_document(
     payload: &VerifyLoadDocumentRequest,
 ) -> Result<VerifyLoadDocumentResponse, String> {
     let path = format!("/dispatch/documents/{}/verify-blockchain", document_id);
+    post_api(&path, payload).await
+}
+
+pub async fn review_load_document(
+    document_id: u64,
+    payload: &ReviewLoadDocumentRequest,
+) -> Result<ReviewLoadDocumentResponse, String> {
+    let path = format!("/dispatch/documents/{}/review", document_id);
     post_api(&path, payload).await
 }
 

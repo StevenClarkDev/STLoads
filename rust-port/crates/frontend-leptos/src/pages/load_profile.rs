@@ -8,7 +8,7 @@ use crate::{
 use shared::{
     AdminReviewLoadRequest, EscrowFundRequest, EscrowHoldRequest, EscrowReleaseRequest,
     LoadDocumentRow, LoadHandoffSummary, LoadHistoryRow, LoadProfileLegRow, LoadProfileScreen,
-    UpsertLoadDocumentRequest, VerifyLoadDocumentRequest,
+    ReviewLoadDocumentRequest, UpsertLoadDocumentRequest, VerifyLoadDocumentRequest,
 };
 
 fn tone_style(tone: &str) -> &'static str {
@@ -650,6 +650,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
     let file_size_input = RwSignal::new(String::new());
     let is_saving_document = RwSignal::new(false);
     let verifying_document_id = RwSignal::new(None::<u64>);
+    let reviewing_document_id = RwSignal::new(None::<u64>);
     let opening_document_id = RwSignal::new(None::<u64>);
     let admin_review_note = RwSignal::new(String::new());
     let admin_review_loading = RwSignal::new(false);
@@ -901,6 +902,42 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
             }
 
             verifying_document_id.set(None);
+        });
+    };
+
+    let review_document = move |document_id: u64, decision: &'static str| {
+        reviewing_document_id.set(Some(document_id));
+        action_message.set(None);
+        let auth = auth.clone();
+
+        spawn_local(async move {
+            match api::review_load_document(
+                document_id,
+                &ReviewLoadDocumentRequest {
+                    decision: decision.into(),
+                    note: Some("Reviewed from the Rust load profile.".into()),
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+
+            reviewing_document_id.set(None);
         });
     };
 
@@ -1201,6 +1238,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                                 <tr>
                                                     <th style="text-align:left;padding:0.75rem;">"Name"</th>
                                                     <th style="text-align:left;padding:0.75rem;">"File"</th>
+                                                    <th style="text-align:left;padding:0.75rem;">"Review"</th>
                                                     <th style="text-align:left;padding:0.75rem;">"Blockchain"</th>
                                                     <th style="text-align:left;padding:0.75rem;">"Uploaded"</th>
                                                     <th style="text-align:left;padding:0.75rem;">"Actions"</th>
@@ -1215,6 +1253,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                                     });
                                                     let can_edit_row = document.can_edit;
                                                     let can_verify_row = document.can_verify_blockchain;
+                                                    let can_review_row = document.can_review;
                                                     let can_view_row = document.can_view_file && document.download_path.is_some();
                                                     let edit_row = document.clone();
                                                     let document_id = document.id;
@@ -1237,6 +1276,13 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                                                 <small>{file_meta}</small>
                                                                 <small style="color:#64748b;word-break:break-all;">{document.source_path}</small>
                                                                 {document.uploaded_by_label.clone().map(|label| view! { <small style="color:#64748b;">{label}</small> })}
+                                                            </td>
+                                                            <td style="padding:0.75rem;display:grid;gap:0.35rem;">
+                                                                <span style=tone_style(&document.review_status_tone)>{document.review_status_label}</span>
+                                                                <small>{document.malware_scan_status_label}</small>
+                                                                {document.payment_ready_blocked.then(|| view! {
+                                                                    <small style="color:#b45309;">"Blocks payment readiness"</small>
+                                                                })}
                                                             </td>
                                                             <td style="padding:0.75rem;display:grid;gap:0.35rem;">
                                                                 {blockchain_badge.unwrap_or_else(|| view! { <span>"Not anchored yet"</span> }.into_any())}
@@ -1295,6 +1341,34 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                                                     >
                                                                         {move || if verifying_document_id.get() == Some(document_id) { "Anchoring..." } else { "Anchor to blockchain" }}
                                                                     </button>
+                                                                })}
+                                                                {can_review_row.then(|| view! {
+                                                                    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0.35rem;">
+                                                                        <button
+                                                                            type="button"
+                                                                            style="padding:0.5rem;border-radius:0.65rem;border:none;background:#0f766e;color:white;cursor:pointer;"
+                                                                            disabled=move || reviewing_document_id.get() == Some(document_id)
+                                                                            on:click=move |_| review_document(document_id, "approve")
+                                                                        >
+                                                                            "Approve"
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            style="padding:0.5rem;border-radius:0.65rem;border:1px solid #f59e0b;background:#fffbeb;color:#92400e;cursor:pointer;"
+                                                                            disabled=move || reviewing_document_id.get() == Some(document_id)
+                                                                            on:click=move |_| review_document(document_id, "request_revision")
+                                                                        >
+                                                                            "Revise"
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            style="padding:0.5rem;border-radius:0.65rem;border:1px solid #fecaca;background:#fff1f2;color:#be123c;cursor:pointer;"
+                                                                            disabled=move || reviewing_document_id.get() == Some(document_id)
+                                                                            on:click=move |_| review_document(document_id, "reject")
+                                                                        >
+                                                                            "Reject"
+                                                                        </button>
+                                                                    </div>
                                                                 })}
                                                             </td>
                                                         </tr>

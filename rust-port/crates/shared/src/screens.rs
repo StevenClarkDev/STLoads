@@ -393,6 +393,11 @@ pub struct LoadDocumentRow {
     pub blockchain_hash_preview: Option<String>,
     pub can_edit: bool,
     pub can_verify_blockchain: bool,
+    pub review_status_label: String,
+    pub review_status_tone: String,
+    pub malware_scan_status_label: String,
+    pub payment_ready_blocked: bool,
+    pub can_review: bool,
     pub uploaded_at_label: String,
 }
 

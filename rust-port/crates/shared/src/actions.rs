@@ -119,6 +119,23 @@ pub struct VerifyLoadDocumentResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewLoadDocumentRequest {
+    pub decision: String,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewLoadDocumentResponse {
+    pub success: bool,
+    pub load_id: i64,
+    pub document_id: i64,
+    pub review_status: String,
+    pub malware_scan_status: String,
+    pub payment_ready_blocked: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DispatchDeskFollowUpRequest {
     pub desk_key: String,
     pub note: String,

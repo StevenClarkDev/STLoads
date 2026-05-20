@@ -6,9 +6,35 @@ export async function stloadsUploadLoadDocument(url, token, documentName, docume
   }
 
   const file = input.files[0];
+  const normalizedType = (documentType || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const allowedTypes = new Set([
+    'rate_confirmation',
+    'bill_of_lading',
+    'delivery_pod',
+    'invoice',
+    'lumper_receipt',
+    'insurance_certificate',
+    'carrier_packet',
+    'customs_document',
+    'blockchain',
+    'pickup_bol',
+    'pickup_photo',
+    'delivery_photo',
+    'other',
+  ]);
+  const allowedMime = new Set(['application/pdf', 'image/jpeg', 'image/png', 'text/plain']);
+  if (!allowedTypes.has(normalizedType)) {
+    throw new Error('Choose a production document type before uploading.');
+  }
+  if (file.size > 25 * 1024 * 1024) {
+    throw new Error('Document uploads are limited to 25 MB.');
+  }
+  if (file.type && !allowedMime.has(file.type.toLowerCase())) {
+    throw new Error(`Document MIME type ${file.type} is not allowed.`);
+  }
   const form = new FormData();
   form.append('document_name', documentName || '');
-  form.append('document_type', documentType || '');
+  form.append('document_type', normalizedType);
   form.append('file', file, file.name || 'document.bin');
 
   const headers = {};
