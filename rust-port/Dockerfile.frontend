@@ -28,6 +28,7 @@ COPY crates ./crates
 
 WORKDIR /app/crates/frontend-leptos
 RUN trunk build --release \
+    && perl -0pi -e 's/ integrity="sha384-[^"]+"//g' dist/index.html \
     && mkdir -p dist/assets \
     && cp -R assets/images dist/assets/
 
