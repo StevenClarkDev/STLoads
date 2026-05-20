@@ -77,6 +77,19 @@ async fn load_document_replacement_preserves_prior_versions_and_blocks_payment_u
     .await
     .unwrap();
     assert_eq!(audit_events, vec!["uploaded", "revision_uploaded"]);
+    let pending_reviews = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM document_reviews review
+         INNER JOIN document_versions version ON version.id = review.document_version_id
+         WHERE version.document_scope = 'load_document'
+           AND version.document_scope_id = $1
+           AND review.status = 'pending'",
+    )
+    .bind(created.id.to_string())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(pending_reviews, 2);
 
     assert!(
         db::dispatch::load_has_payment_blocking_documents(&pool, fixture.load_id)
@@ -99,5 +112,37 @@ async fn load_document_replacement_preserves_prior_versions_and_blocks_payment_u
         !db::dispatch::load_has_payment_blocking_documents(&pool, fixture.load_id)
             .await
             .unwrap()
+    );
+    let review_events = sqlx::query_scalar::<_, String>(
+        "SELECT event_type
+         FROM document_audit_events
+         WHERE document_scope = 'load_document' AND document_scope_id = $1
+         ORDER BY id ASC",
+    )
+    .bind(created.id.to_string())
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        review_events,
+        vec!["uploaded", "revision_uploaded", "approved"]
+    );
+
+    let atmp_document_events = sqlx::query_scalar::<_, String>(
+        "SELECT event_type
+         FROM atmp_outbound_events
+         WHERE tenant_id = 'default'
+         ORDER BY id ASC",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        atmp_document_events,
+        vec![
+            "document_uploaded",
+            "document_uploaded",
+            "document_approved"
+        ]
     );
 }

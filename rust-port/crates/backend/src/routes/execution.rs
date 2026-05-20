@@ -1479,6 +1479,13 @@ mod tests {
         };
         let state = test_state(pool.clone());
         let fixture = insert_load_fixture(&pool, 9).await?;
+        seed_execution_posting(
+            &pool,
+            fixture.load_id,
+            fixture.leg_id,
+            fixture.owner_user.id,
+        )
+        .await?;
         let carrier_headers = auth_headers_for_user(&state, &fixture.carrier_user).await?;
         let owner_headers = auth_headers_for_user(&state, &fixture.owner_user).await?;
 
@@ -1531,6 +1538,18 @@ mod tests {
         )
         .await;
         assert_eq!(carrier_download.status(), StatusCode::OK);
+        let document_event = sqlx::query_as::<_, (String, i64, serde_json::Value)>(
+            "SELECT event_type, posting_id, payload
+             FROM atmp_outbound_events
+             WHERE tenant_id = 'tenant-p12' AND event_type = 'document_uploaded'
+             ORDER BY id DESC
+             LIMIT 1",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(document_event.0, "document_uploaded");
+        assert_eq!(document_event.2["document_id"], document.id);
+        assert_eq!(document_event.2["document_type"], "delivery_pod");
 
         let missing_note = run_leg_action(
             State(state.clone()),
@@ -1650,6 +1669,31 @@ mod tests {
         .await?;
         assert!(event_types.contains(&"tracking_event".to_string()));
         assert!(event_types.contains(&"exception_event".to_string()));
+        let event_payloads = sqlx::query_as::<_, (String, serde_json::Value)>(
+            "SELECT event_type, payload
+             FROM atmp_outbound_events
+             WHERE tenant_id = 'tenant-p12'
+             ORDER BY id ASC",
+        )
+        .fetch_all(&pool)
+        .await?;
+        assert!(event_payloads.iter().any(|(event_type, payload)| {
+            event_type == "tracking_event" && payload["event_type"] == "location_ping"
+        }));
+        assert!(event_payloads.iter().any(|(event_type, payload)| {
+            event_type == "exception_event" && payload["event_type"] == "exception_reported"
+        }));
+        let exception_history = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*)
+             FROM load_history
+             WHERE load_id = $1
+               AND remarks ILIKE '%Rust execution exception for leg #%'
+               AND remarks ILIKE '%Receiver gate is closed%'",
+        )
+        .bind(fixture.load_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(exception_history, 1);
 
         sqlx::query(
             "UPDATE leg_locations
@@ -1668,6 +1712,16 @@ mod tests {
         .fetch_one(&pool)
         .await?;
         assert!(stale_events >= 1);
+        let stale_outbound_events = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*)
+             FROM atmp_outbound_events
+             WHERE tenant_id = 'tenant-p12'
+               AND event_type = 'exception_event'
+               AND payload ->> 'event_type' = 'tracking_stale'",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert!(stale_outbound_events >= 1);
 
         Ok(())
     }

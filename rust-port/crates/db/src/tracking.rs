@@ -547,6 +547,30 @@ pub async fn create_leg_document(
     .await?;
 
     tx.commit().await?;
+    if let Some(scope) = find_execution_posting_scope(pool, leg_id).await? {
+        enqueue_atmp_outbound_event(
+            pool,
+            EnqueueAtmpOutboundEvent {
+                tenant_id: &scope.tenant_id,
+                event_type: "document_uploaded",
+                posting_id: Some(scope.posting_id),
+                booking_award_id: scope.booking_award_id,
+                target_url: None,
+                payload: json!({
+                    "event_type": "document_uploaded",
+                    "leg_id": leg_id,
+                    "load_id": leg_row.load_id,
+                    "document_id": created.id,
+                    "document_type": params.document_type,
+                    "document_name": params.document_name,
+                    "storage_provider": params.storage_provider,
+                    "actor_user_id": actor_user_id,
+                }),
+                correlation_id: None,
+            },
+        )
+        .await?;
+    }
     Ok(Some(created))
 }
 

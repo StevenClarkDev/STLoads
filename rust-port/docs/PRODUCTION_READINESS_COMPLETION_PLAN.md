@@ -79,19 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task E4: Documents, Tracking, And Exception Sync Proof
-
-**Outcome:** Marketplace documents, execution tracking, and exceptions are production-safe and reconcile with ATMP.
-
-- [ ] Verify document upload uses real object storage and protected access.
-- [ ] Verify document replacement preserves prior versions.
-- [ ] Verify document review status gates payment and closeout where required.
-- [ ] Verify tracking events are tenant-scoped and role-gated.
-- [ ] Verify exception events write audit history.
-- [ ] Verify tracking and exception events sync back to ATMP.
-- [ ] Add or update automated tests for document versioning, review gates, and tracking sync.
-- [ ] Browser-test document and execution surfaces for broker, forwarder, shipper, carrier, and admin roles.
-
 ### Task E5: Payments And Recovery Proof
 
 **Outcome:** Stripe payment recovery, replay, and admin reconciliation are proven against staging.
@@ -151,9 +138,8 @@ Do not call STLoads market-ready until every item below is true:
 
 ## Recommended Execution Order
 
-1. E4 Documents, tracking, and exception sync proof.
-2. E5 Payments and recovery proof.
-3. E7 Final IBM staging launch gate.
+1. E5 Payments and recovery proof.
+2. E7 Final IBM staging launch gate.
 
 ## Definition Of Done
 
