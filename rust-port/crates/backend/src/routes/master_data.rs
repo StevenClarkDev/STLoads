@@ -910,21 +910,16 @@ async fn build_master_data_screen(state: &AppState) -> MasterDataScreen {
         })
         .collect::<Vec<_>>();
 
-    let mut notes = vec![
-        "This master-data route is now DB-backed and writable for countries, cities, locations, load types, equipments, and commodity types in the Rust admin portal.".into(),
-        "Load and offer statuses remain read-first because they drive canonical workflow state machines.".into(),
+    let notes = vec![
+        "Countries, cities, locations, load types, equipment, and commodities are editable here."
+            .into(),
+        "Load and offer statuses are read-only because they control marketplace workflow state."
+            .into(),
     ];
-
-    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-        notes.push(format!(
-            "IBM deployment note: PUBLIC_BASE_URL is set to {} so the admin master-data surface stays proxy-safe during staged cutover.",
-            public_base_url
-        ));
-    }
 
     MasterDataScreen {
         title: "Master Data Catalog".into(),
-        subtitle: "Admin visibility plus first-write workflows for the lookup data that powers load creation in the Rust port.".into(),
+        subtitle: "Manage the lookup data that powers marketplace loads.".into(),
         summary_cards,
         sections,
         country_options,
@@ -934,25 +929,18 @@ async fn build_master_data_screen(state: &AppState) -> MasterDataScreen {
 }
 
 fn fallback_master_data_screen(
-    state: &AppState,
+    _state: &AppState,
     descriptors: Vec<MasterDataDescriptor>,
     reason: String,
 ) -> MasterDataScreen {
-    let mut notes = vec![
+    let notes = vec![
         reason,
         "This fallback keeps the admin master-data route alive even when the PostgreSQL connection is unavailable.".into(),
     ];
 
-    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-        notes.push(format!(
-            "IBM deployment note: PUBLIC_BASE_URL is set to {} so the admin master-data surface stays proxy-safe during staged cutover.",
-            public_base_url
-        ));
-    }
-
     MasterDataScreen {
         title: "Master Data Catalog".into(),
-        subtitle: "Read-first admin visibility for the Rust port.".into(),
+        subtitle: "Master data is unavailable until the database connection returns.".into(),
         summary_cards: descriptors
             .iter()
             .map(|descriptor| MasterDataSummaryCard {
@@ -972,7 +960,7 @@ fn fallback_master_data_screen(
                 total: 0,
                 rows: Vec::new(),
                 empty_message: format!(
-                    "{} will appear here once the Rust backend can read PostgreSQL successfully.",
+                    "{} will appear here once the database connection is available.",
                     descriptor.label
                 ),
             })
@@ -1037,12 +1025,12 @@ fn success_message(
 ) -> String {
     if is_edit {
         format!(
-            "{} updated the {} '{}' from the Rust admin portal.",
+            "{} updated the {} '{}'.",
             session.user.name, record_label, record_name
         )
     } else {
         format!(
-            "{} created the {} '{}' from the Rust admin portal.",
+            "{} created the {} '{}'.",
             session.user.name, record_label, record_name
         )
     }

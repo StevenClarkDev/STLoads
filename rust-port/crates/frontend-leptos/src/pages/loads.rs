@@ -56,7 +56,7 @@ pub fn LoadBoardPage() -> impl IntoView {
         if !current_session.authenticated {
             screen.set(None);
             is_loading.set(false);
-            error_message.set(Some("Sign in to view the Rust load board.".into()));
+            error_message.set(Some("Sign in to view marketplace loads.".into()));
             return;
         }
 
@@ -71,10 +71,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
                     }
                     error_message.set(Some(error));
                 }
@@ -153,7 +150,7 @@ pub fn LoadBoardPage() -> impl IntoView {
 
         if !can_self_book {
             action_message.set(Some(
-                "Only authenticated carrier accounts can self-book a leg in this Rust load board slice.".into(),
+                "Only authenticated carrier accounts can self-book marketplace freight.".into(),
             ));
             return;
         }
@@ -180,10 +177,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
                     }
                     action_message.set(Some(error));
                 }

@@ -461,7 +461,7 @@ async fn add_dispatch_desk_follow_up(
             success: false,
             leg_id,
             load_id: 0,
-            message: "Sign in before adding a Rust dispatch desk follow-up.".into(),
+            message: "Sign in before adding a dispatch desk follow-up.".into(),
         }));
     };
 
@@ -470,9 +470,7 @@ async fn add_dispatch_desk_follow_up(
             success: false,
             leg_id,
             load_id: 0,
-            message:
-                "The authenticated session does not have dispatch desk follow-up access in the Rust slice."
-                    .into(),
+            message: "This account does not have dispatch desk follow-up access.".into(),
         }));
     }
 
@@ -482,7 +480,7 @@ async fn add_dispatch_desk_follow_up(
             success: false,
             leg_id,
             load_id: 0,
-            message: "Enter a follow-up note before saving it to the Rust dispatch desk.".into(),
+            message: "Enter a follow-up note before saving it to the dispatch desk.".into(),
         }));
     }
 
@@ -634,7 +632,7 @@ async fn create_load(
             load_id: None,
             load_number: None,
             leg_count: 0,
-            message: "Sign in before creating a load from the Rust builder.".into(),
+            message: "Sign in before posting a marketplace load.".into(),
         }));
     };
 
@@ -651,9 +649,7 @@ async fn create_load(
             load_id: None,
             load_number: None,
             leg_count: 0,
-            message:
-                "The authenticated session does not have load creation access in the Rust slice."
-                    .into(),
+            message: "This account does not have marketplace posting access.".into(),
         }));
     }
 
@@ -671,7 +667,7 @@ async fn create_load(
             load_number: None,
             leg_count: 0,
             message: format!(
-                "Load creation is unavailable because the database is {} on {}.",
+                "Marketplace posting is unavailable because the database is {} on {}.",
                 state.database_state(),
                 state.config.deployment_target
             ),
@@ -685,7 +681,7 @@ async fn create_load(
             load_id: None,
             load_number: None,
             leg_count: 0,
-            message: "Enter a title before creating a load.".into(),
+            message: "Enter a title before posting the load.".into(),
         }));
     }
 
@@ -715,7 +711,7 @@ async fn create_load(
             load_id: None,
             load_number: None,
             leg_count: 0,
-            message: "Add at least one leg before saving the load.".into(),
+            message: "Add at least one leg before posting the load.".into(),
         }));
     }
 
@@ -895,7 +891,7 @@ async fn create_load(
                 load_number: Some(created.load_number.clone()),
                 leg_count: created.leg_count,
                 message: format!(
-                    "{} created load {} with {} leg(s) from the Rust builder. Continue in the Rust load profile for document and follow-up workflow.",
+                    "{} posted marketplace load {} with {} leg(s). Continue to the profile for documents and follow-up.",
                     session.user.name, created.load_number, created.leg_count
                 ),
             }))
@@ -942,7 +938,7 @@ async fn update_load(
             load_id: Some(load_id),
             load_number: None,
             leg_count: 0,
-            message: "Sign in before editing a load from the Rust builder.".into(),
+            message: "Sign in before editing a marketplace load.".into(),
         }));
     };
 
@@ -959,9 +955,7 @@ async fn update_load(
             load_id: Some(load_id),
             load_number: None,
             leg_count: 0,
-            message:
-                "The authenticated session does not have load update access in the Rust slice."
-                    .into(),
+            message: "This account does not have marketplace load update access.".into(),
         }));
     }
 
@@ -992,10 +986,7 @@ async fn update_load(
             load_id: Some(load_id),
             load_number: None,
             leg_count: 0,
-            message: format!(
-                "Load #{} was not found in the Rust dispatch store.",
-                load_id
-            ),
+            message: format!("Load #{} was not found.", load_id),
         }));
     };
 
@@ -1005,8 +996,7 @@ async fn update_load(
             load_id: Some(load_id),
             load_number: existing_load.load_number,
             leg_count: existing_load.leg_count.max(0) as u64,
-            message: "The authenticated session cannot edit this load in the current Rust slice."
-                .into(),
+            message: "This account cannot edit the selected marketplace load.".into(),
         }));
     }
 
@@ -1025,7 +1015,8 @@ async fn update_load(
             load_id: Some(load_id),
             load_number: existing_load.load_number,
             leg_count: existing_load.leg_count.max(0) as u64,
-            message: "This load already has booked or execution-stage legs, so the Rust builder keeps it locked. Continue from the load profile and execution flow instead.".into(),
+            message: "This load already has booked or active legs. Continue from the load profile."
+                .into(),
         }));
     }
 
@@ -1049,7 +1040,7 @@ async fn update_load(
                 load_number: Some(updated.load_number.clone()),
                 leg_count: updated.leg_count,
                 message: format!(
-                    "{} updated load {} from the Rust builder. Continue in the Rust load profile for documents and follow-up workflow.",
+                    "{} updated marketplace load {}. Continue to the profile for documents and follow-up.",
                     session.user.name, updated.load_number
                 ),
             }))
@@ -1067,10 +1058,7 @@ async fn update_load(
                 load_id: Some(load_id),
                 load_number: existing_load.load_number,
                 leg_count: 0,
-                message: format!(
-                    "Load #{} was not found while applying the Rust builder update.",
-                    load_id
-                ),
+                message: format!("Load #{} was not found while saving changes.", load_id),
             }))
         }
         Err(error) => {
@@ -1122,7 +1110,7 @@ async fn upload_load_document_handler(
             success: false,
             load_id,
             document_id: None,
-            message: "Sign in before uploading load documents from the Rust profile.".into(),
+            message: "Sign in before uploading load documents.".into(),
         }));
     };
 
@@ -1158,10 +1146,7 @@ async fn upload_load_document_handler(
             success: false,
             load_id,
             document_id: None,
-            message: format!(
-                "Load #{} was not found in the Rust dispatch store.",
-                load_id
-            ),
+            message: format!("Load #{} was not found.", load_id),
         }));
     };
 
@@ -1286,7 +1271,7 @@ async fn upload_load_document_handler(
                 load_id,
                 document_id: Some(document.id),
                 message: format!(
-                    "{} uploaded document {} to load {}. The binary file is now viewable by admin and the uploader profile in this Rust slice.",
+                    "{} uploaded document {} to load {}. The file is now available to admins and the uploader.",
                     session.user.name,
                     document.document_name,
                     load.load_number
@@ -1341,7 +1326,7 @@ async fn download_load_document_file(
     else {
         return text_response(
             StatusCode::UNAUTHORIZED,
-            "Sign in before viewing load document files from the Rust profile.",
+            "Sign in before viewing load document files.",
         );
     };
 
@@ -1365,7 +1350,7 @@ async fn download_load_document_file(
     if !can_view_load_document_file(&session, scope.uploaded_by_user_id) {
         return text_response(
             StatusCode::FORBIDDEN,
-            "Only admin users and the profile that uploaded this document can view the file in the current Rust slice.",
+            "Only admins and the uploader can view this file.",
         );
     }
 
@@ -1444,7 +1429,7 @@ async fn create_load_document_handler(
             success: false,
             load_id,
             document_id: None,
-            message: "Sign in before adding load documents from the Rust profile.".into(),
+            message: "Sign in before adding load documents.".into(),
         }));
     };
 
@@ -1480,10 +1465,7 @@ async fn create_load_document_handler(
             success: false,
             load_id,
             document_id: None,
-            message: format!(
-                "Load #{} was not found in the Rust dispatch store.",
-                load_id
-            ),
+            message: format!("Load #{} was not found.", load_id),
         }));
     };
 
@@ -1599,7 +1581,7 @@ async fn update_load_document_handler(
             success: false,
             load_id: 0,
             document_id: Some(document_id),
-            message: "Sign in before editing load documents from the Rust profile.".into(),
+            message: "Sign in before editing load documents.".into(),
         }));
     };
 
@@ -1638,10 +1620,7 @@ async fn update_load_document_handler(
             success: false,
             load_id: 0,
             document_id: Some(document_id),
-            message: format!(
-                "Document #{} was not found in the Rust dispatch store.",
-                document_id
-            ),
+            message: format!("Document #{} was not found.", document_id),
         }));
     };
 
@@ -1693,7 +1672,7 @@ async fn update_load_document_handler(
                 load_id: document.load_id,
                 document_id: Some(document.id),
                 message: format!(
-                    "{} updated document {} from the Rust load profile.",
+                    "{} updated document {} from the load profile.",
                     session.user.name, document.document_name
                 ),
             }))
@@ -1754,7 +1733,7 @@ async fn verify_load_document_handler(
             load_id: 0,
             document_id,
             hash: None,
-            message: "Sign in before triggering blockchain follow-up from the Rust profile.".into(),
+            message: "Sign in before anchoring document proof.".into(),
         }));
     };
 
@@ -1795,10 +1774,7 @@ async fn verify_load_document_handler(
             load_id: 0,
             document_id,
             hash: None,
-            message: format!(
-                "Document #{} was not found in the Rust dispatch store.",
-                document_id
-            ),
+            message: format!("Document #{} was not found.", document_id),
         }));
     };
 
@@ -1835,7 +1811,7 @@ async fn verify_load_document_handler(
                 document_id: document.id,
                 hash: Some(existing_hash),
                 message: format!(
-                    "{} is already anchored with a stored hash in the Rust document ledger.",
+                    "{} is already anchored with a stored hash.",
                     document.document_name
                 ),
             }));
@@ -1868,7 +1844,7 @@ async fn verify_load_document_handler(
                 document_id: document.id,
                 hash: document.hash,
                 message: format!(
-                    "{} anchored document {} with a mock blockchain proof for the Rust migration slice.",
+                    "{} anchored document {} with a blockchain proof.",
                     session.user.name, document.document_name
                 ),
             }))
@@ -2075,7 +2051,7 @@ async fn book_leg(
             success: false,
             leg_id,
             status_label: "Unauthorized".into(),
-            message: "Sign in as a carrier before booking a leg from the Rust load board.".into(),
+            message: "Sign in as a carrier before booking marketplace freight.".into(),
         }));
     };
 
@@ -2091,9 +2067,8 @@ async fn book_leg(
             success: false,
             leg_id,
             status_label: "Forbidden".into(),
-            message:
-                "Only authenticated carrier accounts can self-book a load leg in this Rust slice."
-                    .into(),
+            message: "Only authenticated carrier accounts can self-book marketplace freight."
+                .into(),
         }));
     }
 
@@ -2227,7 +2202,7 @@ async fn book_leg(
                 success: true,
                 leg_id,
                 status_label: "Booked".into(),
-                message: "Load leg booked from the authenticated Rust dispatch route; the board will refresh through scoped realtime updates.".into(),
+                message: "Load leg booked. The board will refresh automatically.".into(),
             }))
         }
         Ok(None) => {
@@ -2272,11 +2247,7 @@ async fn build_load_builder_screen(
         return empty_load_builder_screen(
             state,
             load_id,
-            vec![
-                "Sign in before using the Rust load builder.".into(),
-                "This route intentionally avoids Laravel fallback forms during staged cutover."
-                    .into(),
-            ],
+            vec!["Sign in to post or edit marketplace loads.".into()],
         );
     };
 
@@ -2284,10 +2255,7 @@ async fn build_load_builder_screen(
         return empty_load_builder_screen(
             state,
             load_id,
-            vec![
-                "The authenticated session does not have load builder access in the Rust slice."
-                    .into(),
-            ],
+            vec!["This account does not have marketplace posting access.".into()],
         );
     }
 
@@ -2296,7 +2264,7 @@ async fn build_load_builder_screen(
             state,
             load_id,
             vec![format!(
-                "Load builder data is unavailable because the database is {} on {}.",
+                "Marketplace load data is unavailable because the database is {} on {}.",
                 state.database_state(),
                 state.config.deployment_target
             )],
@@ -2310,8 +2278,8 @@ async fn build_load_builder_screen(
     locations.sort_by(|left, right| left.name.cmp(&right.name));
 
     let mut notes = vec![
-        "Google-address autocomplete now drives Rust load creation and editing, with geolocation bias when the browser allows it and broader Google results when GPS is unavailable.".into(),
-        "Booked or execution-stage loads stay locked out of builder edit mode so staged cutover cannot accidentally rewrite live operational legs.".into(),
+        "Google address search is available for pickup and delivery locations.".into(),
+        "Booked or active loads are locked from posting edits.".into(),
     ];
 
     let draft = if let Some(load_id) = load_id {
@@ -2319,10 +2287,7 @@ async fn build_load_builder_screen(
             return empty_load_builder_screen(
                 state,
                 Some(load_id),
-                vec![format!(
-                    "Load #{} was not found in the Rust dispatch store.",
-                    load_id
-                )],
+                vec![format!("Load #{} was not found.", load_id)],
             );
         };
 
@@ -2330,10 +2295,7 @@ async fn build_load_builder_screen(
             return empty_load_builder_screen(
                 state,
                 Some(load_id),
-                vec![
-                    "The authenticated session cannot edit this load in the current Rust slice."
-                        .into(),
-                ],
+                vec!["This account cannot edit the selected marketplace load.".into()],
             );
         }
 
@@ -2348,14 +2310,13 @@ async fn build_load_builder_screen(
                 state,
                 Some(load.id),
                 vec![
-                    "This load already has booked or execution-stage legs, so the Rust builder keeps it locked. Continue from the load profile and execution workflow instead.".into(),
+                    "This load already has booked or active legs. Continue from the load profile."
+                        .into(),
                 ],
             );
         }
 
-        notes.push(
-            "This builder is preloaded from the saved Rust load so dispatch can reopen a draft-like load, adjust legs, and save without dropping into the legacy PHP form.".into(),
-        );
+        notes.push("This posting is ready for marketplace load edits.".into());
 
         Some(LoadBuilderDraft {
             load_id: load.id.max(0) as u64,
@@ -2399,13 +2360,6 @@ async fn build_load_builder_screen(
         );
         None
     };
-
-    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-        notes.push(format!(
-            "IBM deployment note: PUBLIC_BASE_URL is set to {} so builder requests remain proxy-safe during staged cutover.",
-            public_base_url
-        ));
-    }
 
     let is_edit_mode = draft.is_some();
 
@@ -2467,17 +2421,10 @@ async fn build_load_builder_screen(
 }
 
 fn empty_load_builder_screen(
-    state: &AppState,
+    _state: &AppState,
     load_id: Option<i64>,
-    mut notes: Vec<String>,
+    notes: Vec<String>,
 ) -> LoadBuilderScreen {
-    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-        notes.push(format!(
-            "IBM deployment note: PUBLIC_BASE_URL is set to {} so builder requests remain proxy-safe during staged cutover.",
-            public_base_url
-        ));
-    }
-
     LoadBuilderScreen {
         title: if load_id.is_some() {
             "Edit Marketplace Load".into()
@@ -3075,10 +3022,7 @@ async fn build_load_profile_screen(
         return empty_load_profile_screen(
             state,
             load_id,
-            vec![
-                "Sign in before opening a Rust load profile.".into(),
-                "This route is auth-scoped and intentionally avoids falling back to Laravel load views during staged cutover.".into(),
-            ],
+            vec!["Sign in before opening a load profile.".into()],
         );
     };
 
@@ -3098,10 +3042,7 @@ async fn build_load_profile_screen(
         return empty_load_profile_screen(
             state,
             load_id,
-            vec![format!(
-                "Load #{} was not found in the Rust dispatch store.",
-                load_id
-            )],
+            vec![format!("Load #{} was not found.", load_id)],
         );
     };
 
@@ -3110,7 +3051,7 @@ async fn build_load_profile_screen(
             state,
             load_id,
             vec![
-                "The authenticated session cannot open this load profile in the current Rust slice.".into(),
+                "This account cannot open the selected load profile.".into(),
                 "Owner and admin visibility is enabled first so document and history parity can land safely.".into(),
             ],
         );
@@ -3376,25 +3317,15 @@ async fn build_load_profile_screen(
         pushed_by_label: handoff.pushed_by.filter(|value| !value.trim().is_empty()),
     });
 
-    let mut notes = vec![
-        "The Rust load profile now supports binary document upload, restricted file viewing, metadata edits, and blockchain follow-up controls alongside load details, history, and STLOADS context.".into(),
-        "Uploaded files are only viewable by admin users and the profile that uploaded the file in the current Rust slice.".into(),
-        format!(
-            "Storage backend: {}. The abstraction is ready for IBM object storage, while this staged slice can still run on local-backed storage during development.",
-            state.document_storage.backend()
-        ),
+    let notes = vec![
+        "Upload, review, and manage documents from this load profile.".into(),
+        "Files are visible only to admins and the uploader.".into(),
+        format!("Storage backend: {}.", state.document_storage.backend()),
     ];
-
-    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-        notes.push(format!(
-            "IBM deployment note: PUBLIC_BASE_URL is set to {} so load profile links remain proxy-safe during staged cutover.",
-            public_base_url
-        ));
-    }
 
     LoadProfileScreen {
         title: "Load Profile".into(),
-        subtitle: "Rust detail view for created loads, leg lifecycle, documents, and STLOADS board context.".into(),
+        subtitle: "Review marketplace load details, documents, and execution status.".into(),
         load_id: load.id.max(0) as u64,
         load_number: load.load_number,
         can_manage_documents,
@@ -3408,20 +3339,13 @@ async fn build_load_profile_screen(
 }
 
 fn empty_load_profile_screen(
-    state: &AppState,
+    _state: &AppState,
     load_id: i64,
-    mut notes: Vec<String>,
+    notes: Vec<String>,
 ) -> LoadProfileScreen {
-    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-        notes.push(format!(
-            "IBM deployment note: PUBLIC_BASE_URL is set to {} so load profile links remain proxy-safe during staged cutover.",
-            public_base_url
-        ));
-    }
-
     LoadProfileScreen {
         title: "Load Profile".into(),
-        subtitle: "Secure Rust load detail view".into(),
+        subtitle: "Secure load detail view".into(),
         load_id: load_id.max(0) as u64,
         load_number: None,
         can_manage_documents: false,

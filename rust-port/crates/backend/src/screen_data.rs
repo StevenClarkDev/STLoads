@@ -106,14 +106,10 @@ pub async fn load_board_screen(
     let Some(viewer) = viewer else {
         return empty_load_board_screen(
             state,
-            "Secure Load Board",
-            "Marketplace access requires a Rust session.",
-            vec![
-                "Sign in before viewing dispatch inventory from the Rust port.".into(),
-                "This screen intentionally avoids non-production marketplace data during staged cutover."
-                    .into(),
-            ],
-            Some(("Open Rust Login".into(), "/auth/login".into())),
+            "Marketplace Loads",
+            "Sign in to view marketplace freight.",
+            vec!["Sign in to view available marketplace loads.".into()],
+            Some(("Sign in".into(), "/auth/login".into())),
             active_tab,
         );
     };
@@ -123,10 +119,7 @@ pub async fn load_board_screen(
             state,
             "Secure Load Board",
             viewer_role_workspace(viewer),
-            vec![
-                "The authenticated account does not have load-board access in the Rust slice."
-                    .into(),
-            ],
+            vec!["This account does not have marketplace load-board access.".into()],
             None,
             active_tab,
         );
@@ -135,7 +128,7 @@ pub async fn load_board_screen(
     let Some(pool) = state.pool.as_ref() else {
         return empty_load_board_screen(
             state,
-            "Manage Loads",
+            "Marketplace Loads",
             viewer_role_workspace(viewer),
             vec![format!(
                 "Load board data is unavailable because the database is {} on {}.",
@@ -155,10 +148,7 @@ pub async fn load_board_screen(
                 state,
                 "Manage Loads",
                 viewer_role_workspace(viewer),
-                vec![format!(
-                    "The Rust load board could not be loaded for this session: {}",
-                    error
-                )],
+                vec![format!("Marketplace loads could not be loaded: {}", error)],
                 None,
                 active_tab,
             )
@@ -174,18 +164,14 @@ pub async fn chat_workspace_screen(
     let Some(viewer) = viewer else {
         return empty_chat_workspace_screen(
             state,
-            vec![
-                "Sign in before opening private chat from the Rust port.".into(),
-                "This screen intentionally avoids non-production conversation data during staged cutover."
-                    .into(),
-            ],
+            vec!["Sign in to open private marketplace chat.".into()],
         );
     };
 
     if !can_access_chat_workspace(viewer) {
         return empty_chat_workspace_screen(
             state,
-            vec!["The authenticated account does not have marketplace chat access in the Rust slice.".into()],
+            vec!["This account does not have marketplace chat access.".into()],
         );
     }
 
@@ -206,10 +192,7 @@ pub async fn chat_workspace_screen(
             warn!(error = %error, "failed to build auth-scoped chat workspace screen");
             empty_chat_workspace_screen(
                 state,
-                vec![format!(
-                    "The Rust chat workspace could not be loaded for this session: {}",
-                    error
-                )],
+                vec![format!("Private chat could not be loaded: {}", error)],
             )
         }
     }
@@ -226,10 +209,9 @@ pub async fn dispatch_desk_screen(
             state,
             &active_desk,
             "Secure Dispatch Desk",
-            "Dispatch desk access requires a Rust session.",
+            "Sign in to open marketplace desk work.",
             vec![
-                "Sign in before opening quote, tender, facility, closeout, or collections boards from the Rust port.".into(),
-                "This route intentionally avoids non-production dispatch desk data during staged cutover."
+                "Sign in before opening quote, tender, facility, closeout, or collections boards."
                     .into(),
             ],
         );
@@ -242,10 +224,7 @@ pub async fn dispatch_desk_screen(
             &active_desk,
             desk_title(&active_desk),
             &workspace,
-            vec![
-                "The authenticated account does not have dispatch-desk access in the Rust slice."
-                    .into(),
-            ],
+            vec!["This account does not have dispatch-desk access.".into()],
         );
     }
 
@@ -274,10 +253,7 @@ pub async fn dispatch_desk_screen(
                 &active_desk,
                 desk_title(&active_desk),
                 &workspace,
-                vec![format!(
-                    "The Rust dispatch desk could not be loaded for this session: {}",
-                    error
-                )],
+                vec![format!("Dispatch desk could not be loaded: {}", error)],
             )
         }
     }
@@ -325,15 +301,15 @@ async fn build_load_board_screen(
     search_filters: LoadBoardSearchFilters,
 ) -> Result<LoadBoardScreen, sqlx::Error> {
     let viewer_role = viewer.user.primary_role();
-    let (tab_counts, metrics, rows, role_label, mut recommendation_notes) = match viewer_role {
+    let (tab_counts, metrics, rows, role_label, recommendation_notes) = match viewer_role {
         Some(UserRole::Admin) => (
             load_board_tab_counts(pool).await?,
             load_board_metrics(pool).await?,
             list_load_board_legs_filtered(pool, Some(active_tab.as_str()), 20).await?,
             "Admin Workspace".to_string(),
             vec![
-                "This load board is globally scoped because the authenticated session has admin visibility.".into(),
-                "Realtime delivery is still narrower than read visibility so operator refresh remains the safest source of truth during cutover.".into(),
+                "Admin view includes all marketplace loads.".into(),
+                "Refresh the board when reconciling active marketplace work.".into(),
             ],
         ),
         Some(UserRole::Carrier) => (
@@ -353,7 +329,7 @@ async fn build_load_board_screen(
             "Carrier Workspace".to_string(),
             vec![
                 "This load board is scoped to open board inventory plus legs already booked by the authenticated carrier account.".into(),
-                "Carrier booking updates are broadcast only to carrier sessions and direct stakeholders during staged cutover.".into(),
+                "Carrier booking updates are sent to carrier sessions and direct stakeholders.".into(),
             ],
         ),
         Some(UserRole::Shipper) | Some(UserRole::Broker) | Some(UserRole::FreightForwarder) => (
@@ -370,9 +346,9 @@ async fn build_load_board_screen(
         None => {
             return Ok(empty_load_board_screen(
                 state,
-                "Manage Loads",
+                "Marketplace Loads",
                 "Secure Workspace",
-                vec!["The authenticated account has no mapped Rust role, so the load board stays locked.".into()],
+                vec!["This account does not have a marketplace role assigned.".into()],
                 None,
                 active_tab,
             ));
@@ -499,15 +475,8 @@ async fn build_load_board_screen(
         })
         .collect::<Vec<_>>();
 
-    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-        recommendation_notes.push(format!(
-            "IBM deployment note: PUBLIC_BASE_URL is set to {} so auth-scoped booking actions and websocket upgrades stay proxy-safe.",
-            public_base_url
-        ));
-    }
-
     Ok(LoadBoardScreen {
-        title: "Manage Loads".into(),
+        title: "Marketplace Loads".into(),
         role_label,
         primary_action_label: None,
         primary_action_href: None,
@@ -528,7 +497,7 @@ async fn build_load_board_screen(
 }
 
 async fn build_chat_workspace_screen(
-    state: &AppState,
+    _state: &AppState,
     pool: &db::DbPool,
     viewer: &ResolvedSession,
     requested_conversation_id: Option<i64>,
@@ -573,17 +542,11 @@ async fn build_chat_workspace_screen(
     };
 
     let Some(active_conversation) = active_conversation else {
-        let mut notes = vec![
-            "No authorized conversations exist yet for the authenticated account, so the Rust workspace is returning an empty chat shell.".into(),
-            "This route now stays session-scoped rather than falling back to shared conversation fixtures.".into(),
+        let notes = vec![
+            "No conversations are available for this account.".into(),
+            "Marketplace messages will appear after an offer, booking, or support thread starts."
+                .into(),
         ];
-
-        if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-            notes.push(format!(
-                "IBM deployment note: PUBLIC_BASE_URL is set to {} for proxy-safe websocket upgrades during staged cutover.",
-                public_base_url
-            ));
-        }
 
         return Ok(ChatWorkspaceScreen {
             title: "Private Chat".into(),
@@ -725,8 +688,8 @@ async fn build_chat_workspace_screen(
     let active_participant_last_read_label = peer_last_read_label(peer_read_state.as_ref());
 
     let mut notes = vec![
-        "This workspace now pulls only conversations authorized for the current Rust session.".into(),
-        "Read receipts and presence are now backed by conversation-scoped SQLx tables plus targeted websocket events.".into(),
+        "Only authorized marketplace conversations are shown.".into(),
+        "Read status and presence update automatically when available.".into(),
     ];
 
     if viewer_read_state.is_some() {
@@ -737,13 +700,6 @@ async fn build_chat_workspace_screen(
         notes.push(
             "The first open of each conversation seeds a read cursor so unread counts stay session-aware.".into(),
         );
-    }
-
-    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-        notes.push(format!(
-            "IBM deployment note: PUBLIC_BASE_URL is set to {} so the realtime transport can sit cleanly behind an IBM reverse proxy.",
-            public_base_url
-        ));
     }
 
     Ok(ChatWorkspaceScreen {
@@ -773,7 +729,7 @@ async fn build_chat_workspace_screen(
 }
 
 async fn build_dispatch_desk_screen(
-    state: &AppState,
+    _state: &AppState,
     pool: &db::DbPool,
     viewer: &ResolvedSession,
     desk_key: &str,
@@ -793,17 +749,10 @@ async fn build_dispatch_desk_screen(
     };
 
     let status_cards = build_dispatch_desk_status_cards(desk_key, &rows, sync_error_count);
-    let mut notes = vec![
-        "This Rust dispatch desk intentionally mirrors the PHP desk split by operational phase instead of flattening everything into one board.".into(),
-        "Admins see the full desk scope; non-admin sessions only see loads owned by the authenticated account, matching the Laravel controller behavior.".into(),
+    let notes = vec![
+        "Desk work is grouped by quote, tender, facility, closeout, and collections phase.".into(),
+        "Admins see all marketplace work; account users see only their authorized loads.".into(),
     ];
-
-    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-        notes.push(format!(
-            "IBM deployment note: PUBLIC_BASE_URL is set to {} so desk links, websocket refreshes, and follow-up actions stay proxy-safe.",
-            public_base_url
-        ));
-    }
 
     Ok(DispatchDeskScreen {
         desk_key: desk_key.to_string(),
@@ -1220,8 +1169,9 @@ async fn build_stloads_reconciliation_screen(
         error_breakdown: error_breakdown_rows,
         logs: log_rows,
         callouts: vec![
-            "This screen now reads mismatch counts, unresolved sync errors, and reconciliation logs from SQLx-backed queries.".into(),
-            "ATMP delivery status is included so admins can see queued, delivered, retrying, and dead-letter callbacks from the same reconciliation surface.".into(),
+            "Review unresolved marketplace sync issues and recovery activity.".into(),
+            "ATMP callback status is shown for queue, retry, delivered, and dead-letter states."
+                .into(),
         ],
         pagination: Pagination {
             page: 1,
@@ -1232,20 +1182,13 @@ async fn build_stloads_reconciliation_screen(
 }
 
 fn empty_load_board_screen(
-    state: &AppState,
+    _state: &AppState,
     title: &str,
     role_label: impl Into<String>,
-    mut notes: Vec<String>,
+    notes: Vec<String>,
     primary_action: Option<(String, String)>,
     active_tab: String,
 ) -> LoadBoardScreen {
-    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-        notes.push(format!(
-            "IBM deployment note: PUBLIC_BASE_URL is set to {} so authenticated load-board traffic stays proxy-safe during cutover.",
-            public_base_url
-        ));
-    }
-
     LoadBoardScreen {
         title: title.into(),
         role_label: role_label.into(),
@@ -1292,19 +1235,12 @@ fn empty_load_board_screen(
 }
 
 fn empty_dispatch_desk_screen(
-    state: &AppState,
+    _state: &AppState,
     desk_key: &str,
     title: &str,
     subtitle: &str,
-    mut notes: Vec<String>,
+    notes: Vec<String>,
 ) -> DispatchDeskScreen {
-    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-        notes.push(format!(
-            "IBM deployment note: PUBLIC_BASE_URL is set to {} for proxy-safe dispatch-desk routing during staged cutover.",
-            public_base_url
-        ));
-    }
-
     DispatchDeskScreen {
         desk_key: desk_key.to_string(),
         title: title.to_string(),
@@ -1330,14 +1266,7 @@ fn empty_dispatch_desk_screen(
     }
 }
 
-fn empty_chat_workspace_screen(state: &AppState, mut notes: Vec<String>) -> ChatWorkspaceScreen {
-    if let Some(public_base_url) = state.config.public_base_url.as_ref() {
-        notes.push(format!(
-            "IBM deployment note: PUBLIC_BASE_URL is set to {} so chat websocket upgrades stay proxy-safe during cutover.",
-            public_base_url
-        ));
-    }
-
+fn empty_chat_workspace_screen(_state: &AppState, notes: Vec<String>) -> ChatWorkspaceScreen {
     ChatWorkspaceScreen {
         title: "Private Chat".into(),
         active_conversation_id: None,

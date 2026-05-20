@@ -279,7 +279,7 @@ fn admin_profile_actions(
                 &EscrowReleaseRequest {
                     transfer_id: None,
                     note: Some(format!(
-                        "Triggered from the Rust admin load profile for load #{}.",
+                        "Triggered from the admin load profile for load #{}.",
                         load_id
                     )),
                 },
@@ -304,7 +304,7 @@ fn admin_profile_actions(
                 <div style="display:grid;gap:0.25rem;">
                     <strong>"Admin workflow controls"</strong>
                     <small style="color:#78716c;">
-                        "This profile is open inside the admin shell, so review and finance shortcuts stay here instead of forcing a Blade fallback."
+                        "Review and finance shortcuts are available here."
                     </small>
                 </div>
                 {has_release_ready.then(|| {
@@ -675,7 +675,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
             screen.set(None);
             is_loading.set(false);
             error_message.set(Some(
-                "The requested Rust load profile URL is missing a valid load id.".into(),
+                "The requested load profile URL is missing a valid load id.".into(),
             ));
             return;
         };
@@ -683,7 +683,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
         if !current_session.authenticated {
             screen.set(None);
             is_loading.set(false);
-            error_message.set(Some("Sign in before opening a Rust load profile.".into()));
+            error_message.set(Some("Sign in before opening a load profile.".into()));
             return;
         }
 
@@ -698,10 +698,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
                     }
                     error_message.set(Some(error));
                 }
@@ -739,9 +736,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                 .map(|value| value.to_string())
                 .unwrap_or_default(),
         );
-        action_message.set(Some(
-            "Document row loaded into the Rust profile editor.".into(),
-        ));
+        action_message.set(Some("Document loaded for editing.".into()));
     };
 
     let upload_document = move || {
@@ -792,10 +787,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
                     }
                     action_message.set(Some(error));
                 }
@@ -879,7 +871,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
             match api::verify_load_document(
                 document_id,
                 &VerifyLoadDocumentRequest {
-                    note: Some("Triggered from the Rust load profile.".into()),
+                    note: Some("Triggered from the load profile.".into()),
                 },
             )
             .await
@@ -892,10 +884,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
                     }
                     action_message.set(Some(error));
                 }
@@ -915,7 +904,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                 document_id,
                 &ReviewLoadDocumentRequest {
                     decision: decision.into(),
-                    note: Some("Reviewed from the Rust load profile.".into()),
+                    note: Some("Reviewed from the load profile.".into()),
                 },
             )
             .await
@@ -928,10 +917,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
                     }
                     action_message.set(Some(error));
                 }
@@ -968,9 +954,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
         spawn_local(async move {
             match document_upload::download_protected_document(&download_path, &file_name).await {
                 Ok(()) => {
-                    action_message.set(Some(
-                        "Downloading the protected document from the Rust profile.".into(),
-                    ));
+                    action_message.set(Some("Downloading the protected document.".into()));
                 }
                 Err(error) => {
                     action_message.set(Some(error));
@@ -994,7 +978,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
 
         spawn_local(async move {
             let note = Some(format!(
-                "Triggered from the Rust admin load profile for leg {}.",
+                "Triggered from the admin load profile for leg {}.",
                 leg.leg_code
             ));
             let result = match action_key.as_str() {
@@ -1053,12 +1037,12 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
             <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
                 <div style="display:grid;gap:0.35rem;">
                     <h2>{move || screen.get().and_then(|value| value.load_number).unwrap_or_else(|| profile_title.into())}</h2>
-                    <p>{move || screen.get().map(|value| value.subtitle).unwrap_or_else(|| "Rust load detail view".into())}</p>
+                    <p>{move || screen.get().map(|value| value.subtitle).unwrap_or_else(|| "Review marketplace load details, documents, and execution status.".into())}</p>
                 </div>
                 <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;">
-                    <A href=back_href attr:style="padding:0.7rem 1rem;border-radius:0.9rem;background:#f4f4f5;color:#111827;text-decoration:none;">{if admin_mode { "Back to admin loads" } else { "Back to loads" }}</A>
-                    <A href=move || screen.get().map(|value| format!("/loads/{}/edit", value.load_id)).unwrap_or_else(|| "/loads/new".into()) attr:style="padding:0.7rem 1rem;border-radius:0.9rem;background:#fff7ed;color:#9a3412;text-decoration:none;">"Edit load"</A>
-                    <A href="/loads/new" attr:style="padding:0.7rem 1rem;border-radius:0.9rem;background:#111827;color:white;text-decoration:none;">"Create another load"</A>
+                    <A href=back_href attr:style="padding:0.7rem 1rem;border-radius:0.9rem;background:#f4f4f5;color:#111827;text-decoration:none;">{if admin_mode { "Back to admin loads" } else { "Back to marketplace loads" }}</A>
+                    <A href=move || screen.get().map(|value| format!("/loads/{}/edit", value.load_id)).unwrap_or_else(|| "/loads/new".into()) attr:style="padding:0.7rem 1rem;border-radius:0.9rem;background:#fff7ed;color:#9a3412;text-decoration:none;">"Edit marketplace load"</A>
+                    <A href="/loads/new" attr:style="padding:0.7rem 1rem;border-radius:0.9rem;background:#111827;color:white;text-decoration:none;">"Post another load"</A>
                 </div>
             </section>
 
@@ -1070,7 +1054,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                 if is_loading.get() && screen.get().is_none() {
                     view! {
                         <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;">
-                            "Loading Rust load profile data..."
+                            "Loading load profile data..."
                         </section>
                     }.into_any()
                 } else if let Some(screen_value) = screen.get() {
@@ -1229,7 +1213,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                     })}
 
                                     {documents.is_empty().then(|| view! {
-                                        <p style="margin:0;">"No documents are attached yet. Upload the first one here to start the Rust-side document workflow."</p>
+                                        <p style="margin:0;">"No documents are attached yet. Upload the first document here."</p>
                                     })}
 
                                     {(!documents.is_empty()).then(|| view! {
@@ -1390,7 +1374,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                 } else {
                     view! {
                         <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;">
-                            "No Rust load profile data is available yet for this route."
+                            "No load profile data is available for this route."
                         </section>
                     }.into_any()
                 }

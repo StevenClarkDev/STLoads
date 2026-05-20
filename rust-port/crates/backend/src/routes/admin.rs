@@ -234,11 +234,11 @@ async fn index(
         freight_forwarder_total,
         admin_total,
         notes: vec![
-            "Admin is now the route home for ops dashboards rather than a single placeholder.",
-            "Master-data visibility now lives alongside payments and TMS so load-builder dependencies can be migrated in sequence.",
-            "Role-permission editing now uses the same database-backed permission source that live Rust sessions resolve against.",
-            "Admin loads now mirrors the Laravel approval and operations tabs inside the Rust admin shell.",
-            "IBM-targeted runtime config is environment-driven so these routes can boot on fresh servers without code edits.",
+            "Admin is the control center for marketplace users, loads, payments, and recovery.",
+            "Master data, payments, and ATMP reconciliation are available from the same admin surface.",
+            "Role permissions use the same database-backed source as live sessions.",
+            "Admin loads include review, operations, and recovery views.",
+            "Runtime configuration is environment-driven for staging and production.",
         ],
     })))
 }
@@ -255,9 +255,8 @@ async fn load_list(
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(AdminLoadListScreen {
             title: "Admin Loads".into(),
-            subtitle:
-                "Load oversight is unavailable because the Rust database connection is not ready."
-                    .into(),
+            subtitle: "Load oversight is unavailable because the database connection is not ready."
+                .into(),
             active_tab: active_tab.clone(),
             tabs: admin_load_tabs(&active_tab, 0, 0, 0, 0, 0),
             rows: Vec::new(),
@@ -305,7 +304,9 @@ async fn load_list(
 
     Ok(Json(ApiResponse::ok(AdminLoadListScreen {
         title: "Admin Loads".into(),
-        subtitle: "Mirror of the Laravel admin load tabs for approval, active execution, completion, and release-readiness.".into(),
+        subtitle:
+            "Review marketplace approvals, active execution, completion, and release readiness."
+                .into(),
         active_tab: active_tab.clone(),
         tabs: admin_load_tabs(
             &active_tab,
@@ -317,9 +318,10 @@ async fn load_list(
         ),
         rows,
         notes: vec![
-            "Pending mirrors PHP status 1, approved-active mirrors 2,3,4,5,6,8,9, fund release mirrors 10, and completed mirrors 11.".into(),
-            "Profile links now stay inside the Rust admin shell instead of bouncing back to Blade.".into(),
-            "Release-ready rows deep-link into the Rust payments console until the final in-row finance actions land.".into(),
+            "Review pending, active, completed, and release-ready loads from one admin view."
+                .into(),
+            "Profile links stay inside the admin shell.".into(),
+            "Release-ready rows link directly to payment controls.".into(),
         ],
         pagination: shared::Pagination {
             page: 1,
@@ -367,8 +369,7 @@ async fn review_load_handler(
                 success: false,
                 load_id,
                 status_label: "Invalid".into(),
-                message: "Choose approve, reject, or revision for the Rust load review action."
-                    .into(),
+                message: "Choose approve, reject, or revision for this load.".into(),
             })));
         }
     };
@@ -398,21 +399,21 @@ async fn review_load_handler(
             success: false,
             load_id,
             status_label: "Missing".into(),
-            message: "The selected load was not found in the Rust admin review flow.".into(),
+            message: "The selected load was not found.".into(),
         })));
     };
 
     let summary = match status_id {
         2 => format!(
-            "{} approved load #{} from the Rust admin loads page.",
+            "{} approved load #{} from admin loads.",
             session.user.name, load_id
         ),
         0 => format!(
-            "{} rejected load #{} from the Rust admin loads page.",
+            "{} rejected load #{} from admin loads.",
             session.user.name, load_id
         ),
         _ => format!(
-            "{} returned load #{} for revision from the Rust admin loads page.",
+            "{} returned load #{} for revision from admin loads.",
             session.user.name, load_id
         ),
     };

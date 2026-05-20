@@ -144,19 +144,6 @@ Primary areas:
 - [ ] Add or update automated tests for webhook replay, payment idempotency, and reconciliation recovery.
 - [ ] Run hosted Stripe smoke against staging credentials and record evidence.
 
-### Task E6: UI/UX Clarity And Verbose Language Pass
-
-**Outcome:** STLoads keeps the developer visual contract but reads like a clean enterprise marketplace, not an internal migration prototype.
-
-- [ ] Replace verbose migration phrases such as `Rust builder`, `first-pass`, `staged cutover`, and internal deployment notes in user-facing UI.
-- [ ] Replace TMS-style labels with marketplace labels where STLoads is not the system of record.
-- [ ] Shorten page subtitles to one operational sentence.
-- [ ] Keep button labels action-first and short.
-- [ ] Remove demo, placeholder, or explanatory copy from production-visible empty states.
-- [ ] Make empty states tell the user what is true and what action is available.
-- [ ] Keep developer layout, spacing, color, and component structure intact.
-- [ ] Browser-test all role surfaces for copy clarity, overflow, and mobile readability.
-
 ### Task E7: Final IBM Staging Launch Gate
 
 **Outcome:** STLoads has one clean final evidence pass before being called market-ready.
@@ -203,13 +190,12 @@ Do not call STLoads market-ready until every item below is true:
 
 ## Recommended Execution Order
 
-1. E6 UI/UX clarity and verbose language pass.
-2. E1 ATMP marketplace integration proof.
-3. E2 Marketplace search and eligibility proof.
-4. E3 Marketplace booking workflow proof.
-5. E4 Documents, tracking, and exception sync proof.
-6. E5 Payments and recovery proof.
-7. E7 Final IBM staging launch gate.
+1. E1 ATMP marketplace integration proof.
+2. E2 Marketplace search and eligibility proof.
+3. E3 Marketplace booking workflow proof.
+4. E4 Documents, tracking, and exception sync proof.
+5. E5 Payments and recovery proof.
+6. E7 Final IBM staging launch gate.
 
 ## Definition Of Done
 

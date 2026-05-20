@@ -430,9 +430,9 @@ pub fn LoadBuilderPage() -> impl IntoView {
         if !current_session.authenticated {
             screen.set(None);
             error_message.set(Some(if editing_load_id.is_some() {
-                "Sign in before editing loads from the Rust builder.".into()
+                "Sign in before editing marketplace loads.".into()
             } else {
-                "Sign in before creating loads from the Rust builder.".into()
+                "Sign in before posting marketplace loads.".into()
             }));
             is_loading.set(false);
             return;
@@ -441,11 +441,9 @@ pub fn LoadBuilderPage() -> impl IntoView {
         if !can_manage_loads.get() {
             screen.set(None);
             error_message.set(Some(if editing_load_id.is_some() {
-                "The authenticated session does not have load update access in this Rust slice."
-                    .into()
+                "This account does not have marketplace load update access.".into()
             } else {
-                "The authenticated session does not have load creation access in this Rust slice."
-                    .into()
+                "This account does not have marketplace posting access.".into()
             }));
             is_loading.set(false);
             return;
@@ -475,10 +473,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
                     }
                     error_message.set(Some(error));
                 }
@@ -500,7 +495,9 @@ pub fn LoadBuilderPage() -> impl IntoView {
 
         let Some(api_key) = google_maps_api_key() else {
             google_ready.set(false);
-            google_status.set(Some("Google address autocomplete is waiting for GOOGLE_MAPS_API_KEY in frontend runtime config. Manual typing still works, but IBM deployment should provide the browser key with domain restrictions.".into()));
+            google_status.set(Some(
+                "Google address search is unavailable. Manual address entry still works.".into(),
+            ));
             return;
         };
 
@@ -508,7 +505,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
             match google_places::ensure_loaded(&api_key).await {
                 Ok(()) => {
                     google_ready.set(true);
-                    google_status.set(Some("Google address autocomplete is active. If device GPS is available, predictions are biased toward the current area; if GPS is off, Google returns general suggestions instead.".into()));
+                    google_status.set(Some("Google address search is active.".into()));
 
                     for index in 0..leg_count {
                         let _ = google_places::attach_address_autocomplete(
@@ -543,8 +540,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
     let add_leg = move |_| {
         let Some(screen_value) = screen.get() else {
             action_message.set(Some(
-                "The load builder master data has not loaded yet, so a new leg cannot be added."
-                    .into(),
+                "Marketplace load data is still loading. Try again in a moment.".into(),
             ));
             return;
         };
@@ -560,11 +556,9 @@ pub fn LoadBuilderPage() -> impl IntoView {
 
         if !can_manage_loads.get() {
             action_message.set(Some(if editing_load_id.is_some() {
-                "The authenticated session does not have load update access in this Rust slice."
-                    .into()
+                "This account does not have marketplace load update access.".into()
             } else {
-                "The authenticated session does not have load creation access in this Rust slice."
-                    .into()
+                "This account does not have marketplace posting access.".into()
             }));
             return;
         }
@@ -624,10 +618,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
                     }
                     action_message.set(Some(error));
                 }
@@ -665,7 +656,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
                     }.into_any()
                 } else if screen.get().is_none() {
                     view! {
-                        <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;">"The load builder is waiting for a valid authenticated Rust session."</section>
+                        <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;">"Sign in to post or edit marketplace loads."</section>
                     }.into_any()
                 } else {
                     view! {

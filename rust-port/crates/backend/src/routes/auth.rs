@@ -1613,8 +1613,8 @@ fn profile_screen_from_user(
         company_facts: self_profile_company_facts(user, details.as_ref()),
         documents,
         notes: vec![
-            "This Rust profile replaces the old read-only and edit profile Blade pages with one self-serve workspace.".into(),
-            "Admins can still inspect the deeper compliance view from the Rust admin directory when needed.".into(),
+            "Manage your profile, company details, and documents here.".into(),
+            "Admins can review compliance details when needed.".into(),
         ],
     }
 }
@@ -1764,7 +1764,7 @@ fn login_message_for_status(status: Option<AccountStatus>) -> String {
             "Logged in, but OTP verification is still pending for this account.".into()
         }
         Some(AccountStatus::EmailVerifiedPendingOnboarding) => {
-            "Logged in. Email is verified and onboarding is the next Rust migration slice.".into()
+            "Logged in. Complete onboarding to continue.".into()
         }
         Some(AccountStatus::PendingReview) => {
             "Logged in. This account is waiting for admin review.".into()
@@ -1773,9 +1773,9 @@ fn login_message_for_status(status: Option<AccountStatus>) -> String {
             "Logged in. Admin requested onboarding revisions for this account.".into()
         }
         Some(AccountStatus::Rejected) => {
-            "Logged in, but this account is currently rejected in the legacy status model.".into()
+            "Logged in, but this account is currently rejected.".into()
         }
-        _ => "Logged in through the Rust session layer.".into(),
+        _ => "Logged in.".into(),
     }
 }
 
