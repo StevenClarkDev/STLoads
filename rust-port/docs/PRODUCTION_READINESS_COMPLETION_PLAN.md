@@ -79,19 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task E1: ATMP Marketplace Integration Proof
-
-**Outcome:** ATMP and STLoads prove the full marketplace handoff without treating STLoads as the TMS.
-
-- [ ] Verify ATMP can publish a board-ready freight load into STLoads.
-- [ ] Verify ATMP can update a posted marketplace load.
-- [ ] Verify ATMP can withdraw a marketplace load.
-- [ ] Verify ATMP can close a marketplace load.
-- [ ] Verify STLoads outbound status events reconcile back to ATMP.
-- [ ] Confirm all handoff writes are tenant-scoped, signed, idempotent, audited, and observable.
-- [ ] Add or update automated checks for the proven publish/update/withdraw/close/reconcile path.
-- [ ] Browser-test the resulting marketplace load state in STLoads.
-
 ### Task E2: Marketplace Search And Eligibility Proof
 
 **Outcome:** Carrier-facing marketplace discovery uses real data and blocks ineligible carriers.
@@ -190,12 +177,11 @@ Do not call STLoads market-ready until every item below is true:
 
 ## Recommended Execution Order
 
-1. E1 ATMP marketplace integration proof.
-2. E2 Marketplace search and eligibility proof.
-3. E3 Marketplace booking workflow proof.
-4. E4 Documents, tracking, and exception sync proof.
-5. E5 Payments and recovery proof.
-6. E7 Final IBM staging launch gate.
+1. E2 Marketplace search and eligibility proof.
+2. E3 Marketplace booking workflow proof.
+3. E4 Documents, tracking, and exception sync proof.
+4. E5 Payments and recovery proof.
+5. E7 Final IBM staging launch gate.
 
 ## Definition Of Done
 

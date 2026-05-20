@@ -674,6 +674,10 @@ pub async fn force_atmp_outbound_event_due_for_test(
 pub fn supported_atmp_outbound_event_types() -> &'static [&'static str] {
     &[
         "listing_published",
+        "listing_updated",
+        "listing_withdrawn",
+        "listing_closed",
+        "listing_canceled",
         "listing_failed",
         "offer_submitted",
         "counteroffer_submitted",
@@ -771,6 +775,13 @@ pub async fn apply_atmp_contract_event(
         }
         AtmpContractAction::Update => {
             let posting_id = upsert_atmp_posting(&mut tx, &envelope, &payload_hash, false).await?;
+            insert_listing_lifecycle_outbound_event(
+                &mut tx,
+                &envelope,
+                "listing_updated",
+                Some(posting_id),
+            )
+            .await?;
             (
                 Some(posting_id),
                 "Updated".into(),
@@ -779,6 +790,15 @@ pub async fn apply_atmp_contract_event(
         }
         AtmpContractAction::Withdraw | AtmpContractAction::Cancel | AtmpContractAction::Close => {
             let posting_id = transition_atmp_posting(&mut tx, &envelope).await?;
+            if let Some(posting_id) = posting_id {
+                insert_listing_lifecycle_outbound_event(
+                    &mut tx,
+                    &envelope,
+                    listing_lifecycle_event_type(envelope.action),
+                    Some(posting_id),
+                )
+                .await?;
+            }
             let status_label = envelope
                 .action
                 .terminal_status()
@@ -2242,6 +2262,45 @@ async fn insert_atmp_outbound_event_tx(
     .await?;
 
     Ok(outbound_event_id)
+}
+
+async fn insert_listing_lifecycle_outbound_event(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    envelope: &AtmpContractEnvelope,
+    event_type: &str,
+    posting_id: Option<i64>,
+) -> Result<i64, sqlx::Error> {
+    insert_atmp_outbound_event_tx(
+        tx,
+        &envelope.tenant_id,
+        event_type,
+        posting_id,
+        None,
+        &serde_json::json!({
+            "event_type": event_type,
+            "tenant_id": envelope.tenant_id,
+            "atmp_load_id": envelope.atmp_load_id,
+            "atmp_leg_id": envelope.atmp_leg_id,
+            "posting_id": posting_id,
+            "correlation_id": envelope.correlation_id,
+            "source_action": envelope.action.as_str()
+        }),
+        Some(&envelope.correlation_id),
+    )
+    .await
+}
+
+fn listing_lifecycle_event_type(action: AtmpContractAction) -> &'static str {
+    match action {
+        AtmpContractAction::Withdraw => "listing_withdrawn",
+        AtmpContractAction::Close => "listing_closed",
+        AtmpContractAction::Cancel => "listing_canceled",
+        AtmpContractAction::Publish => "listing_published",
+        AtmpContractAction::Update => "listing_updated",
+        AtmpContractAction::Status | AtmpContractAction::Document | AtmpContractAction::Finance => {
+            "sync_error"
+        }
+    }
 }
 
 async fn upsert_atmp_posting(
