@@ -627,6 +627,8 @@ async fn review_offer_handler(
         }));
     }
 
+    let tenant_id = session_tenant_id(&session);
+
     match review_offer(
         pool,
         offer_id,
@@ -657,7 +659,7 @@ async fn review_offer_handler(
 
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
-                    kind: RealtimeEventKind::OfferReviewed,
+                    kind: RealtimeEventKind::OfferUpdated,
                     leg_id: Some(offer.load_leg_id.max(0) as u64),
                     conversation_id: offer.conversation_id.map(|value| value.max(0) as u64),
                     offer_id: Some(offer_id.max(0) as u64),
@@ -672,6 +674,8 @@ async fn review_offer_handler(
                     ),
                 })
                 .for_user_ids(target_user_ids)
+                .for_tenant(tenant_id.clone())
+                .for_resource("load_leg", offer.load_leg_id.max(0) as u64)
                 .with_topics([
                     RealtimeTopic::Conversation.as_key(),
                     RealtimeTopic::LoadBoard.as_key(),
@@ -785,6 +789,8 @@ async fn send_message_handler(
                     summary: format!("{} sent a chat message.", session.user.name),
                 })
                 .for_user_ids(target_user_ids)
+                .for_tenant(tenant_id.clone())
+                .for_resource("conversation", conversation_id.max(0) as u64)
                 .with_topics([RealtimeTopic::Conversation.as_key()]),
             );
 
@@ -876,6 +882,8 @@ async fn mark_conversation_read_handler(
                     summary: format!("{} read the active conversation.", session.user.name),
                 })
                 .for_user_ids(target_user_ids)
+                .for_tenant(tenant_id.clone())
+                .for_resource("conversation", conversation_id.max(0) as u64)
                 .with_topics([RealtimeTopic::Conversation.as_key()]),
             );
 
@@ -974,6 +982,8 @@ async fn update_conversation_presence_handler(
                     ),
                 })
                 .for_user_ids(scope_participant_user_ids(&scope))
+                .for_tenant(tenant_id.clone())
+                .for_resource("conversation", conversation_id.max(0) as u64)
                 .with_topics([RealtimeTopic::Conversation.as_key()]),
             );
 

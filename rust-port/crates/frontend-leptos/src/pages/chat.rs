@@ -123,7 +123,9 @@ pub fn ChatWorkspacePage() -> impl IntoView {
             move |event| match event.kind {
                 RealtimeEventKind::MessageSent
                 | RealtimeEventKind::OfferReviewed
-                | RealtimeEventKind::LoadLegBooked => {
+                | RealtimeEventKind::OfferUpdated
+                | RealtimeEventKind::LoadLegBooked
+                | RealtimeEventKind::BookingAwarded => {
                     if event.conversation_id.is_none()
                         || event.conversation_id == selected_conversation_id.get()
                     {

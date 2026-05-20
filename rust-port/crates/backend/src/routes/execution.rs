@@ -574,7 +574,7 @@ async fn upload_leg_document(
         Ok(Some(document)) => {
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
-                    kind: RealtimeEventKind::LegExecutionUpdated,
+                    kind: RealtimeEventKind::LoadDocumentUpdated,
                     leg_id: Some(leg_id.max(0) as u64),
                     conversation_id: None,
                     offer_id: None,
@@ -595,6 +595,7 @@ async fn upload_leg_document(
                 })
                 .for_user_ids(target_execution_user_ids(&existing))
                 .for_permission_keys(["manage_tracking", "access_admin_portal", "manage_loads"])
+                .for_resource("load_leg", leg_id.max(0) as u64)
                 .with_topics([
                     RealtimeTopic::ExecutionTracking.as_key(),
                     RealtimeTopic::LoadBoard.as_key(),
@@ -1181,6 +1182,7 @@ fn publish_execution_update(
         })
         .for_user_ids(target_execution_user_ids(leg))
         .for_permission_keys(["manage_tracking", "access_admin_portal", "manage_loads"])
+        .for_resource("load_leg", leg.leg_id.max(0) as u64)
         .with_topics([
             RealtimeTopic::ExecutionTracking.as_key(),
             RealtimeTopic::LoadBoard.as_key(),

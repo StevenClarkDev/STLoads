@@ -18,8 +18,12 @@ use tokio::time::{self, Duration};
 use tracing::warn;
 
 use crate::{
-    auth_session, auth_session::ResolvedSession, realtime_bus::RoutedRealtimeEvent, state::AppState,
+    auth_session,
+    auth_session::ResolvedSession,
+    realtime_bus::{RealtimeSubscriptionScope, RoutedRealtimeEvent},
+    state::AppState,
 };
+use domain::auth::UserRole;
 use shared::{RealtimeEvent, RealtimeEventKind, RealtimeTopic};
 
 const PRESENCE_HEARTBEAT_SECONDS: u64 = 20;
@@ -29,6 +33,9 @@ struct RealtimeQuery {
     token: String,
     conversation_id: Option<i64>,
     topics: Option<String>,
+    tenant_id: Option<String>,
+    resource_type: Option<String>,
+    resource_id: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +57,12 @@ async fn websocket(
 
     match auth_session::resolve_session_from_token(&state, &query.token).await {
         Ok(Some(session)) => {
+            let subscription_scope =
+                match build_subscription_scope(&session, &requested_topics, &query) {
+                    Ok(scope) => scope,
+                    Err(status) => return status.into_response(),
+                };
+
             match resolve_presence_scope(&state, &session, query.conversation_id).await {
                 Ok(presence_scope) => websocket
                     .on_upgrade(move |socket| {
@@ -60,6 +73,7 @@ async fn websocket(
                             query.token,
                             presence_scope,
                             requested_topics,
+                            subscription_scope,
                         )
                     })
                     .into_response(),
@@ -111,6 +125,7 @@ async fn handle_socket(
     token: String,
     presence_scope: Option<ConversationPresenceScope>,
     requested_topics: Vec<String>,
+    subscription_scope: RealtimeSubscriptionScope,
 ) {
     let mut receiver = state.realtime_tx.subscribe();
     let user_id = session.user.id.max(0) as u64;
@@ -134,6 +149,7 @@ async fn handle_socket(
                             &role_key,
                             &session_permissions,
                             &requested_topics,
+                            &subscription_scope,
                         ) {
                             continue;
                         }
@@ -171,6 +187,10 @@ async fn handle_socket(
                         summary: "The Rust websocket session expired and must reconnect.".into(),
                     };
                     let _ = send_event(&mut sender, &invalidated).await;
+                    break;
+                }
+
+                if sender.send(Message::Ping(Vec::new().into())).await.is_err() {
                     break;
                 }
 
@@ -294,4 +314,112 @@ fn parse_topics(raw_topics: Option<&str>) -> Vec<String> {
         .filter(|topic| !topic.is_empty())
         .map(|topic| topic.to_string())
         .collect()
+}
+
+fn build_subscription_scope(
+    session: &ResolvedSession,
+    requested_topics: &[String],
+    query: &RealtimeQuery,
+) -> Result<RealtimeSubscriptionScope, StatusCode> {
+    if !requested_topics
+        .iter()
+        .all(|topic| is_authorized_topic(session, topic))
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let tenant_ids = session
+        .session
+        .tenant_scopes
+        .iter()
+        .map(|scope| scope.tenant_id.clone())
+        .filter(|tenant_id| !tenant_id.trim().is_empty())
+        .collect::<Vec<_>>();
+    let is_platform_admin = session.user.primary_role() == Some(UserRole::Admin)
+        || session
+            .session
+            .permissions
+            .iter()
+            .any(|permission| permission == "access_admin_portal");
+    let requested_tenant_id = query
+        .tenant_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|tenant_id| !tenant_id.is_empty())
+        .map(str::to_string);
+
+    if let Some(requested_tenant_id) = requested_tenant_id.as_deref() {
+        if !is_platform_admin
+            && !tenant_ids
+                .iter()
+                .any(|tenant_id| tenant_id == requested_tenant_id)
+        {
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
+
+    let requested_resource_type = query
+        .resource_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|resource_type| !resource_type.is_empty())
+        .map(str::to_string);
+
+    Ok(RealtimeSubscriptionScope {
+        tenant_ids,
+        is_platform_admin,
+        requested_tenant_id,
+        requested_resource_type,
+        requested_resource_id: query.resource_id,
+    })
+}
+
+fn is_authorized_topic(session: &ResolvedSession, topic: &str) -> bool {
+    let role = session.user.primary_role();
+    let permissions = &session.session.permissions;
+    match topic {
+        "admin_dashboard" => {
+            role == Some(UserRole::Admin)
+                || permissions
+                    .iter()
+                    .any(|permission| permission == "access_admin_portal")
+        }
+        "admin_tms_operations" | "admin_tms_reconciliation" => {
+            permissions.iter().any(|permission| {
+                permission == "manage_tms_operations" || permission == "access_admin_portal"
+            })
+        }
+        "admin_payments" => permissions.iter().any(|permission| {
+            permission == "manage_payments" || permission == "access_admin_portal"
+        }),
+        "load_board" => {
+            matches!(
+                role,
+                Some(UserRole::Admin)
+                    | Some(UserRole::Carrier)
+                    | Some(UserRole::Shipper)
+                    | Some(UserRole::Broker)
+                    | Some(UserRole::FreightForwarder)
+            ) || permissions.iter().any(|permission| {
+                permission == "manage_marketplace"
+                    || permission == "manage_loads"
+                    || permission == "manage_dispatch_desk"
+            })
+        }
+        "conversation" => true,
+        "execution_tracking" => {
+            permissions.iter().any(|permission| {
+                permission == "manage_tracking"
+                    || permission == "manage_loads"
+                    || permission == "access_admin_portal"
+            }) || matches!(
+                role,
+                Some(UserRole::Carrier)
+                    | Some(UserRole::Shipper)
+                    | Some(UserRole::Broker)
+                    | Some(UserRole::FreightForwarder)
+            )
+        }
+        _ => false,
+    }
 }

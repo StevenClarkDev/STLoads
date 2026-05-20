@@ -545,7 +545,7 @@ async fn add_dispatch_desk_follow_up(
             );
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
-                    kind: RealtimeEventKind::AdminDashboardUpdated,
+                    kind: RealtimeEventKind::LoadBoardListingUpdated,
                     leg_id: Some(leg_id.max(0) as u64),
                     conversation_id: None,
                     offer_id: None,
@@ -561,6 +561,8 @@ async fn add_dispatch_desk_follow_up(
                     "manage_loads",
                     "access_admin_portal",
                 ])
+                .for_tenant(session_tenant_id(&session))
+                .for_resource("load_leg", leg_id.max(0) as u64)
                 .with_topics([RealtimeTopic::LoadBoard.as_key()]),
             );
 
@@ -1239,6 +1241,45 @@ async fn upload_load_document_handler(
                 Some(session.user.id),
                 Some(load_id),
                 None,
+            );
+            let load_owner_user_id = load.user_id.and_then(|user_id| {
+                if user_id > 0 {
+                    Some(user_id as u64)
+                } else {
+                    None
+                }
+            });
+            let mut target_user_ids = vec![session.user.id.max(0) as u64];
+            if let Some(load_owner_user_id) = load_owner_user_id {
+                target_user_ids.push(load_owner_user_id);
+            }
+            target_user_ids.sort_unstable();
+            target_user_ids.dedup();
+            state.publish_realtime(
+                RoutedRealtimeEvent::new(RealtimeEvent {
+                    kind: RealtimeEventKind::LoadDocumentUpdated,
+                    leg_id: None,
+                    conversation_id: None,
+                    offer_id: None,
+                    message_id: None,
+                    actor_user_id: Some(session.user.id.max(0) as u64),
+                    subject_user_id: load_owner_user_id,
+                    presence_state: None,
+                    last_read_message_id: None,
+                    summary: format!(
+                        "{} uploaded document {} to load {}.",
+                        session.user.name,
+                        document.document_name,
+                        load.load_number
+                            .clone()
+                            .unwrap_or_else(|| format!("#{}", load.id))
+                    ),
+                })
+                .for_user_ids(target_user_ids)
+                .for_permission_keys(["manage_loads", "access_admin_portal"])
+                .for_tenant(session_tenant_id(&session))
+                .for_resource("load", load_id.max(0) as u64)
+                .with_topics([RealtimeTopic::LoadBoard.as_key()]),
             );
             Json(ApiResponse::ok(UpsertLoadDocumentResponse {
                 success: true,
@@ -2113,6 +2154,7 @@ async fn book_leg(
     .await
     {
         Ok(Some(updated_leg)) => {
+            let tenant_id = session_tenant_id(&session);
             log_dispatch_success(
                 "book_leg",
                 Some(session.user.id),
@@ -2137,7 +2179,7 @@ async fn book_leg(
 
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
-                    kind: RealtimeEventKind::LoadLegBooked,
+                    kind: RealtimeEventKind::BookingAwarded,
                     leg_id: Some(leg_id.max(0) as u64),
                     conversation_id: None,
                     offer_id: updated_leg
@@ -2152,12 +2194,14 @@ async fn book_leg(
                 })
                 .for_user_ids(target_user_ids)
                 .for_role_keys(["carrier"])
+                .for_tenant(tenant_id.clone())
+                .for_resource("load_leg", leg_id.max(0) as u64)
                 .with_topics([RealtimeTopic::LoadBoard.as_key()]),
             );
 
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
-                    kind: RealtimeEventKind::PaymentsOperationsUpdated,
+                    kind: RealtimeEventKind::PaymentUpdated,
                     leg_id: Some(leg_id.max(0) as u64),
                     conversation_id: None,
                     offer_id: updated_leg
@@ -2174,6 +2218,8 @@ async fn book_leg(
                     ),
                 })
                 .for_permission_keys(["manage_payments"])
+                .for_tenant(tenant_id)
+                .for_resource("load_leg", leg_id.max(0) as u64)
                 .with_topics([RealtimeTopic::AdminPayments.as_key()]),
             );
 

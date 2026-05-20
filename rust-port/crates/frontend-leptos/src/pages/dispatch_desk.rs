@@ -246,10 +246,15 @@ pub fn DispatchDeskPage() -> impl IntoView {
             ],
             move |event| match event.kind {
                 RealtimeEventKind::LoadLegBooked
+                | RealtimeEventKind::BookingAwarded
                 | RealtimeEventKind::LegExecutionUpdated
                 | RealtimeEventKind::PaymentsOperationsUpdated
+                | RealtimeEventKind::PaymentUpdated
                 | RealtimeEventKind::TmsOperationsUpdated
-                | RealtimeEventKind::TmsReconciliationUpdated => {
+                | RealtimeEventKind::TmsReconciliationUpdated
+                | RealtimeEventKind::LoadBoardListingUpdated
+                | RealtimeEventKind::LoadDocumentUpdated
+                | RealtimeEventKind::SyncErrorRaised => {
                     refresh_nonce.update(|value| *value += 1);
                     feedback.set(Some(format!("Realtime update: {}", event.summary)));
                 }

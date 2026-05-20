@@ -107,10 +107,15 @@ pub fn LoadBoardPage() -> impl IntoView {
             vec![RealtimeTopic::LoadBoard],
             move |event| match event.kind {
                 RealtimeEventKind::LoadLegBooked
+                | RealtimeEventKind::BookingAwarded
                 | RealtimeEventKind::LegExecutionUpdated
                 | RealtimeEventKind::OfferReviewed
+                | RealtimeEventKind::OfferUpdated
                 | RealtimeEventKind::PaymentsOperationsUpdated
-                | RealtimeEventKind::TmsOperationsUpdated => {
+                | RealtimeEventKind::PaymentUpdated
+                | RealtimeEventKind::TmsOperationsUpdated
+                | RealtimeEventKind::LoadBoardListingUpdated
+                | RealtimeEventKind::LoadDocumentUpdated => {
                     refresh_nonce.update(|value| *value += 1);
                     action_message.set(Some(format!("Realtime update: {}", event.summary)));
                 }

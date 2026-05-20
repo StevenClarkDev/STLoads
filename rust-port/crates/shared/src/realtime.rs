@@ -30,17 +30,23 @@ impl RealtimeTopic {
 #[serde(rename_all = "snake_case")]
 pub enum RealtimeEventKind {
     SessionInvalidated,
+    LoadBoardListingUpdated,
     LoadLegBooked,
+    BookingAwarded,
     LegExecutionUpdated,
     LegLocationUpdated,
     OfferReviewed,
+    OfferUpdated,
     MessageSent,
+    LoadDocumentUpdated,
     ConversationRead,
     ConversationPresenceChanged,
     AdminDashboardUpdated,
     TmsOperationsUpdated,
     TmsReconciliationUpdated,
     PaymentsOperationsUpdated,
+    PaymentUpdated,
+    SyncErrorRaised,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

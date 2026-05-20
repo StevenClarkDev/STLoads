@@ -221,7 +221,8 @@ pub fn EscrowOperationsPage() -> impl IntoView {
                         ws_connected.set(false);
                     }
                 }
-                RealtimeEventKind::PaymentsOperationsUpdated => {
+                RealtimeEventKind::PaymentsOperationsUpdated
+                | RealtimeEventKind::PaymentUpdated => {
                     refresh_nonce.update(|value| *value += 1);
                     action_message.set(Some(format!("Realtime update: {}", event.summary)));
                 }

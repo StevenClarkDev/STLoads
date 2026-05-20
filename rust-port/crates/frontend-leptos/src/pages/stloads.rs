@@ -142,7 +142,9 @@ pub fn StloadsOperationsPage() -> impl IntoView {
                         ws_connected.set(false);
                     }
                 }
-                RealtimeEventKind::TmsOperationsUpdated => {
+                RealtimeEventKind::TmsOperationsUpdated
+                | RealtimeEventKind::LoadBoardListingUpdated
+                | RealtimeEventKind::SyncErrorRaised => {
                     refresh_nonce.update(|value| *value += 1);
                     action_message.set(Some(format!("Realtime update: {}", event.summary)));
                 }

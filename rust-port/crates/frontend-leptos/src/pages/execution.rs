@@ -367,7 +367,9 @@ pub fn ExecutionLegPage() -> impl IntoView {
             None,
             vec![RealtimeTopic::ExecutionTracking],
             move |event| match event.kind {
-                RealtimeEventKind::LegExecutionUpdated | RealtimeEventKind::LegLocationUpdated => {
+                RealtimeEventKind::LegExecutionUpdated
+                | RealtimeEventKind::LegLocationUpdated
+                | RealtimeEventKind::LoadDocumentUpdated => {
                     if event.leg_id == current_leg_id {
                         refresh_nonce.update(|value| *value += 1);
                         action_message.set(Some(format!("Realtime update: {}", event.summary)));

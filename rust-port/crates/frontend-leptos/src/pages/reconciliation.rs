@@ -109,7 +109,8 @@ pub fn StloadsReconciliationPage() -> impl IntoView {
                         ws_connected.set(false);
                     }
                 }
-                RealtimeEventKind::TmsReconciliationUpdated => {
+                RealtimeEventKind::TmsReconciliationUpdated
+                | RealtimeEventKind::SyncErrorRaised => {
                     refresh_nonce.update(|value| *value += 1);
                     action_message.set(Some(format!("Realtime update: {}", event.summary)));
                 }

@@ -212,7 +212,11 @@ pub fn AdminDashboardPage() -> impl IntoView {
                 RealtimeEventKind::AdminDashboardUpdated
                 | RealtimeEventKind::TmsOperationsUpdated
                 | RealtimeEventKind::TmsReconciliationUpdated
-                | RealtimeEventKind::PaymentsOperationsUpdated => {
+                | RealtimeEventKind::PaymentsOperationsUpdated
+                | RealtimeEventKind::LoadBoardListingUpdated
+                | RealtimeEventKind::PaymentUpdated
+                | RealtimeEventKind::LoadDocumentUpdated
+                | RealtimeEventKind::SyncErrorRaised => {
                     refresh_nonce.update(|value| *value += 1);
                     action_message.set(Some(format!("Realtime update: {}", event.summary)));
                 }

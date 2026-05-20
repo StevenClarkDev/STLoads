@@ -920,7 +920,7 @@ fn validate_handoff_payload(payload: &TmsHandoffPayload) -> Option<String> {
 
 fn publish_tms_lifecycle_events(
     state: &AppState,
-    _result: &MaterializedHandoffResult,
+    result: &MaterializedHandoffResult,
     actor_session: Option<&ResolvedSession>,
     notify_operations: bool,
     notify_reconciliation: bool,
@@ -928,8 +928,14 @@ fn publish_tms_lifecycle_events(
     summary: String,
 ) {
     if notify_operations {
+        let tenant_id = result.handoff.tenant_id.clone();
+        let resource_id = result.handoff.id.max(0) as u64;
         let mut event = RoutedRealtimeEvent::new(RealtimeEvent {
-            kind: RealtimeEventKind::TmsOperationsUpdated,
+            kind: if notify_load_board {
+                RealtimeEventKind::LoadBoardListingUpdated
+            } else {
+                RealtimeEventKind::TmsOperationsUpdated
+            },
             leg_id: None,
             conversation_id: None,
             offer_id: None,
@@ -941,10 +947,15 @@ fn publish_tms_lifecycle_events(
             summary: summary.clone(),
         })
         .for_permission_keys(["manage_tms_operations"])
+        .for_resource("tms_handoff", resource_id)
         .with_topics([
             RealtimeTopic::AdminTmsOperations.as_key(),
             RealtimeTopic::AdminDashboard.as_key(),
         ]);
+
+        if let Some(tenant_id) = tenant_id.as_deref() {
+            event = event.for_tenant(tenant_id);
+        }
 
         if notify_load_board {
             event = event
@@ -956,25 +967,28 @@ fn publish_tms_lifecycle_events(
     }
 
     if notify_reconciliation {
-        state.publish_realtime(
-            RoutedRealtimeEvent::new(RealtimeEvent {
-                kind: RealtimeEventKind::TmsReconciliationUpdated,
-                leg_id: None,
-                conversation_id: None,
-                offer_id: None,
-                message_id: None,
-                actor_user_id: actor_session.map(|session| session.user.id.max(0) as u64),
-                subject_user_id: None,
-                presence_state: None,
-                last_read_message_id: None,
-                summary,
-            })
-            .for_permission_keys(["manage_tms_operations"])
-            .with_topics([
-                RealtimeTopic::AdminTmsReconciliation.as_key(),
-                RealtimeTopic::AdminDashboard.as_key(),
-            ]),
-        );
+        let mut event = RoutedRealtimeEvent::new(RealtimeEvent {
+            kind: RealtimeEventKind::SyncErrorRaised,
+            leg_id: None,
+            conversation_id: None,
+            offer_id: None,
+            message_id: None,
+            actor_user_id: actor_session.map(|session| session.user.id.max(0) as u64),
+            subject_user_id: None,
+            presence_state: None,
+            last_read_message_id: None,
+            summary,
+        })
+        .for_permission_keys(["manage_tms_operations"])
+        .for_resource("tms_handoff", result.handoff.id.max(0) as u64)
+        .with_topics([
+            RealtimeTopic::AdminTmsReconciliation.as_key(),
+            RealtimeTopic::AdminDashboard.as_key(),
+        ]);
+        if let Some(tenant_id) = result.handoff.tenant_id.as_deref() {
+            event = event.for_tenant(tenant_id);
+        }
+        state.publish_realtime(event);
     }
 }
 

@@ -79,23 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P17: Realtime And Event Streaming
-
-**Outcome:** Board updates, offers, messages, and execution events update live without unsafe polling.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\realtime_bus.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\realtime.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\realtime.rs`
-
-- [ ] Scope websocket topics by tenant and resource.
-- [ ] Add auth to websocket connect.
-- [ ] Add reconnect behavior in frontend.
-- [ ] Publish events for listing update, offer update, booking award, chat message, document update, payment update, and sync error.
-- [ ] Add stale connection handling.
-- [ ] Tests must prove unauthorized user cannot subscribe to another tenant/resource topic.
-
 ### Task P18: Observability, Audit, And Production Health
 
 **Outcome:** Production issues are visible before customers find them.
@@ -268,12 +251,11 @@ Do not call STLoads market-ready until every item below is true:
 
 1. P7 Tenant/RBAC/session hardening.
 2. P8 Carrier search and alerts.
-3. P17 Realtime.
-4. P18 Observability and audit.
-5. P19 Security hardening.
-6. P20 Build and tests.
-7. P21 IBM deployment.
-8. P22 Launch documentation.
+3. P18 Observability and audit.
+4. P19 Security hardening.
+5. P20 Build and tests.
+6. P21 IBM deployment.
+7. P22 Launch documentation.
 
 ## Definition Of Done
 

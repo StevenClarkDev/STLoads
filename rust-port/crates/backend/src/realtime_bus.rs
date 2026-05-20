@@ -1,5 +1,14 @@
 use shared::RealtimeEvent;
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RealtimeSubscriptionScope {
+    pub tenant_ids: Vec<String>,
+    pub is_platform_admin: bool,
+    pub requested_tenant_id: Option<String>,
+    pub requested_resource_type: Option<String>,
+    pub requested_resource_id: Option<u64>,
+}
+
 #[derive(Debug, Clone)]
 pub struct RoutedRealtimeEvent {
     pub payload: RealtimeEvent,
@@ -7,6 +16,9 @@ pub struct RoutedRealtimeEvent {
     pub target_role_keys: Vec<String>,
     pub target_permission_keys: Vec<String>,
     pub topics: Vec<String>,
+    pub tenant_id: Option<String>,
+    pub resource_type: Option<String>,
+    pub resource_id: Option<u64>,
 }
 
 impl RoutedRealtimeEvent {
@@ -17,6 +29,9 @@ impl RoutedRealtimeEvent {
             target_role_keys: Vec::new(),
             target_permission_keys: Vec::new(),
             topics: Vec::new(),
+            tenant_id: None,
+            resource_type: None,
+            resource_id: None,
         }
     }
 
@@ -88,12 +103,36 @@ impl RoutedRealtimeEvent {
         self
     }
 
+    pub fn for_tenant<S>(mut self, tenant_id: S) -> Self
+    where
+        S: Into<String>,
+    {
+        let tenant_id = tenant_id.into();
+        if !tenant_id.trim().is_empty() {
+            self.tenant_id = Some(tenant_id);
+        }
+        self
+    }
+
+    pub fn for_resource<S>(mut self, resource_type: S, resource_id: u64) -> Self
+    where
+        S: Into<String>,
+    {
+        let resource_type = resource_type.into();
+        if !resource_type.trim().is_empty() && resource_id > 0 {
+            self.resource_type = Some(resource_type);
+            self.resource_id = Some(resource_id);
+        }
+        self
+    }
+
     pub fn should_deliver_to(
         &self,
         user_id: u64,
         role_key: &str,
         permission_keys: &[String],
         requested_topics: &[String],
+        subscription_scope: &RealtimeSubscriptionScope,
     ) -> bool {
         let is_targeted = self.target_user_ids.contains(&user_id)
             || self
@@ -110,10 +149,122 @@ impl RoutedRealtimeEvent {
             return false;
         }
 
+        if !self.matches_subscription_scope(subscription_scope) {
+            return false;
+        }
+
         requested_topics.is_empty()
             || self.topics.is_empty()
             || requested_topics
                 .iter()
                 .any(|topic| self.topics.iter().any(|candidate| candidate == topic))
+    }
+
+    fn matches_subscription_scope(&self, scope: &RealtimeSubscriptionScope) -> bool {
+        if let Some(event_tenant_id) = self.tenant_id.as_deref() {
+            if let Some(requested_tenant_id) = scope.requested_tenant_id.as_deref() {
+                if requested_tenant_id != event_tenant_id {
+                    return false;
+                }
+            }
+
+            if !scope.is_platform_admin
+                && !scope
+                    .tenant_ids
+                    .iter()
+                    .any(|tenant_id| tenant_id == event_tenant_id)
+            {
+                return false;
+            }
+        }
+
+        if let Some(requested_resource_type) = scope.requested_resource_type.as_deref() {
+            if self.resource_type.as_deref() != Some(requested_resource_type) {
+                return false;
+            }
+        }
+
+        if let Some(requested_resource_id) = scope.requested_resource_id {
+            if self.resource_id != Some(requested_resource_id) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use shared::{RealtimeEvent, RealtimeEventKind};
+
+    use super::{RealtimeSubscriptionScope, RoutedRealtimeEvent};
+
+    fn event() -> RealtimeEvent {
+        RealtimeEvent {
+            kind: RealtimeEventKind::LoadBoardListingUpdated,
+            leg_id: Some(42),
+            conversation_id: None,
+            offer_id: None,
+            message_id: None,
+            actor_user_id: Some(7),
+            subject_user_id: None,
+            presence_state: None,
+            last_read_message_id: None,
+            summary: "Listing changed.".into(),
+        }
+    }
+
+    #[test]
+    fn tenant_and_resource_scope_blocks_cross_tenant_subscription() {
+        let routed = RoutedRealtimeEvent::new(event())
+            .for_role_keys(["carrier"])
+            .for_tenant("tenant-a")
+            .for_resource("load_leg", 42)
+            .with_topics(["load_board"]);
+        let permissions = Vec::<String>::new();
+        let wrong_tenant = RealtimeSubscriptionScope {
+            tenant_ids: vec!["tenant-b".into()],
+            requested_tenant_id: Some("tenant-b".into()),
+            requested_resource_type: Some("load_leg".into()),
+            requested_resource_id: Some(42),
+            ..Default::default()
+        };
+        let right_tenant_wrong_resource = RealtimeSubscriptionScope {
+            tenant_ids: vec!["tenant-a".into()],
+            requested_tenant_id: Some("tenant-a".into()),
+            requested_resource_type: Some("load_leg".into()),
+            requested_resource_id: Some(99),
+            ..Default::default()
+        };
+        let right_scope = RealtimeSubscriptionScope {
+            tenant_ids: vec!["tenant-a".into()],
+            requested_tenant_id: Some("tenant-a".into()),
+            requested_resource_type: Some("load_leg".into()),
+            requested_resource_id: Some(42),
+            ..Default::default()
+        };
+
+        assert!(!routed.should_deliver_to(
+            7,
+            "carrier",
+            &permissions,
+            &["load_board".into()],
+            &wrong_tenant
+        ));
+        assert!(!routed.should_deliver_to(
+            7,
+            "carrier",
+            &permissions,
+            &["load_board".into()],
+            &right_tenant_wrong_resource
+        ));
+        assert!(routed.should_deliver_to(
+            7,
+            "carrier",
+            &permissions,
+            &["load_board".into()],
+            &right_scope
+        ));
     }
 }
