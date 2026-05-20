@@ -79,30 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P18: Observability, Audit, And Production Health
-
-**Outcome:** Production issues are visible before customers find them.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\app.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\admin.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\state.rs`
-
-- [ ] Add structured logs with:
-  - `tenant_id`
-  - `actor_id`
-  - `route`
-  - `correlation_id`
-  - `event_id`
-  - `atmp_load_id`
-  - `posting_id`
-  - `idempotency_key`
-- [ ] Add `/health` for basic liveness.
-- [ ] Add `/readiness` for DB, object storage, Stripe config, ATMP outbound config, queue health, and realtime readiness.
-- [ ] Add admin-visible health summary.
-- [ ] Add immutable audit entries for auth, listing, offer, booking, compliance, document, payment, integration, admin, and impersonation actions.
-
 ### Task P19: Security And Abuse Hardening
 
 **Outcome:** STLoads can safely face real users and carriers.
@@ -251,11 +227,10 @@ Do not call STLoads market-ready until every item below is true:
 
 1. P7 Tenant/RBAC/session hardening.
 2. P8 Carrier search and alerts.
-3. P18 Observability and audit.
-4. P19 Security hardening.
-5. P20 Build and tests.
-6. P21 IBM deployment.
-7. P22 Launch documentation.
+3. P19 Security hardening.
+4. P20 Build and tests.
+5. P21 IBM deployment.
+6. P22 Launch documentation.
 
 ## Definition Of Done
 

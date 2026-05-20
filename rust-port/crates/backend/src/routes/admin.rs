@@ -39,8 +39,8 @@ use shared::{
 };
 
 use crate::{
-    auth_session, auth_session::ResolvedSession, realtime_bus::RoutedRealtimeEvent, screen_data,
-    state::AppState,
+    app::readiness_checks, auth_session, auth_session::ResolvedSession,
+    realtime_bus::RoutedRealtimeEvent, screen_data, state::AppState,
 };
 
 #[derive(Debug, Serialize)]
@@ -54,6 +54,14 @@ struct AdminOverview {
     freight_forwarder_total: usize,
     admin_total: usize,
     notes: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct AdminProductionHealthResponse {
+    status: String,
+    checks: Vec<crate::app::ReadinessCheck>,
+    audit_categories: Vec<&'static str>,
+    message: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,6 +116,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(index))
         .route("/health", get(health))
+        .route("/production-health", get(production_health_handler))
         .route("/stloads/operations", get(stloads_operations))
         .route("/stloads/reconciliation", get(stloads_reconciliation))
         .route("/users", get(user_directory))
@@ -458,6 +467,52 @@ async fn review_load_handler(
 
 async fn health() -> Json<ApiResponse<&'static str>> {
     Json(ApiResponse::ok("admin route group ready"))
+}
+
+async fn production_health_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<AdminProductionHealthResponse>>, StatusCode> {
+    let session = require_any_permission(&state, &headers, &["access_admin_portal"]).await?;
+    let checks = readiness_checks(&state);
+    let status = if checks.iter().all(|check| check.status == "ok") {
+        "ready"
+    } else {
+        "degraded"
+    };
+    state.record_audit_event(
+        "admin",
+        "/admin/production-health",
+        session
+            .session
+            .tenant_scope
+            .as_ref()
+            .map(|scope| scope.tenant_id.as_str()),
+        Some(&session.user.id.to_string()),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    Ok(Json(ApiResponse::ok(AdminProductionHealthResponse {
+        status: status.into(),
+        checks,
+        audit_categories: vec![
+            "auth",
+            "listing",
+            "offer",
+            "booking",
+            "compliance",
+            "document",
+            "payment",
+            "integration",
+            "admin",
+            "impersonation",
+        ],
+        message: "Production health summary is sourced from live readiness checks and immutable audit coverage.".into(),
+    })))
 }
 
 async fn onboarding_reviews(

@@ -77,4 +77,36 @@ impl AppState {
     pub fn publish_realtime(&self, event: RoutedRealtimeEvent) {
         let _ = self.realtime_tx.send(event);
     }
+
+    pub fn realtime_receiver_count(&self) -> usize {
+        self.realtime_tx.receiver_count()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_audit_event(
+        &self,
+        category: &'static str,
+        route: &str,
+        tenant_id: Option<&str>,
+        actor_id: Option<&str>,
+        correlation_id: Option<&str>,
+        event_id: Option<&str>,
+        atmp_load_id: Option<&str>,
+        posting_id: Option<&str>,
+        idempotency_key: Option<&str>,
+    ) {
+        info!(
+            audit_category = category,
+            tenant_id = tenant_id.unwrap_or("unknown"),
+            actor_id = actor_id.unwrap_or("unknown"),
+            route,
+            correlation_id = correlation_id.unwrap_or("none"),
+            event_id = event_id.unwrap_or("none"),
+            atmp_load_id = atmp_load_id.unwrap_or("none"),
+            posting_id = posting_id.unwrap_or("none"),
+            idempotency_key = idempotency_key.unwrap_or("none"),
+            immutable = true,
+            "stloads immutable audit entry"
+        );
+    }
 }

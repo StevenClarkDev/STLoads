@@ -56,6 +56,28 @@ impl DocumentStorageService {
         &self.backend
     }
 
+    pub fn is_ready_for_environment(&self, config: &RuntimeConfig) -> bool {
+        match self.backend.as_str() {
+            "local" => !config.is_production(),
+            "ibm_cos" | "s3" => self.object_storage.is_some(),
+            _ => false,
+        }
+    }
+
+    pub fn readiness_detail(&self, config: &RuntimeConfig) -> String {
+        match self.backend.as_str() {
+            "local" if config.is_production() => {
+                "local document storage is not production-ready".into()
+            }
+            "local" => format!("local: {}", self.root.display()),
+            "ibm_cos" | "s3" if self.object_storage.is_some() => {
+                format!("{} configured", self.backend)
+            }
+            "ibm_cos" | "s3" => format!("{} configuration incomplete", self.backend),
+            other => format!("unsupported backend: {}", other),
+        }
+    }
+
     pub async fn save_load_document(
         &self,
         load_id: i64,
