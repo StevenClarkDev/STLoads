@@ -79,6 +79,99 @@ Primary areas:
 
 ## Critical Tasks
 
+### Task E1: ATMP Marketplace Integration Proof
+
+**Outcome:** ATMP and STLoads prove the full marketplace handoff without treating STLoads as the TMS.
+
+- [ ] Verify ATMP can publish a board-ready freight load into STLoads.
+- [ ] Verify ATMP can update a posted marketplace load.
+- [ ] Verify ATMP can withdraw a marketplace load.
+- [ ] Verify ATMP can close a marketplace load.
+- [ ] Verify STLoads outbound status events reconcile back to ATMP.
+- [ ] Confirm all handoff writes are tenant-scoped, signed, idempotent, audited, and observable.
+- [ ] Add or update automated checks for the proven publish/update/withdraw/close/reconcile path.
+- [ ] Browser-test the resulting marketplace load state in STLoads.
+
+### Task E2: Marketplace Search And Eligibility Proof
+
+**Outcome:** Carrier-facing marketplace discovery uses real data and blocks ineligible carriers.
+
+- [ ] Verify carrier search uses real load data only.
+- [ ] Verify filters for lane, equipment, load type, dates, status, and eligibility.
+- [ ] Verify pagination behaves correctly with production-like row counts.
+- [ ] Verify hidden, closed, withdrawn, already-booked, and ineligible freight is excluded.
+- [ ] Verify compliance, document, tenant, and role gates block noncompliant carriers.
+- [ ] Add or update automated tests for search and eligibility behavior.
+- [ ] Browser-test broker, shipper, forwarder, and carrier views.
+
+### Task E3: Marketplace Booking Workflow Proof
+
+**Outcome:** Offer, counter, tender, book-now, cancellation, and duplicate-booking protection are proven end to end.
+
+- [ ] Verify carrier offer creation.
+- [ ] Verify broker/shipper/forwarder counter flow.
+- [ ] Verify tender flow.
+- [ ] Verify book-now flow.
+- [ ] Verify cancellation or withdrawal behavior after marketplace activity exists.
+- [ ] Verify booking lock prevents duplicate awards under concurrent requests.
+- [ ] Verify audit events are written for every booking-state transition.
+- [ ] Add or update automated tests for booking concurrency and workflow state.
+- [ ] Browser-test the flow through the developer UI/UX without redesigning it.
+
+### Task E4: Documents, Tracking, And Exception Sync Proof
+
+**Outcome:** Marketplace documents, execution tracking, and exceptions are production-safe and reconcile with ATMP.
+
+- [ ] Verify document upload uses real object storage and protected access.
+- [ ] Verify document replacement preserves prior versions.
+- [ ] Verify document review status gates payment and closeout where required.
+- [ ] Verify tracking events are tenant-scoped and role-gated.
+- [ ] Verify exception events write audit history.
+- [ ] Verify tracking and exception events sync back to ATMP.
+- [ ] Add or update automated tests for document versioning, review gates, and tracking sync.
+- [ ] Browser-test document and execution surfaces for broker, forwarder, shipper, carrier, and admin roles.
+
+### Task E5: Payments And Recovery Proof
+
+**Outcome:** Stripe payment recovery, replay, and admin reconciliation are proven against staging.
+
+- [ ] Verify Stripe webhook replay is idempotent.
+- [ ] Verify duplicate webhook events do not duplicate payment state.
+- [ ] Verify failed payment or transfer recovery path.
+- [ ] Verify admin reconciliation can replay failed events.
+- [ ] Verify admin reconciliation can dead-letter unrecoverable events.
+- [ ] Verify recovery actions write audit history.
+- [ ] Add or update automated tests for webhook replay, payment idempotency, and reconciliation recovery.
+- [ ] Run hosted Stripe smoke against staging credentials and record evidence.
+
+### Task E6: UI/UX Clarity And Verbose Language Pass
+
+**Outcome:** STLoads keeps the developer visual contract but reads like a clean enterprise marketplace, not an internal migration prototype.
+
+- [ ] Replace verbose migration phrases such as `Rust builder`, `first-pass`, `staged cutover`, and internal deployment notes in user-facing UI.
+- [ ] Replace TMS-style labels with marketplace labels where STLoads is not the system of record.
+- [ ] Shorten page subtitles to one operational sentence.
+- [ ] Keep button labels action-first and short.
+- [ ] Remove demo, placeholder, or explanatory copy from production-visible empty states.
+- [ ] Make empty states tell the user what is true and what action is available.
+- [ ] Keep developer layout, spacing, color, and component structure intact.
+- [ ] Browser-test all role surfaces for copy clarity, overflow, and mobile readability.
+
+### Task E7: Final IBM Staging Launch Gate
+
+**Outcome:** STLoads has one clean final evidence pass before being called market-ready.
+
+- [ ] Run full production readiness gate with real staging environment variables.
+- [ ] Run DB-backed acceptance tests with `RUST_TEST_DATABASE_URL`.
+- [ ] Run backend hosted smoke.
+- [ ] Run frontend hosted no-demo scan.
+- [ ] Confirm backend image builds.
+- [ ] Confirm frontend image builds.
+- [ ] Confirm health and readiness endpoints are live.
+- [ ] Record Code Engine backend and frontend revisions.
+- [ ] Confirm production runbook, support playbook, security overview, and go-to-market overview exist.
+- [ ] Confirm root and repo production readiness plans match.
+
 ## Launch Gate
 
 Do not call STLoads market-ready until every item below is true:
@@ -110,9 +203,13 @@ Do not call STLoads market-ready until every item below is true:
 
 ## Recommended Execution Order
 
-1. P7 Tenant/RBAC/session hardening.
-2. P8 Carrier search and alerts.
-3. Final launch-gate verification and partner signoff.
+1. E6 UI/UX clarity and verbose language pass.
+2. E1 ATMP marketplace integration proof.
+3. E2 Marketplace search and eligibility proof.
+4. E3 Marketplace booking workflow proof.
+5. E4 Documents, tracking, and exception sync proof.
+6. E5 Payments and recovery proof.
+7. E7 Final IBM staging launch gate.
 
 ## Definition Of Done
 
