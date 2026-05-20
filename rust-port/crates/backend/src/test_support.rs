@@ -284,6 +284,7 @@ async fn reset_database(pool: &DbPool) -> Result<(), sqlx::Error> {
             payment_disputes,
             payment_holds,
             accessorial_requests,
+            stripe_webhook_events,
             settlement_lines,
             settlements,
             required_document_rules,

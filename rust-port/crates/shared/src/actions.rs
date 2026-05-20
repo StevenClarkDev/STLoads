@@ -353,6 +353,7 @@ pub struct EscrowLifecycleResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StripeWebhookRequest {
+    pub event_id: Option<String>,
     pub event_type: String,
     pub leg_id: Option<i64>,
     pub payment_intent_id: Option<String>,
@@ -374,6 +375,29 @@ pub struct StripeWebhookResponse {
     pub event_type: String,
     pub leg_id: Option<i64>,
     pub user_id: Option<i64>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessorialRequestPayload {
+    pub accessorial_type: String,
+    pub amount_cents: i64,
+    pub currency: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaymentDisputePayload {
+    pub dispute_type: String,
+    pub amount_cents: Option<i64>,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaymentWorkflowResponse {
+    pub success: bool,
+    pub workflow_id: Option<i64>,
+    pub status_label: String,
     pub message: String,
 }
 

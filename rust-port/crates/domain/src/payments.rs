@@ -119,35 +119,66 @@ pub const STRIPE_WEBHOOK_EVENTS: &[StripeWebhookEventDescriptor] = &[
     StripeWebhookEventDescriptor {
         event: StripeWebhookEvent::PaymentIntentSucceeded,
         legacy_label: StripeWebhookEvent::PaymentIntentSucceeded.as_legacy_label(),
-        updates: &["escrows.status", "escrows.charge_id"],
-        notes: "Marks escrow rows as funded once Stripe confirms the payment intent.",
+        updates: &[
+            "stripe_webhook_events.event_id",
+            "escrows.status",
+            "escrows.charge_id",
+            "atmp_outbound_events.event_type",
+        ],
+        notes: "Stores the Stripe event id first, then marks escrow rows as funded once Stripe confirms the payment intent.",
     },
     StripeWebhookEventDescriptor {
         event: StripeWebhookEvent::PaymentIntentPaymentFailed,
         legacy_label: StripeWebhookEvent::PaymentIntentPaymentFailed.as_legacy_label(),
-        updates: &["escrows.status"],
-        notes: "Transitions escrows into failed when Stripe rejects the payment.",
+        updates: &[
+            "stripe_webhook_events.event_id",
+            "escrows.status",
+            "atmp_outbound_events.event_type",
+        ],
+        notes: "Stores the Stripe event id first, then transitions escrows into failed when Stripe rejects the payment.",
     },
     StripeWebhookEventDescriptor {
         event: StripeWebhookEvent::AccountUpdated,
         legacy_label: StripeWebhookEvent::AccountUpdated.as_legacy_label(),
-        updates: &["users.payouts_enabled", "users.kyc_status", "users.status"],
-        notes: "Keeps carrier payout capability and KYC state aligned with Stripe Connect.",
+        updates: &[
+            "stripe_webhook_events.event_id",
+            "users.payouts_enabled",
+            "users.kyc_status",
+            "users.status",
+        ],
+        notes: "Keeps carrier payout capability and KYC state aligned with Stripe Connect without replaying duplicate events.",
     },
 ];
 
 pub const PAYMENTS_MODULE_CONTRACT: PaymentsModuleContract = PaymentsModuleContract {
-    aggregate_tables: &["escrows", "users", "load_legs"],
+    aggregate_tables: &[
+        "escrows",
+        "settlements",
+        "settlement_lines",
+        "accessorial_requests",
+        "payment_holds",
+        "payment_disputes",
+        "factoring_profiles",
+        "quickpay_terms",
+        "stripe_webhook_events",
+        "atmp_outbound_events",
+        "users",
+        "load_legs",
+    ],
     webhook_events: STRIPE_WEBHOOK_EVENTS,
     lifecycle_side_effects: &[
         "funding a leg writes or reuses an escrow row",
         "funding transitions load_legs.status_id to 8 in legacy Laravel code",
-        "releasing funds transitions load_legs.status_id to 11 and stamps completed_at",
+        "releasing funds transitions load_legs.status_id to 11 and opens a ready settlement when documents, accessorials, holds, and disputes are clear",
+        "accessorial and dispute workflows hold release until the finance exception is resolved",
+        "duplicate Stripe webhook event ids are acknowledged without applying state changes twice",
+        "escrow funding, holds, releases, and settlement readiness emit ATMP finance events",
         "Stripe Connect onboarding feeds carrier payout readiness back into users",
     ],
     drift_notes: &[
         "legacy escrow migration defines leg_id as UUID while runtime code behaves like integer load_leg ids",
         "escrow lifecycle is represented as string labels today and should remain explicit enums in Rust",
+        "QuickPay and factoring profiles are present as finance aggregates; activation remains policy-driven per tenant",
     ],
 };
 

@@ -9,8 +9,10 @@ use db::{
     auth::find_user_by_id,
     dispatch::{find_load_leg_by_id, find_load_leg_scope, load_has_payment_blocking_documents},
     payments::{
-        EscrowTransitionParams, apply_escrow_transition, find_escrow_by_payment_intent_id,
-        find_escrow_for_leg, set_user_stripe_connect_account_id, update_user_connect_state,
+        EscrowTransitionParams, apply_escrow_transition, create_accessorial_request,
+        create_payment_dispute, find_escrow_by_payment_intent_id, find_escrow_for_leg,
+        has_active_finance_blocks, record_stripe_webhook_once, set_user_stripe_connect_account_id,
+        update_user_connect_state,
     },
 };
 use domain::{
@@ -25,9 +27,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::Sha256;
 use shared::{
-    ApiResponse, EscrowFundRequest, EscrowHoldRequest, EscrowLifecycleResponse,
-    EscrowReleaseRequest, RealtimeEvent, RealtimeEventKind, RealtimeTopic, StripeWebhookRequest,
-    StripeWebhookResponse,
+    AccessorialRequestPayload, ApiResponse, EscrowFundRequest, EscrowHoldRequest,
+    EscrowLifecycleResponse, EscrowReleaseRequest, PaymentDisputePayload, PaymentWorkflowResponse,
+    RealtimeEvent, RealtimeEventKind, RealtimeTopic, StripeWebhookRequest, StripeWebhookResponse,
 };
 use tracing::warn;
 
@@ -67,6 +69,8 @@ pub fn router() -> Router<crate::state::AppState> {
         .route("/legs/{leg_id}/fund", post(fund_leg_escrow))
         .route("/legs/{leg_id}/hold", post(hold_leg_escrow))
         .route("/legs/{leg_id}/release", post(release_leg_escrow))
+        .route("/legs/{leg_id}/accessorials", post(open_accessorial))
+        .route("/legs/{leg_id}/disputes", post(open_dispute))
         .route("/connect/onboarding-link", post(connect_onboarding_link))
         .route(
             "/connect/users/{user_id}/onboarding-link",
@@ -659,6 +663,9 @@ async fn release_leg_escrow(
     if load_has_payment_blocking_documents(pool, scope.load_id)
         .await
         .unwrap_or(true)
+        || has_active_finance_blocks(pool, leg_id)
+            .await
+            .unwrap_or(true)
     {
         return Json(ApiResponse::ok(EscrowLifecycleResponse {
             success: false,
@@ -667,8 +674,8 @@ async fn release_leg_escrow(
             payment_intent_id: existing_escrow.payment_intent_id,
             client_secret: None,
             transfer_id: existing_escrow.transfer_id,
-            status_label: "Documents Pending".into(),
-            message: "Payment release is blocked until required load documents are approved and malware scan status is clean.".into(),
+            status_label: "Release Blocked".into(),
+            message: "Payment release is blocked until required documents, accessorials, holds, and disputes are clear.".into(),
         }));
     }
 
@@ -859,6 +866,172 @@ async fn release_leg_escrow(
     }
 }
 
+async fn open_accessorial(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<AccessorialRequestPayload>,
+) -> Json<ApiResponse<PaymentWorkflowResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Unavailable".into(),
+            message: format!(
+                "Accessorial workflow is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        }));
+    };
+    let Ok(Some(session)) = resolve_payments_session(&state, &headers).await else {
+        return Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Unauthorized".into(),
+            message: "Sign in with payments access before opening an accessorial.".into(),
+        }));
+    };
+    let Some(scope) = find_load_leg_scope(pool, leg_id).await.ok().flatten() else {
+        return Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Missing Leg".into(),
+            message: "The selected leg was not found.".into(),
+        }));
+    };
+    if !can_manage_leg_payments(&session, scope.load_owner_user_id) {
+        return Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Forbidden".into(),
+            message: "Only the load owner or admin can open accessorials for this leg.".into(),
+        }));
+    }
+    let accessorial_type = payload.accessorial_type.trim();
+    if accessorial_type.is_empty() || payload.amount_cents <= 0 {
+        return Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Invalid".into(),
+            message: "Accessorial type and a positive amount are required.".into(),
+        }));
+    }
+    match create_accessorial_request(
+        pool,
+        leg_id,
+        Some(session.user.id),
+        accessorial_type,
+        payload.amount_cents,
+        payload.currency.as_deref().unwrap_or("USD"),
+        payload.reason.as_deref(),
+    )
+    .await
+    {
+        Ok(Some(record)) => Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: true,
+            workflow_id: Some(record.id),
+            status_label: record.status,
+            message: "Accessorial request opened and payment release is held until resolution."
+                .into(),
+        })),
+        Ok(None) => Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Missing Leg".into(),
+            message: "The selected leg disappeared before the accessorial was saved.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Error".into(),
+            message: format!("Accessorial request failed: {}", error),
+        })),
+    }
+}
+
+async fn open_dispute(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<PaymentDisputePayload>,
+) -> Json<ApiResponse<PaymentWorkflowResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Unavailable".into(),
+            message: format!(
+                "Dispute workflow is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        }));
+    };
+    let Ok(Some(session)) = resolve_payments_session(&state, &headers).await else {
+        return Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Unauthorized".into(),
+            message: "Sign in with payments access before opening a dispute.".into(),
+        }));
+    };
+    let Some(scope) = find_load_leg_scope(pool, leg_id).await.ok().flatten() else {
+        return Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Missing Leg".into(),
+            message: "The selected leg was not found.".into(),
+        }));
+    };
+    if !can_manage_leg_payments(&session, scope.load_owner_user_id) {
+        return Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Forbidden".into(),
+            message: "Only the load owner or admin can open disputes for this leg.".into(),
+        }));
+    }
+    let dispute_type = payload.dispute_type.trim();
+    if dispute_type.is_empty() {
+        return Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Invalid".into(),
+            message: "Dispute type is required.".into(),
+        }));
+    }
+    match create_payment_dispute(
+        pool,
+        leg_id,
+        Some(session.user.id),
+        dispute_type,
+        payload.amount_cents,
+        payload.detail.as_deref(),
+    )
+    .await
+    {
+        Ok(Some(record)) => Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: true,
+            workflow_id: Some(record.id),
+            status_label: record.status,
+            message: "Payment dispute opened and release is held until resolution.".into(),
+        })),
+        Ok(None) => Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Missing Leg".into(),
+            message: "The selected leg disappeared before the dispute was saved.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(PaymentWorkflowResponse {
+            success: false,
+            workflow_id: None,
+            status_label: "Error".into(),
+            message: format!("Payment dispute failed: {}", error),
+        })),
+    }
+}
+
 async fn stripe_webhook(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -875,6 +1048,7 @@ async fn stripe_webhook(
         warn!(error = %error, body_len = body.len(), "Stripe webhook payload parsing failed");
         StatusCode::BAD_REQUEST
     })?;
+    let payload_value = serde_json::from_slice::<Value>(&body).unwrap_or(Value::Null);
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(StripeWebhookResponse {
             acknowledged: false,
@@ -888,6 +1062,29 @@ async fn stripe_webhook(
             ),
         })));
     };
+    let event_id = stripe_webhook_idempotency_key(&payload);
+    let is_first_delivery = record_stripe_webhook_once(
+        pool,
+        &event_id,
+        &payload.event_type,
+        payload.leg_id,
+        payload.payment_intent_id.as_deref(),
+        payload.stripe_account_id.as_deref(),
+        &payload_value,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !is_first_delivery {
+        return Ok(Json(ApiResponse::ok(StripeWebhookResponse {
+            acknowledged: true,
+            event_type: payload.event_type,
+            leg_id: payload.leg_id,
+            user_id: None,
+            message:
+                "Duplicate Stripe webhook delivery acknowledged without mutating payment state."
+                    .into(),
+        })));
+    }
 
     match payload.event_type.as_str() {
         "payment_intent.succeeded" => {
@@ -1273,6 +1470,7 @@ fn parse_stripe_webhook_payload(body: &[u8]) -> Result<StripeWebhookRequest, Str
         .and_then(Value::as_str)
         .ok_or_else(|| "Stripe webhook event type is missing.".to_string())?
         .to_string();
+    let event_id = value.get("id").and_then(Value::as_str).map(str::to_string);
     let object = value
         .get("data")
         .and_then(|data| data.get("object"))
@@ -1297,6 +1495,7 @@ fn parse_stripe_webhook_payload(body: &[u8]) -> Result<StripeWebhookRequest, Str
                 });
 
             Ok(StripeWebhookRequest {
+                event_id: event_id.clone(),
                 event_type,
                 leg_id: object
                     .get("metadata")
@@ -1330,6 +1529,7 @@ fn parse_stripe_webhook_payload(body: &[u8]) -> Result<StripeWebhookRequest, Str
                 .unwrap_or(false);
 
             Ok(StripeWebhookRequest {
+                event_id: event_id.clone(),
                 event_type,
                 leg_id: None,
                 payment_intent_id: None,
@@ -1350,6 +1550,7 @@ fn parse_stripe_webhook_payload(body: &[u8]) -> Result<StripeWebhookRequest, Str
             })
         }
         _ => Ok(StripeWebhookRequest {
+            event_id,
             event_type,
             leg_id: None,
             payment_intent_id: None,
@@ -1365,6 +1566,33 @@ fn parse_stripe_webhook_payload(body: &[u8]) -> Result<StripeWebhookRequest, Str
             note: Some("Unsupported Stripe event parsed for acknowledgement routing.".into()),
         }),
     }
+}
+
+fn stripe_webhook_idempotency_key(payload: &StripeWebhookRequest) -> String {
+    payload
+        .event_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            payload
+                .payment_intent_id
+                .as_deref()
+                .map(|id| format!("{}:{}", payload.event_type, id))
+        })
+        .or_else(|| {
+            payload
+                .stripe_account_id
+                .as_deref()
+                .map(|id| format!("{}:{}", payload.event_type, id))
+        })
+        .or_else(|| {
+            payload
+                .leg_id
+                .map(|id| format!("{}:leg:{}", payload.event_type, id))
+        })
+        .unwrap_or_else(|| format!("{}:unresolved", payload.event_type))
 }
 
 fn verify_stripe_signature(
@@ -1593,6 +1821,7 @@ fn forbidden_payment_response(leg_id: i64, message: &str) -> EscrowLifecycleResp
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::HeaderValue;
 
     #[test]
     fn verifies_valid_stripe_signature() {
@@ -1641,6 +1870,236 @@ mod tests {
         assert_eq!(parsed.amount_cents, Some(125000));
         assert_eq!(parsed.currency.as_deref(), Some("USD"));
         assert_eq!(parsed.platform_fee_cents, Some(1250));
+    }
+
+    #[tokio::test]
+    async fn duplicate_stripe_webhook_does_not_duplicate_payment_state() {
+        let Some(pool) = crate::test_support::prepare_pool().await.unwrap() else {
+            return;
+        };
+        let fixture = crate::test_support::insert_load_fixture(&pool, 5)
+            .await
+            .unwrap();
+        let mut state = crate::test_support::test_state(pool.clone());
+        state.config.stripe_webhook_shared_secret = Some("whsec_test".into());
+
+        apply_escrow_transition(
+            &pool,
+            EscrowTransitionParams {
+                leg_id: fixture.leg_id,
+                payer_user_id: fixture.owner_user.id,
+                payee_user_id: fixture.carrier_user.id,
+                amount: 245000,
+                platform_fee: 2500,
+                currency: "USD",
+                status: EscrowStatus::Unfunded,
+                transfer_group: Some("LEG_DUPLICATE"),
+                payment_intent_id: Some("pi_duplicate_p14"),
+                charge_id: None,
+                transfer_id: None,
+                actor_user_id: Some(fixture.owner_user.id),
+                note: Some("Seed escrow for duplicate webhook test."),
+            },
+        )
+        .await
+        .unwrap();
+
+        let payload = serde_json::json!({
+            "id": "evt_duplicate_p14",
+            "type": "payment_intent.succeeded",
+            "data": {
+                "object": {
+                    "id": "pi_duplicate_p14",
+                    "amount": 245000,
+                    "currency": "usd",
+                    "latest_charge": "ch_duplicate_p14",
+                    "transfer_group": "LEG_DUPLICATE",
+                    "application_fee_amount": 2500,
+                    "metadata": { "leg_id": fixture.leg_id.to_string() }
+                }
+            }
+        })
+        .to_string();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-stripe-webhook-secret",
+            HeaderValue::from_static("whsec_test"),
+        );
+
+        let first = stripe_webhook(
+            State(state.clone()),
+            headers.clone(),
+            Bytes::from(payload.clone()),
+        )
+        .await
+        .unwrap()
+        .0
+        .data;
+        let second = stripe_webhook(State(state.clone()), headers, Bytes::from(payload))
+            .await
+            .unwrap()
+            .0
+            .data;
+
+        assert!(first.acknowledged);
+        assert!(second.acknowledged);
+        assert!(second.message.contains("Duplicate Stripe webhook"));
+
+        let escrow_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM escrows WHERE payment_intent_id = 'pi_duplicate_p14'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(escrow_count, 1);
+
+        let funded_history_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM load_history WHERE load_id = $1 AND remarks LIKE '%Stripe webhook%'",
+        )
+        .bind(fixture.load_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(funded_history_count, 1);
+
+        let webhook_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM stripe_webhook_events WHERE event_id = 'evt_duplicate_p14'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(webhook_count, 1);
+    }
+
+    #[tokio::test]
+    async fn release_requires_clear_finance_workflows_before_settlement_ready() {
+        let Some(pool) = crate::test_support::prepare_pool().await.unwrap() else {
+            return;
+        };
+        let fixture = crate::test_support::insert_load_fixture(&pool, 6)
+            .await
+            .unwrap();
+
+        apply_escrow_transition(
+            &pool,
+            EscrowTransitionParams {
+                leg_id: fixture.leg_id,
+                payer_user_id: fixture.owner_user.id,
+                payee_user_id: fixture.carrier_user.id,
+                amount: 320000,
+                platform_fee: 3200,
+                currency: "USD",
+                status: EscrowStatus::Funded,
+                transfer_group: Some("LEG_SETTLEMENT_READY"),
+                payment_intent_id: Some("pi_settlement_ready_p14"),
+                charge_id: Some("ch_settlement_ready_p14"),
+                transfer_id: None,
+                actor_user_id: Some(fixture.owner_user.id),
+                note: Some("Seed funded escrow for settlement readiness test."),
+            },
+        )
+        .await
+        .unwrap();
+
+        let accessorial = create_accessorial_request(
+            &pool,
+            fixture.leg_id,
+            Some(fixture.owner_user.id),
+            "detention",
+            15000,
+            "USD",
+            Some("Gate release until accessorial review clears."),
+        )
+        .await
+        .unwrap();
+        assert!(accessorial.is_some());
+        assert!(
+            has_active_finance_blocks(&pool, fixture.leg_id)
+                .await
+                .unwrap()
+        );
+
+        apply_escrow_transition(
+            &pool,
+            EscrowTransitionParams {
+                leg_id: fixture.leg_id,
+                payer_user_id: fixture.owner_user.id,
+                payee_user_id: fixture.carrier_user.id,
+                amount: 320000,
+                platform_fee: 3200,
+                currency: "USD",
+                status: EscrowStatus::Released,
+                transfer_group: Some("LEG_SETTLEMENT_READY"),
+                payment_intent_id: Some("pi_settlement_ready_p14"),
+                charge_id: Some("ch_settlement_ready_p14"),
+                transfer_id: Some("tr_blocked_settlement_p14"),
+                actor_user_id: Some(fixture.owner_user.id),
+                note: Some("Attempt release while finance exception is active."),
+            },
+        )
+        .await
+        .unwrap();
+
+        let blocked_settlement_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM settlements WHERE leg_id = $1 AND escrow_id IS NOT NULL",
+        )
+        .bind(fixture.leg_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(blocked_settlement_count, 0);
+
+        sqlx::query(
+            "UPDATE accessorial_requests SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE leg_id = $1",
+        )
+        .bind(fixture.leg_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(
+            !has_active_finance_blocks(&pool, fixture.leg_id)
+                .await
+                .unwrap()
+        );
+
+        apply_escrow_transition(
+            &pool,
+            EscrowTransitionParams {
+                leg_id: fixture.leg_id,
+                payer_user_id: fixture.owner_user.id,
+                payee_user_id: fixture.carrier_user.id,
+                amount: 320000,
+                platform_fee: 3200,
+                currency: "USD",
+                status: EscrowStatus::Released,
+                transfer_group: Some("LEG_SETTLEMENT_READY"),
+                payment_intent_id: Some("pi_settlement_ready_p14"),
+                charge_id: Some("ch_settlement_ready_p14"),
+                transfer_id: Some("tr_settlement_ready_p14"),
+                actor_user_id: Some(fixture.owner_user.id),
+                note: Some("Release after finance exception is clear."),
+            },
+        )
+        .await
+        .unwrap();
+
+        let ready_settlement_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM settlements WHERE leg_id = $1 AND escrow_id IS NOT NULL AND status = 'ready' AND settlement_ready_at IS NOT NULL",
+        )
+        .bind(fixture.leg_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(ready_settlement_count, 1);
+
+        let finance_event_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM atmp_outbound_events WHERE event_type IN ('payment_hold', 'payment_released', 'settlement_ready') AND payload->>'leg_id' = $1",
+        )
+        .bind(fixture.leg_id.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(finance_event_count >= 3);
     }
 
     #[test]

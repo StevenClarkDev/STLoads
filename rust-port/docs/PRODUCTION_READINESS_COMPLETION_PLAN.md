@@ -79,30 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P14: Payments, Stripe Connect, Settlement, And Disputes
-
-**Outcome:** Payment workflows are production-safe and reconcilable.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\payments.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\stripe.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\payments.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\domain\src\payments.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\payments.rs`
-
-- [ ] Verify Stripe Connect onboarding path.
-- [ ] Verify PaymentIntent funding path.
-- [ ] Verify signed Stripe webhook path.
-- [ ] Add idempotency for Stripe webhooks.
-- [ ] Add settlement readiness gates.
-- [ ] Add accessorial request workflow.
-- [ ] Add payment hold workflow.
-- [ ] Add dispute workflow.
-- [ ] Add factoring/QuickPay data model if enabled for launch.
-- [ ] Emit ATMP finance events.
-- [ ] Tests must prove duplicate Stripe webhook does not duplicate payment state.
-
 ### Task P15: Admin Operations, Reconciliation, And Support Tools
 
 **Outcome:** Operators can run the board safely without database access.
@@ -339,14 +315,13 @@ Do not call STLoads market-ready until every item below is true:
 1. P7 Tenant/RBAC/session hardening.
 2. P16 Placeholder/demo data purge.
 3. P8 Carrier search and alerts.
-4. P14 Payments.
-5. P15 Admin ops and reconciliation.
-6. P17 Realtime.
-7. P18 Observability and audit.
-8. P19 Security hardening.
-9. P20 Build and tests.
-10. P21 IBM deployment.
-11. P22 Launch documentation.
+4. P15 Admin ops and reconciliation.
+5. P17 Realtime.
+6. P18 Observability and audit.
+7. P19 Security hardening.
+8. P20 Build and tests.
+9. P21 IBM deployment.
+10. P22 Launch documentation.
 
 ## Definition Of Done
 

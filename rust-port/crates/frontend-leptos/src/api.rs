@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use shared::{
-    AdminCreateUserRequest, AdminCreateUserResponse, AdminDeleteUserResponse, AdminLoadListScreen,
-    AdminOnboardingReviewScreen, AdminReviewLoadRequest, AdminReviewLoadResponse,
-    AdminRolePermissionScreen, AdminUpdateRolePermissionsRequest,
-    AdminUpdateRolePermissionsResponse, AdminUpdateUserProfileRequest,
-    AdminUpdateUserProfileResponse, AdminUpdateUserRequest, AdminUpdateUserResponse,
-    AdminUserDirectoryScreen, AdminUserProfileScreen, ApiResponse, AuthOnboardingScreen,
-    AuthSessionState, BookLoadLegRequest, BookLoadLegResponse, BookNowRequest,
-    CarrierCancellationRequest, ChangePasswordRequest, ChangePasswordResponse,
+    AccessorialRequestPayload, AdminCreateUserRequest, AdminCreateUserResponse,
+    AdminDeleteUserResponse, AdminLoadListScreen, AdminOnboardingReviewScreen,
+    AdminReviewLoadRequest, AdminReviewLoadResponse, AdminRolePermissionScreen,
+    AdminUpdateRolePermissionsRequest, AdminUpdateRolePermissionsResponse,
+    AdminUpdateUserProfileRequest, AdminUpdateUserProfileResponse, AdminUpdateUserRequest,
+    AdminUpdateUserResponse, AdminUserDirectoryScreen, AdminUserProfileScreen, ApiResponse,
+    AuthOnboardingScreen, AuthSessionState, BookLoadLegRequest, BookLoadLegResponse,
+    BookNowRequest, CarrierCancellationRequest, ChangePasswordRequest, ChangePasswordResponse,
     ChatSendMessageRequest, ChatSendMessageResponse, ChatWorkspaceScreen, CityUpsertRequest,
     ConversationPresenceRequest, ConversationPresenceResponse, ConversationReadResponse,
     CountryUpsertRequest, CreateCounterofferRequest, CreateLoadRequest, CreateLoadResponse,
@@ -20,9 +20,10 @@ use shared::{
     LoadProfileScreen, LocationUpsertRequest, LoginRequest, LoginResponse, LogoutResponse,
     MarketplaceActionResponse, MarketplaceNotificationPreferenceRequest,
     MarketplaceNotificationPreferenceResponse, MasterDataDeleteRequest, MasterDataMutationResponse,
-    MasterDataScreen, OfferReviewRequest, OfferReviewResponse, PortalRoleCountsResponse,
-    RealtimeTopic, RegisterRequest, RegisterResponse, ResendOtpRequest, ResendOtpResponse,
-    ResetPasswordRequest, ResetPasswordResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
+    MasterDataScreen, OfferReviewRequest, OfferReviewResponse, PaymentDisputePayload,
+    PaymentWorkflowResponse, PortalRoleCountsResponse, RealtimeTopic, RegisterRequest,
+    RegisterResponse, ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest,
+    ResetPasswordResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
     RespondCounterofferRequest, RespondTenderInviteRequest, ReviewLoadDocumentRequest,
     ReviewLoadDocumentResponse, ReviewOnboardingRequest, ReviewOnboardingResponse,
     SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse, SelfProfileScreen,
@@ -618,6 +619,22 @@ pub async fn release_escrow(
     payload: &EscrowReleaseRequest,
 ) -> Result<EscrowLifecycleResponse, String> {
     let path = format!("/payments/legs/{}/release", leg_id);
+    post_api(&path, payload).await
+}
+
+pub async fn open_accessorial_request(
+    leg_id: u64,
+    payload: &AccessorialRequestPayload,
+) -> Result<PaymentWorkflowResponse, String> {
+    let path = format!("/payments/legs/{}/accessorials", leg_id);
+    post_api(&path, payload).await
+}
+
+pub async fn open_payment_dispute(
+    leg_id: u64,
+    payload: &PaymentDisputePayload,
+) -> Result<PaymentWorkflowResponse, String> {
+    let path = format!("/payments/legs/{}/disputes", leg_id);
     post_api(&path, payload).await
 }
 

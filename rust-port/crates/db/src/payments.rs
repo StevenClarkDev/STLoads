@@ -4,9 +4,13 @@ use domain::payments::{
     escrow_status_descriptors, payments_module_contract, stripe_webhook_events,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use sqlx::FromRow;
 
-use crate::DbPool;
+use crate::{
+    DbPool,
+    tms::{EnqueueAtmpOutboundEvent, enqueue_atmp_outbound_event},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct EscrowRecord {
@@ -39,6 +43,12 @@ pub struct UserConnectStateRecord {
     pub payouts_enabled: bool,
     pub kyc_status: Option<String>,
     pub updated_at: NaiveDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct PaymentWorkflowRecord {
+    pub id: i64,
+    pub status: String,
 }
 
 #[derive(Debug, Clone)]
@@ -291,7 +301,192 @@ pub async fn apply_escrow_transition(
     .await?;
 
     tx.commit().await?;
+    if let Some(escrow) = updated_escrow.as_ref() {
+        match params.status {
+            EscrowStatus::Funded => {
+                enqueue_finance_event(
+                    pool,
+                    "escrow_funded",
+                    params.leg_id,
+                    Some(escrow.id),
+                    params.actor_user_id,
+                    json!({"amount": params.amount, "currency": params.currency}),
+                )
+                .await?;
+            }
+            EscrowStatus::OnHold => {
+                enqueue_finance_event(
+                    pool,
+                    "payment_hold",
+                    params.leg_id,
+                    Some(escrow.id),
+                    params.actor_user_id,
+                    json!({"reason": params.note}),
+                )
+                .await?;
+            }
+            EscrowStatus::Released => {
+                enqueue_finance_event(
+                    pool,
+                    "payment_released",
+                    params.leg_id,
+                    Some(escrow.id),
+                    params.actor_user_id,
+                    json!({"transfer_id": escrow.transfer_id}),
+                )
+                .await?;
+                let _ =
+                    ensure_settlement_ready_for_escrow(pool, escrow, params.actor_user_id).await?;
+            }
+            _ => {}
+        }
+    }
     Ok(updated_escrow)
+}
+
+pub async fn record_stripe_webhook_once(
+    pool: &DbPool,
+    event_id: &str,
+    event_type: &str,
+    leg_id: Option<i64>,
+    payment_intent_id: Option<&str>,
+    stripe_account_id: Option<&str>,
+    payload: &Value,
+) -> Result<bool, sqlx::Error> {
+    ensure_default_tenant(pool).await?;
+    let inserted = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO stripe_webhook_events (
+            tenant_id, event_id, event_type, leg_id, payment_intent_id, stripe_account_id, payload, processed_at
+         ) VALUES ('default', $1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+         ON CONFLICT (tenant_id, event_id) DO NOTHING
+         RETURNING id",
+    )
+    .bind(event_id)
+    .bind(event_type)
+    .bind(leg_id)
+    .bind(payment_intent_id)
+    .bind(stripe_account_id)
+    .bind(payload)
+    .fetch_optional(pool)
+    .await?;
+    Ok(inserted.is_some())
+}
+
+pub async fn create_accessorial_request(
+    pool: &DbPool,
+    leg_id: i64,
+    requested_by: Option<i64>,
+    accessorial_type: &str,
+    amount_cents: i64,
+    currency: &str,
+    reason: Option<&str>,
+) -> Result<Option<PaymentWorkflowRecord>, sqlx::Error> {
+    ensure_default_tenant(pool).await?;
+    let Some(context) = load_leg_finance_context(pool, leg_id).await? else {
+        return Ok(None);
+    };
+    let amount = cents_to_currency(amount_cents);
+    let record = sqlx::query_as::<_, PaymentWorkflowRecord>(
+        "INSERT INTO accessorial_requests (
+            tenant_id, leg_id, requested_by, accessorial_type, amount, currency, status, reason, created_at, updated_at
+         ) VALUES ('default', $1, $2, $3, $4, $5, 'pending', $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id, status",
+    )
+    .bind(leg_id)
+    .bind(requested_by)
+    .bind(accessorial_type)
+    .bind(amount)
+    .bind(currency)
+    .bind(reason)
+    .fetch_one(pool)
+    .await?;
+    insert_payment_history(
+        pool,
+        context.load_id,
+        requested_by,
+        context.status_id,
+        "Accessorial request opened from Rust payments.",
+    )
+    .await?;
+    enqueue_finance_event(pool, "payment_hold", leg_id, None, requested_by, json!({"accessorial_request_id": record.id, "amount_cents": amount_cents, "type": accessorial_type})).await?;
+    Ok(Some(record))
+}
+
+pub async fn create_payment_dispute(
+    pool: &DbPool,
+    leg_id: i64,
+    opened_by: Option<i64>,
+    dispute_type: &str,
+    amount_cents: Option<i64>,
+    detail: Option<&str>,
+) -> Result<Option<PaymentWorkflowRecord>, sqlx::Error> {
+    ensure_default_tenant(pool).await?;
+    let Some(context) = load_leg_finance_context(pool, leg_id).await? else {
+        return Ok(None);
+    };
+    let amount = amount_cents.map(cents_to_currency);
+    let record = sqlx::query_as::<_, PaymentWorkflowRecord>(
+        "INSERT INTO payment_disputes (
+            tenant_id, leg_id, dispute_type, amount, status, opened_by, detail, created_at, updated_at
+         ) VALUES ('default', $1, $2, $3, 'open', $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id, status",
+    )
+    .bind(leg_id)
+    .bind(dispute_type)
+    .bind(amount)
+    .bind(opened_by)
+    .bind(detail)
+    .fetch_one(pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO payment_holds (tenant_id, leg_id, hold_reason, amount, status, created_at, updated_at)
+         VALUES ('default', $1, $2, $3, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(leg_id)
+    .bind(format!("dispute:{}", dispute_type))
+    .bind(amount)
+    .execute(pool)
+    .await?;
+    insert_payment_history(
+        pool,
+        context.load_id,
+        opened_by,
+        context.status_id,
+        "Payment dispute opened from Rust payments.",
+    )
+    .await?;
+    enqueue_finance_event(
+        pool,
+        "payment_hold",
+        leg_id,
+        None,
+        opened_by,
+        json!({"payment_dispute_id": record.id, "type": dispute_type}),
+    )
+    .await?;
+    Ok(Some(record))
+}
+
+pub async fn has_active_finance_blocks(pool: &DbPool, leg_id: i64) -> Result<bool, sqlx::Error> {
+    let accessorials = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM accessorial_requests WHERE tenant_id = 'default' AND leg_id = $1 AND status = 'pending'",
+    )
+    .bind(leg_id)
+    .fetch_one(pool)
+    .await?;
+    let holds = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM payment_holds WHERE tenant_id = 'default' AND leg_id = $1 AND status = 'active'",
+    )
+    .bind(leg_id)
+    .fetch_one(pool)
+    .await?;
+    let disputes = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM payment_disputes WHERE tenant_id = 'default' AND leg_id = $1 AND status = 'open'",
+    )
+    .bind(leg_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(accessorials + holds + disputes > 0)
 }
 
 pub async fn update_user_connect_state(
@@ -363,4 +558,132 @@ pub async fn escrow_status_catalog() -> &'static [EscrowStatusDescriptor] {
 
 pub async fn stripe_webhook_event_catalog() -> &'static [StripeWebhookEventDescriptor] {
     stripe_webhook_events()
+}
+
+async fn ensure_settlement_ready_for_escrow(
+    pool: &DbPool,
+    escrow: &EscrowRecord,
+    actor_user_id: Option<i64>,
+) -> Result<Option<PaymentWorkflowRecord>, sqlx::Error> {
+    if has_active_finance_blocks(pool, escrow.leg_id).await? {
+        return Ok(None);
+    }
+    ensure_default_tenant(pool).await?;
+    let settlement_number = format!("SET-LEG-{}-ESC-{}", escrow.leg_id, escrow.id);
+    let gross_amount = cents_to_currency(escrow.amount);
+    let deductions = cents_to_currency(escrow.platform_fee);
+    let net_amount = cents_to_currency(escrow.amount.saturating_sub(escrow.platform_fee));
+    let record = sqlx::query_as::<_, PaymentWorkflowRecord>(
+        "INSERT INTO settlements (
+            tenant_id, settlement_number, status, currency, gross_amount, deductions_amount,
+            net_amount, leg_id, escrow_id, settlement_ready_at, created_at, updated_at
+         ) VALUES (
+            'default', $1, 'ready', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+         )
+         ON CONFLICT (tenant_id, leg_id, escrow_id) WHERE leg_id IS NOT NULL AND escrow_id IS NOT NULL
+         DO UPDATE SET
+            status = CASE WHEN settlements.status = 'paid' THEN settlements.status ELSE 'ready' END,
+            gross_amount = EXCLUDED.gross_amount,
+            deductions_amount = EXCLUDED.deductions_amount,
+            net_amount = EXCLUDED.net_amount,
+            settlement_ready_at = COALESCE(settlements.settlement_ready_at, CURRENT_TIMESTAMP),
+            updated_at = CURRENT_TIMESTAMP
+         RETURNING id, status",
+    )
+    .bind(&settlement_number)
+    .bind(&escrow.currency)
+    .bind(gross_amount)
+    .bind(deductions)
+    .bind(net_amount)
+    .bind(escrow.leg_id)
+    .bind(escrow.id)
+    .fetch_one(pool)
+    .await?;
+    enqueue_finance_event(
+        pool,
+        "settlement_ready",
+        escrow.leg_id,
+        Some(escrow.id),
+        actor_user_id,
+        json!({"settlement_id": record.id, "net_amount_cents": escrow.amount.saturating_sub(escrow.platform_fee)}),
+    )
+    .await?;
+    Ok(Some(record))
+}
+
+async fn load_leg_finance_context(
+    pool: &DbPool,
+    leg_id: i64,
+) -> Result<Option<LoadLegFinanceContext>, sqlx::Error> {
+    sqlx::query_as::<_, LoadLegFinanceContext>(
+        "SELECT load_id, status_id FROM load_legs WHERE deleted_at IS NULL AND id = $1 LIMIT 1",
+    )
+    .bind(leg_id)
+    .fetch_optional(pool)
+    .await
+}
+
+async fn insert_payment_history(
+    pool: &DbPool,
+    load_id: i64,
+    actor_user_id: Option<i64>,
+    status_id: i16,
+    note: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(load_id)
+    .bind(actor_user_id)
+    .bind(status_id)
+    .bind(note)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn ensure_default_tenant(pool: &DbPool) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO tenants (id, name, slug, status, created_at, updated_at)
+         VALUES ('default', 'Default STLoads Tenant', 'default', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn enqueue_finance_event(
+    pool: &DbPool,
+    event_type: &str,
+    leg_id: i64,
+    escrow_id: Option<i64>,
+    actor_user_id: Option<i64>,
+    payload: Value,
+) -> Result<(), sqlx::Error> {
+    enqueue_atmp_outbound_event(
+        pool,
+        EnqueueAtmpOutboundEvent {
+            tenant_id: "default",
+            event_type,
+            posting_id: None,
+            booking_award_id: None,
+            target_url: None,
+            payload: json!({
+                "event_type": event_type,
+                "leg_id": leg_id,
+                "escrow_id": escrow_id,
+                "actor_user_id": actor_user_id,
+                "details": payload,
+            }),
+            correlation_id: None,
+        },
+    )
+    .await
+    .map(|_| ())
+}
+
+fn cents_to_currency(cents: i64) -> f64 {
+    cents as f64 / 100.0
 }

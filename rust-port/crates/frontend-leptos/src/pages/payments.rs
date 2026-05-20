@@ -2,8 +2,8 @@ use futures_util::future::AbortHandle;
 use leptos::{prelude::*, tachys::view::any_view::IntoAny, task::spawn_local};
 use leptos_router::{components::A, hooks::use_query_map};
 use shared::{
-    EscrowFundRequest, EscrowHoldRequest, EscrowReleaseRequest, RealtimeEventKind, RealtimeTopic,
-    StripeWebhookRequest,
+    AccessorialRequestPayload, EscrowFundRequest, EscrowHoldRequest, EscrowReleaseRequest,
+    PaymentDisputePayload, RealtimeEventKind, RealtimeTopic, StripeWebhookRequest,
 };
 
 use crate::{
@@ -65,6 +65,8 @@ pub fn EscrowOperationsPage() -> impl IntoView {
     let payment_intent_id = RwSignal::new(String::new());
     let transfer_id = RwSignal::new(String::new());
     let note = RwSignal::new(String::new());
+    let accessorial_type = RwSignal::new(String::new());
+    let dispute_type = RwSignal::new(String::new());
     let webhook_event_type = RwSignal::new("payment_intent.succeeded".to_string());
     let stripe_account_id = RwSignal::new(String::new());
     let payouts_enabled = RwSignal::new(String::new());
@@ -367,6 +369,121 @@ pub fn EscrowOperationsPage() -> impl IntoView {
         });
     };
 
+    let open_accessorial = move |_| {
+        let parsed_leg_id = match parse_required_u64(&leg_id.get(), "leg id") {
+            Ok(value) => value,
+            Err(message) => {
+                action_message.set(Some(message));
+                return;
+            }
+        };
+        let parsed_amount = match parse_optional_i64(&amount_cents.get()) {
+            Ok(Some(value)) if value > 0 => value,
+            Ok(_) => {
+                action_message.set(Some(
+                    "Enter a positive amount before opening an accessorial.".into(),
+                ));
+                return;
+            }
+            Err(message) => {
+                action_message.set(Some(message));
+                return;
+            }
+        };
+        let request_type = accessorial_type.get();
+        if request_type.trim().is_empty() {
+            action_message.set(Some(
+                "Enter an accessorial type before opening the request.".into(),
+            ));
+            return;
+        }
+
+        pending_action.set(Some("accessorial".into()));
+        action_message.set(None);
+        let auth = auth.clone();
+        let request = AccessorialRequestPayload {
+            accessorial_type: request_type,
+            amount_cents: parsed_amount,
+            currency: Some(currency.get()),
+            reason: (!note.get().trim().is_empty()).then(|| note.get()),
+        };
+
+        spawn_local(async move {
+            match api::open_accessorial_request(parsed_leg_id, &request).await {
+                Ok(result) => {
+                    action_message.set(Some(result.message));
+                    if result.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            pending_action.set(None);
+        });
+    };
+
+    let open_dispute = move |_| {
+        let parsed_leg_id = match parse_required_u64(&leg_id.get(), "leg id") {
+            Ok(value) => value,
+            Err(message) => {
+                action_message.set(Some(message));
+                return;
+            }
+        };
+        let parsed_amount = match parse_optional_i64(&amount_cents.get()) {
+            Ok(value) => value,
+            Err(message) => {
+                action_message.set(Some(message));
+                return;
+            }
+        };
+        let request_type = dispute_type.get();
+        if request_type.trim().is_empty() {
+            action_message.set(Some(
+                "Enter a dispute type before opening the dispute.".into(),
+            ));
+            return;
+        }
+
+        pending_action.set(Some("dispute".into()));
+        action_message.set(None);
+        let auth = auth.clone();
+        let request = PaymentDisputePayload {
+            dispute_type: request_type,
+            amount_cents: parsed_amount,
+            detail: (!note.get().trim().is_empty()).then(|| note.get()),
+        };
+
+        spawn_local(async move {
+            match api::open_payment_dispute(parsed_leg_id, &request).await {
+                Ok(result) => {
+                    action_message.set(Some(result.message));
+                    if result.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            pending_action.set(None);
+        });
+    };
+
     let trigger_webhook = move |_| {
         let parsed_leg_id = match leg_id.get().trim() {
             "" => None,
@@ -392,6 +509,7 @@ pub fn EscrowOperationsPage() -> impl IntoView {
         action_message.set(None);
         let auth = auth.clone();
         let request = StripeWebhookRequest {
+            event_id: None,
             event_type: webhook_event_type.get(),
             leg_id: parsed_leg_id,
             payment_intent_id: (!payment_intent_id.get().trim().is_empty())
@@ -490,6 +608,14 @@ pub fn EscrowOperationsPage() -> impl IntoView {
                                     <button type="button" on:click=fund_escrow disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:none;border-radius:0.85rem;background:#111827;color:white;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("fund") { "Funding..." } else { "Fund" }}</button>
                                     <button type="button" on:click=hold_escrow disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #d97706;border-radius:0.85rem;background:#fff7ed;color:#b45309;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("hold") { "Holding..." } else { "Hold" }}</button>
                                     <button type="button" on:click=release_escrow disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #0f766e;border-radius:0.85rem;background:#ecfdf5;color:#0f766e;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("release") { "Releasing..." } else { "Release" }}</button>
+                                </div>
+                                <hr style="border:none;border-top:1px solid #e5e7eb;width:100%;" />
+                                <strong>"Payment exceptions"</strong>
+                                <label style="display:grid;gap:0.35rem;"><span>"Accessorial type"</span><input prop:value=move || accessorial_type.get() on:input=move |ev| accessorial_type.set(event_target_value(&ev)) placeholder="detention" style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
+                                <label style="display:grid;gap:0.35rem;"><span>"Dispute type"</span><input prop:value=move || dispute_type.get() on:input=move |ev| dispute_type.set(event_target_value(&ev)) placeholder="rate variance" style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
+                                <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+                                    <button type="button" on:click=open_accessorial disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #2563eb;border-radius:0.85rem;background:#eff6ff;color:#1d4ed8;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("accessorial") { "Opening..." } else { "Open accessorial" }}</button>
+                                    <button type="button" on:click=open_dispute disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #be123c;border-radius:0.85rem;background:#fff1f2;color:#be123c;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("dispute") { "Opening..." } else { "Open dispute" }}</button>
                                 </div>
                                 {move || action_message.get().map(|message| view! {
                                     <section style="padding:0.75rem 0.9rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;color:#1d4ed8;">
