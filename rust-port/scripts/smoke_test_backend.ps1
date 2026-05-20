@@ -14,7 +14,8 @@ param(
     [double]$ExecutionPingLat = 40.68920,
     [double]$ExecutionPingLng = -74.17450,
     [string]$StripeWebhookSecret = '',
-    [string]$TmsSharedSecret = ''
+    [string]$TmsSharedSecret = '',
+    [string]$ReadinessSummaryPath = ''
 )
 
 Set-StrictMode -Version Latest
@@ -87,6 +88,14 @@ function Invoke-StloadsApi {
 function Invoke-StloadsHealth {
     $uri = "$BaseUrl/health"
     return Invoke-RestMethod -Uri $uri -Method Get
+}
+
+function Invoke-StloadsRaw {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    return Invoke-WebRequest -Uri "$BaseUrl$Path" -Method Get -UseBasicParsing
 }
 
 function Login-StloadsUser {
@@ -180,6 +189,15 @@ Write-Step 'Checking backend health'
 $health = Invoke-StloadsHealth
 Assert-Flag -Condition ($health.status -eq 'ok') -Message 'Health endpoint did not report ok.'
 Write-Host ("Health: deployment_target={0}, environment={1}, database_state={2}" -f $health.deployment_target, $health.environment, $health.database_state)
+
+Write-Step 'Checking readiness endpoint and security headers'
+$readiness = Invoke-StloadsApi -Method Get -Path '/readiness'
+Assert-Flag -Condition ($readiness.status -eq 'ok') -Message 'Readiness endpoint did not report ok.'
+$healthRaw = Invoke-StloadsRaw -Path '/health'
+Assert-Flag -Condition ($healthRaw.Headers['x-frame-options'] -eq 'DENY') -Message 'Missing or unexpected x-frame-options header.'
+Assert-Flag -Condition ($healthRaw.Headers['x-content-type-options'] -eq 'nosniff') -Message 'Missing or unexpected x-content-type-options header.'
+Assert-Flag -Condition (-not [string]::IsNullOrWhiteSpace($healthRaw.Headers['content-security-policy'])) -Message 'Missing content-security-policy header.'
+Write-Host 'Readiness endpoint and security headers verified.'
 
 Write-Step 'Logging in seeded smoke users'
 $adminLogin = Login-StloadsUser -Email $AdminEmail -Password $AdminPassword -Label 'admin'
@@ -433,6 +451,21 @@ Write-Host 'TMS push/webhook/requeue/cancel/close flow completed.'
 Write-Step 'Final summary'
 $summary = [ordered]@{
     base_url = $BaseUrl
+    coverage_groups = @(
+        'health'
+        'readiness'
+        'security_headers'
+        'auth_session'
+        'load_board'
+        'booking'
+        'execution_documents'
+        'payments'
+        'stripe_webhook'
+        'chat'
+        'marketplace_offer_review'
+        'admin_operations'
+        'tms_outbound'
+    )
     admin_user = $AdminEmail
     shipper_user = $ShipperEmail
     carrier_user = $CarrierEmail
@@ -443,5 +476,12 @@ $summary = [ordered]@{
     dynamic_tms_load_id = $newTmsLoadId
     dynamic_handoff_id = $newHandoffId
     result = 'ok'
+}
+if (-not [string]::IsNullOrWhiteSpace($ReadinessSummaryPath)) {
+    $summaryDirectory = Split-Path -Parent $ReadinessSummaryPath
+    if (-not [string]::IsNullOrWhiteSpace($summaryDirectory) -and -not (Test-Path $summaryDirectory)) {
+        New-Item -ItemType Directory -Force -Path $summaryDirectory | Out-Null
+    }
+    $summary | ConvertTo-Json -Depth 8 | Set-Content -Path $ReadinessSummaryPath -Encoding UTF8
 }
 $summary | ConvertTo-Json -Depth 5

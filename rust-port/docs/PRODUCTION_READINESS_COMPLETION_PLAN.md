@@ -79,33 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P20: Build, CI, And Test Coverage
-
-**Outcome:** The repo can prove production readiness repeatedly.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\scripts\smoke_test_backend.ps1`
-- Create: `C:\New folder\STLoads-api-review\rust-port\scripts\production_readiness_check.ps1`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\Cargo.toml`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\docs\IBM_STAGING_SMOKE_CHECKLIST.md`
-
-- [ ] Add test groups:
-  - contract tests
-  - tenant isolation tests
-  - auth/RBAC tests
-  - marketplace tests
-  - booking concurrency tests
-  - document tests
-  - payment webhook tests
-  - ATMP outbound retry tests
-  - frontend build tests
-- [ ] Add `cargo fmt --check`.
-- [ ] Add `cargo clippy --workspace --all-targets`.
-- [ ] Add backend smoke test script.
-- [ ] Add frontend build verification.
-- [ ] Add production readiness script that fails on demo data, missing envs, failing tests, and placeholder strings.
-
 ### Task P21: IBM Code Engine Deployment
 
 **Outcome:** Backend and frontend deploy cleanly and repeatably to IBM.
@@ -207,9 +180,8 @@ Do not call STLoads market-ready until every item below is true:
 
 1. P7 Tenant/RBAC/session hardening.
 2. P8 Carrier search and alerts.
-3. P20 Build and tests.
-4. P21 IBM deployment.
-5. P22 Launch documentation.
+3. P21 IBM deployment.
+4. P22 Launch documentation.
 
 ## Definition Of Done
 

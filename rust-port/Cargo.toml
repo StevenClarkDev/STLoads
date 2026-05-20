@@ -13,6 +13,24 @@ edition = "2024"
 license = "MIT"
 version = "0.1.0"
 
+[workspace.metadata.stloads_readiness]
+production_gate = "powershell -ExecutionPolicy Bypass -File scripts/production_readiness_check.ps1"
+fmt = "cargo fmt --all --check"
+clippy = "cargo clippy --workspace --all-targets"
+frontend_build = "trunk build --release"
+backend_smoke = "powershell -ExecutionPolicy Bypass -File scripts/smoke_test_backend.ps1 -BaseUrl <backend-url>"
+test_groups = [
+    "contract tests",
+    "tenant isolation tests",
+    "auth/RBAC tests",
+    "marketplace tests",
+    "booking concurrency tests",
+    "document tests",
+    "payment webhook tests",
+    "ATMP outbound retry tests",
+    "frontend build tests",
+]
+
 [workspace.dependencies]
 anyhow = "1.0"
 aws-config = "1.8"

@@ -36,6 +36,7 @@ Before running this checklist, make sure all of these are true:
 - `rust-port/docs/PHP_RUST_SIDE_BY_SIDE_QA.md`
 - `rust-port/scripts/seed_postgres_smoke_data.sql`
 - `rust-port/scripts/smoke_test_backend.ps1`
+- `rust-port/scripts/production_readiness_check.ps1`
 - `rust-port/scripts/verify_backend_cutover_hosted.ps1`
 
 ## Step 1. Confirm App Health
@@ -98,6 +99,39 @@ powershell -ExecutionPolicy Bypass -File "rust-port\scripts\verify_backend_cutov
 
 The bundle script reseeds the disposable staging dataset, runs the core API smoke pass, reruns the hosted Rust role matrix, SMTP validation, TMS worker validation, and hosted Stripe release verification, then emits one final `result: ok` summary for the backend-only cutover gate.
 The hosted role matrix now also refreshes the disposable lifecycle-state QA accounts before validation and checks frontend routes with a browser-style HTML `Accept` header so the IBM frontend proxy rules do not create false `404` failures for SPA pages like `/admin/account-lifecycle`.
+
+## Step 3A. Run The Production Readiness Gate
+
+Run this before promoting a staging revision:
+
+```powershell
+cd "C:\New folder\STLoads-api-review\rust-port"
+powershell -ExecutionPolicy Bypass -File ".\scripts\production_readiness_check.ps1" `
+  -BackendBaseUrl "https://stloads-rust-backend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud" `
+  -HostedFrontendUrl "https://stloads-rust-frontend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud"
+```
+
+The gate runs:
+- contract tests
+- tenant isolation tests
+- auth/RBAC tests
+- marketplace tests
+- booking concurrency tests
+- document tests
+- payment webhook tests
+- ATMP outbound retry tests
+- `cargo fmt --all --check`
+- `cargo clippy --workspace --all-targets`
+- frontend `trunk build --release`
+- hosted backend smoke validation when `-BackendBaseUrl` is supplied
+- hosted frontend demo-data validation when `-HostedFrontendUrl` is supplied
+- production env and source-demo fixture checks
+
+Pass criteria:
+- every command exits cleanly
+- the final JSON summary shows `result: ok`
+- no required production env var is missing
+- no production source path enables demo fixtures or blocked placeholder strings
 
 ## Step 4. Run Manual Browser Validation
 
