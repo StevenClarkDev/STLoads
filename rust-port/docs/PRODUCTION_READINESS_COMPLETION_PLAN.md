@@ -79,48 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P22: Launch Documentation And Partner Readiness
-
-**Outcome:** STLoads has enough product, support, and sales documentation to go to market.
-
-**Files:**
-
-- Create: `C:\New folder\STLoads_PRODUCTION_RUNBOOK.md`
-- Create: `C:\New folder\STLoads_GO_TO_MARKET_OVERVIEW.md`
-- Create: `C:\New folder\STLoads_SUPPORT_PLAYBOOK.md`
-- Create: `C:\New folder\STLoads_SECURITY_OVERVIEW.md`
-
-- [ ] Write production runbook:
-  - deploy process
-  - rollback process
-  - incident response
-  - queue replay
-  - DLQ recovery
-  - Stripe webhook recovery
-  - object storage recovery
-- [ ] Write go-to-market overview:
-  - what STLoads does
-  - why it is enterprise-grade
-  - how it integrates with ATMP
-  - carrier marketplace value
-  - shipper/broker/operator value
-- [ ] Write support playbook:
-  - common carrier issues
-  - login problems
-  - document problems
-  - payment problems
-  - booking disputes
-  - sync failures
-- [ ] Write security overview:
-  - tenant isolation
-  - RBAC
-  - signed integrations
-  - audit
-  - document controls
-  - payment controls
-
----
-
 ## Launch Gate
 
 Do not call STLoads market-ready until every item below is true:
@@ -154,7 +112,7 @@ Do not call STLoads market-ready until every item below is true:
 
 1. P7 Tenant/RBAC/session hardening.
 2. P8 Carrier search and alerts.
-3. P22 Launch documentation.
+3. Final launch-gate verification and partner signoff.
 
 ## Definition Of Done
 
