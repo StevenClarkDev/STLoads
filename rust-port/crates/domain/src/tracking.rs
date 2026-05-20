@@ -13,6 +13,8 @@ pub enum LegEventType {
     DepartedPickup,
     DeliveryArrived,
     Delivered,
+    ExceptionReported,
+    TrackingStale,
     DocumentUploaded,
     LocationPing,
 }
@@ -35,6 +37,8 @@ pub const LEG_EVENT_TYPES: &[LegEventType] = &[
     LegEventType::DepartedPickup,
     LegEventType::DeliveryArrived,
     LegEventType::Delivered,
+    LegEventType::ExceptionReported,
+    LegEventType::TrackingStale,
     LegEventType::DocumentUploaded,
     LegEventType::LocationPing,
 ];
@@ -50,13 +54,16 @@ pub const TRACKING_MODULE_CONTRACT: TrackingModuleContract = TrackingModuleContr
         "depart pickup",
         "arrive delivery",
         "complete delivery",
+        "report exception",
         "upload leg document",
         "store location ping",
+        "scan stale tracking",
     ],
     notes: &[
         "tracking writes are only allowed while a booked carrier owns the leg",
         "location pings are currently accepted for status codes 5, 6, 7, and 9",
         "carrier execution actions append rows to leg_events",
+        "tracking and exception events are queued to ATMP outbound events when the leg has an STLoads posting",
     ],
 };
 

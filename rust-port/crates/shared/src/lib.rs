@@ -49,7 +49,8 @@ pub use execution::{
     ExecutionActionItem, ExecutionDocumentItem, ExecutionDocumentTypeOption,
     ExecutionLegActionRequest, ExecutionLegActionResponse, ExecutionLegScreen,
     ExecutionLocationPingRequest, ExecutionLocationPingResponse, ExecutionNoteItem,
-    ExecutionTimelineItem, ExecutionTrackingPointItem, ExecutionUploadDocumentResponse,
+    ExecutionStaleTrackingScanResponse, ExecutionTimelineItem, ExecutionTrackingPointItem,
+    ExecutionUploadDocumentResponse,
 };
 pub use master_data::{
     CityUpsertRequest, CountryUpsertRequest, LocationUpsertRequest, MasterDataCityOption,

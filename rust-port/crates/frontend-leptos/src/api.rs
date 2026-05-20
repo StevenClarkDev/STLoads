@@ -15,14 +15,14 @@ use shared::{
     DispatchDeskFollowUpResponse, DispatchDeskScreen, EscrowFundRequest, EscrowHoldRequest,
     EscrowLifecycleResponse, EscrowReleaseRequest, ExecutionLegActionRequest,
     ExecutionLegActionResponse, ExecutionLegScreen, ExecutionLocationPingRequest,
-    ExecutionLocationPingResponse, ForgotPasswordRequest, ForgotPasswordResponse,
-    LoadBoardFilterState, LoadBoardScreen, LoadBuilderScreen, LoadProfileScreen,
-    LocationUpsertRequest, LoginRequest, LoginResponse, LogoutResponse, MarketplaceActionResponse,
-    MarketplaceNotificationPreferenceRequest, MarketplaceNotificationPreferenceResponse,
-    MasterDataDeleteRequest, MasterDataMutationResponse, MasterDataScreen, OfferReviewRequest,
-    OfferReviewResponse, PortalRoleCountsResponse, RealtimeTopic, RegisterRequest,
-    RegisterResponse, ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest,
-    ResetPasswordResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
+    ExecutionLocationPingResponse, ExecutionStaleTrackingScanResponse, ForgotPasswordRequest,
+    ForgotPasswordResponse, LoadBoardFilterState, LoadBoardScreen, LoadBuilderScreen,
+    LoadProfileScreen, LocationUpsertRequest, LoginRequest, LoginResponse, LogoutResponse,
+    MarketplaceActionResponse, MarketplaceNotificationPreferenceRequest,
+    MarketplaceNotificationPreferenceResponse, MasterDataDeleteRequest, MasterDataMutationResponse,
+    MasterDataScreen, OfferReviewRequest, OfferReviewResponse, PortalRoleCountsResponse,
+    RealtimeTopic, RegisterRequest, RegisterResponse, ResendOtpRequest, ResendOtpResponse,
+    ResetPasswordRequest, ResetPasswordResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
     RespondCounterofferRequest, RespondTenderInviteRequest, ReviewOnboardingRequest,
     ReviewOnboardingResponse, SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse,
     SelfProfileScreen, SimpleCatalogUpsertRequest, StloadsOperationsScreen,
@@ -1018,4 +1018,8 @@ pub async fn send_execution_location_ping(
 ) -> Result<ExecutionLocationPingResponse, String> {
     let path = format!("/execution/legs/{}/location", leg_id);
     post_api(&path, payload).await
+}
+
+pub async fn scan_stale_execution_tracking() -> Result<ExecutionStaleTrackingScanResponse, String> {
+    post_api("/execution/stale-tracking/scan", &serde_json::json!({})).await
 }

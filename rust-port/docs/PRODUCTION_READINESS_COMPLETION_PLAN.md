@@ -79,26 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P12: Execution, Tracking, Exceptions, And Mobile Driver Flow
-
-**Outcome:** Booked carriers can execute loads with tracking and exception reporting.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\execution.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\tracking.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\domain\src\tracking.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\execution.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\device_location.rs`
-
-- [ ] Add pickup, in-transit, arrival, delivery, exception, and completion events.
-- [ ] Add location ping ingestion.
-- [ ] Add stale tracking alert job.
-- [ ] Add map/list display using the existing developer UI pattern.
-- [ ] Restrict execution updates to the awarded carrier or authorized operator.
-- [ ] Emit ATMP tracking and exception events.
-- [ ] Tests must prove unauthorized carrier cannot update another carrier's load.
-
 ### Task P13: Documents, Review, Versioning, And Storage Safety
 
 **Outcome:** STLoads document flows are safe enough for production freight.
@@ -381,16 +361,15 @@ Do not call STLoads market-ready until every item below is true:
 1. P7 Tenant/RBAC/session hardening.
 2. P16 Placeholder/demo data purge.
 3. P8 Carrier search and alerts.
-4. P12 Execution and tracking.
-5. P13 Documents.
-6. P14 Payments.
-7. P15 Admin ops and reconciliation.
-8. P17 Realtime.
-9. P18 Observability and audit.
-10. P19 Security hardening.
-11. P20 Build and tests.
-12. P21 IBM deployment.
-13. P22 Launch documentation.
+4. P13 Documents.
+5. P14 Payments.
+6. P15 Admin ops and reconciliation.
+7. P17 Realtime.
+8. P18 Observability and audit.
+9. P19 Security hardening.
+10. P20 Build and tests.
+11. P21 IBM deployment.
+12. P22 Launch documentation.
 
 ## Definition Of Done
 

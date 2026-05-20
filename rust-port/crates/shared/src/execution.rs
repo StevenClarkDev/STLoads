@@ -126,3 +126,10 @@ pub struct ExecutionUploadDocumentResponse {
     pub document_id: Option<u64>,
     pub message: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionStaleTrackingScanResponse {
+    pub success: bool,
+    pub scanned_count: u64,
+    pub message: String,
+}

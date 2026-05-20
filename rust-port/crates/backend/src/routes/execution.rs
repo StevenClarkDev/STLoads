@@ -9,9 +9,10 @@ use axum::{
 use chrono::{NaiveDateTime, Utc};
 use db::tracking::{
     CreateLegDocumentParams, advance_leg_execution, create_leg_document, create_tracking_point,
-    find_execution_leg_by_id, find_leg_document_by_id, find_leg_document_scope,
-    latest_tracking_point_for_leg, list_execution_note_history_for_leg, list_leg_documents,
-    list_leg_events, list_tracking_points_for_leg,
+    find_execution_leg_by_id, find_execution_posting_scope, find_leg_document_by_id,
+    find_leg_document_scope, latest_tracking_point_for_leg, list_execution_note_history_for_leg,
+    list_leg_documents, list_leg_events, list_tracking_points_for_leg, record_leg_exception,
+    scan_stale_tracking_alerts,
 };
 use domain::{
     auth::UserRole,
@@ -23,11 +24,12 @@ use shared::{
     ApiResponse, ExecutionActionItem, ExecutionDocumentItem, ExecutionDocumentTypeOption,
     ExecutionLegActionRequest, ExecutionLegActionResponse, ExecutionLegScreen,
     ExecutionLocationPingRequest, ExecutionLocationPingResponse, ExecutionNoteItem,
-    ExecutionTimelineItem, ExecutionTrackingPointItem, ExecutionUploadDocumentResponse,
-    RealtimeEvent, RealtimeEventKind, RealtimeTopic,
+    ExecutionStaleTrackingScanResponse, ExecutionTimelineItem, ExecutionTrackingPointItem,
+    ExecutionUploadDocumentResponse, RealtimeEvent, RealtimeEventKind, RealtimeTopic,
 };
 
 use crate::{auth_session, realtime_bus::RoutedRealtimeEvent, state::AppState};
+use db::tms::{EnqueueAtmpOutboundEvent, enqueue_atmp_outbound_event};
 
 #[derive(Debug, Serialize)]
 struct ExecutionOverview {
@@ -45,6 +47,7 @@ pub fn router() -> Router<crate::state::AppState> {
         .route("/leg-event-types", get(event_types))
         .route("/legs/{leg_id}", get(leg_screen))
         .route("/legs/{leg_id}/actions", post(run_leg_action))
+        .route("/stale-tracking/scan", post(scan_stale_tracking))
         .route(
             "/legs/{leg_id}/documents/upload",
             post(upload_leg_document).layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
@@ -54,6 +57,43 @@ pub fn router() -> Router<crate::state::AppState> {
             "/documents/{document_id}/file",
             get(download_leg_document_file),
         )
+}
+
+async fn scan_stale_tracking(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<ExecutionStaleTrackingScanResponse>>, StatusCode> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    if session.user.primary_role() != Some(UserRole::Admin)
+        && !session.session.permissions.iter().any(|permission| {
+            permission == "manage_tracking" || permission == "access_admin_portal"
+        })
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+
+    let scanned_count = scan_stale_tracking_alerts(pool, 30, 50)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(ApiResponse::ok(ExecutionStaleTrackingScanResponse {
+        success: true,
+        scanned_count,
+        message: format!(
+            "Rust stale tracking scan recorded {} alert(s) and queued ATMP exception events where postings exist.",
+            scanned_count
+        ),
+    })))
 }
 
 async fn index() -> Json<ApiResponse<ExecutionOverview>> {
@@ -170,6 +210,66 @@ async fn run_leg_action(
         })));
     }
 
+    if payload.action_key.trim() == "report_exception" {
+        let note = payload
+            .note
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let Some(note) = note else {
+            return Ok(Json(ApiResponse::ok(ExecutionLegActionResponse {
+                success: false,
+                leg_id: leg_id.max(0) as u64,
+                status_label: status_label_from_code(existing.status_id),
+                message: "Add an exception note before reporting an execution exception.".into(),
+            })));
+        };
+
+        let updated = record_leg_exception(pool, leg_id, Some(session.user.id), note)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let Some(updated_leg) = updated else {
+            return Err(StatusCode::NOT_FOUND);
+        };
+
+        enqueue_execution_atmp_event(
+            pool,
+            &updated_leg,
+            "exception_event",
+            serde_json::json!({
+                "event_type": "exception_reported",
+                "leg_id": leg_id,
+                "load_id": updated_leg.load_id,
+                "status_id": updated_leg.status_id,
+                "note": note,
+                "actor_user_id": session.user.id,
+            }),
+        )
+        .await;
+
+        publish_execution_update(
+            &state,
+            &session,
+            &updated_leg,
+            RealtimeEventKind::LegExecutionUpdated,
+            format!(
+                "{} reported an execution exception for {}.",
+                session.user.name,
+                updated_leg
+                    .leg_code
+                    .clone()
+                    .unwrap_or_else(|| format!("leg #{}", leg_id))
+            ),
+        );
+
+        return Ok(Json(ApiResponse::ok(ExecutionLegActionResponse {
+            success: true,
+            leg_id: leg_id.max(0) as u64,
+            status_label: status_label_from_code(updated_leg.status_id),
+            message: "Rust execution recorded the exception and queued ATMP notification.".into(),
+        })));
+    }
+
     if payload.action_key.trim() == "complete_delivery"
         && payload
             .note
@@ -223,27 +323,26 @@ async fn run_leg_action(
         success_label
     );
 
-    state.publish_realtime(
-        RoutedRealtimeEvent::new(RealtimeEvent {
-            kind: RealtimeEventKind::LegExecutionUpdated,
-            leg_id: Some(leg_id.max(0) as u64),
-            conversation_id: None,
-            offer_id: None,
-            message_id: None,
-            actor_user_id: Some(session.user.id.max(0) as u64),
-            subject_user_id: updated_leg
-                .booked_carrier_id
-                .map(|value| value.max(0) as u64),
-            presence_state: None,
-            last_read_message_id: None,
-            summary,
-        })
-        .for_user_ids(target_execution_user_ids(&updated_leg))
-        .for_permission_keys(["manage_tracking", "access_admin_portal", "manage_loads"])
-        .with_topics([
-            RealtimeTopic::ExecutionTracking.as_key(),
-            RealtimeTopic::LoadBoard.as_key(),
-        ]),
+    enqueue_execution_atmp_event(
+        pool,
+        &updated_leg,
+        "tracking_event",
+        serde_json::json!({
+            "event_type": event_type,
+            "leg_id": leg_id,
+            "load_id": updated_leg.load_id,
+            "status_id": updated_leg.status_id,
+            "actor_user_id": session.user.id,
+        }),
+    )
+    .await;
+
+    publish_execution_update(
+        &state,
+        &session,
+        &updated_leg,
+        RealtimeEventKind::LegExecutionUpdated,
+        summary,
     );
 
     Ok(Json(ApiResponse::ok(ExecutionLegActionResponse {
@@ -302,9 +401,16 @@ async fn store_leg_location(
 
     let recorded_at = payload.recorded_at.as_deref().and_then(parse_recorded_at);
 
-    let point = create_tracking_point(pool, leg_id, payload.lat, payload.lng, recorded_at)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let point = create_tracking_point(
+        pool,
+        leg_id,
+        payload.lat,
+        payload.lng,
+        recorded_at,
+        Some(session.user.id),
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let latest_label = format!(
         "{:.5}, {:.5} at {}",
@@ -313,29 +419,35 @@ async fn store_leg_location(
         format_datetime(&point.recorded_at)
     );
 
-    state.publish_realtime(
-        RoutedRealtimeEvent::new(RealtimeEvent {
-            kind: RealtimeEventKind::LegLocationUpdated,
-            leg_id: Some(leg_id.max(0) as u64),
-            conversation_id: None,
-            offer_id: None,
-            message_id: None,
-            actor_user_id: Some(session.user.id.max(0) as u64),
-            subject_user_id: existing.booked_carrier_id.map(|value| value.max(0) as u64),
-            presence_state: None,
-            last_read_message_id: None,
-            summary: format!(
-                "{} sent a fresh location ping for {}.",
-                session.user.name,
-                existing
-                    .leg_code
-                    .clone()
-                    .unwrap_or_else(|| format!("leg #{}", leg_id))
-            ),
-        })
-        .for_user_ids(target_execution_user_ids(&existing))
-        .for_permission_keys(["manage_tracking", "access_admin_portal", "manage_loads"])
-        .with_topics([RealtimeTopic::ExecutionTracking.as_key()]),
+    enqueue_execution_atmp_event(
+        pool,
+        &existing,
+        "tracking_event",
+        serde_json::json!({
+            "event_type": "location_ping",
+            "leg_id": leg_id,
+            "load_id": existing.load_id,
+            "lat": point.lat,
+            "lng": point.lng,
+            "recorded_at": point.recorded_at.to_string(),
+            "actor_user_id": session.user.id,
+        }),
+    )
+    .await;
+
+    publish_execution_update(
+        &state,
+        &session,
+        &existing,
+        RealtimeEventKind::LegLocationUpdated,
+        format!(
+            "{} sent a fresh location ping for {}.",
+            session.user.name,
+            existing
+                .leg_code
+                .clone()
+                .unwrap_or_else(|| format!("leg #{}", leg_id))
+        ),
     );
 
     Ok(Json(ApiResponse::ok(ExecutionLocationPingResponse {
@@ -886,6 +998,10 @@ fn can_manage_execution(
     session: &auth_session::ResolvedSession,
     leg: &db::tracking::ExecutionLegRecord,
 ) -> bool {
+    if session.user.primary_role() == Some(UserRole::Carrier) {
+        return leg.booked_carrier_id == Some(session.user.id);
+    }
+
     session.user.primary_role() == Some(UserRole::Admin)
         || leg.booked_carrier_id == Some(session.user.id)
         || session.session.permissions.iter().any(|permission| {
@@ -939,6 +1055,12 @@ fn execution_action_items(
             "Complete delivery",
             "Physical delivery is complete. A delivery POD and completion note are required before this final step unlocks.",
             status_id == 9 && delivery_completion_ready,
+        ),
+        (
+            "report_exception",
+            "Report exception",
+            "Carrier or operator records an execution exception without advancing the leg status.",
+            matches!(status_id, 5 | 6 | 7 | 8 | 9),
         ),
     ]
     .into_iter()
@@ -1037,6 +1159,60 @@ fn target_execution_user_ids(leg: &db::tracking::ExecutionLegRecord) -> Vec<u64>
     users
 }
 
+fn publish_execution_update(
+    state: &AppState,
+    session: &auth_session::ResolvedSession,
+    leg: &db::tracking::ExecutionLegRecord,
+    kind: RealtimeEventKind,
+    summary: String,
+) {
+    state.publish_realtime(
+        RoutedRealtimeEvent::new(RealtimeEvent {
+            kind,
+            leg_id: Some(leg.leg_id.max(0) as u64),
+            conversation_id: None,
+            offer_id: None,
+            message_id: None,
+            actor_user_id: Some(session.user.id.max(0) as u64),
+            subject_user_id: leg.booked_carrier_id.map(|value| value.max(0) as u64),
+            presence_state: None,
+            last_read_message_id: None,
+            summary,
+        })
+        .for_user_ids(target_execution_user_ids(leg))
+        .for_permission_keys(["manage_tracking", "access_admin_portal", "manage_loads"])
+        .with_topics([
+            RealtimeTopic::ExecutionTracking.as_key(),
+            RealtimeTopic::LoadBoard.as_key(),
+        ]),
+    );
+}
+
+async fn enqueue_execution_atmp_event(
+    pool: &db::DbPool,
+    leg: &db::tracking::ExecutionLegRecord,
+    event_type: &'static str,
+    payload: serde_json::Value,
+) {
+    let Ok(Some(scope)) = find_execution_posting_scope(pool, leg.leg_id).await else {
+        return;
+    };
+
+    let _ = enqueue_atmp_outbound_event(
+        pool,
+        EnqueueAtmpOutboundEvent {
+            tenant_id: &scope.tenant_id,
+            event_type,
+            posting_id: Some(scope.posting_id),
+            booking_award_id: scope.booking_award_id,
+            target_url: None,
+            payload,
+            correlation_id: None,
+        },
+    )
+    .await;
+}
+
 fn status_label_from_code(status_id: i16) -> String {
     match LegacyLoadLegStatusCode::from_legacy_code(status_id) {
         Some(LegacyLoadLegStatusCode::Draft) => "Draft".into(),
@@ -1074,6 +1250,8 @@ fn event_label(value: &str) -> String {
         "departed_pickup" => "Departed Pickup".into(),
         "delivery_arrived" => "Arrived At Delivery".into(),
         "delivered" => "Delivery Completed".into(),
+        "exception_reported" => "Exception Reported".into(),
+        "tracking_stale" => "Tracking Stale".into(),
         "pickup_bol" => "Pickup BOL".into(),
         "pickup_photo" => "Pickup Photos".into(),
         "delivery_pod" => "Delivery POD".into(),
@@ -1266,9 +1444,11 @@ fn google_maps_url(lat: f64, lng: f64) -> String {
 mod tests {
     use super::*;
     use crate::test_support::{
-        auth_headers_for_user, insert_load_fixture, prepare_pool, read_leg_status, test_state,
+        auth_headers_for_user, insert_load_fixture, insert_user_with_role_status, prepare_pool,
+        read_leg_status, test_state,
     };
     use db::tracking::{CreateLegDocumentParams, create_leg_document};
+    use domain::auth::{AccountStatus, UserRole};
     use serial_test::serial;
 
     #[tokio::test]
@@ -1365,6 +1545,142 @@ mod tests {
         assert!(delivered.success);
         assert_eq!(delivered.status_label, "Delivered");
         assert_eq!(read_leg_status(&pool, fixture.leg_id).await?, 10);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn execution_tracking_blocks_wrong_carrier_and_emits_atmp_events()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let fixture = insert_load_fixture(&pool, 7).await?;
+        seed_execution_posting(
+            &pool,
+            fixture.load_id,
+            fixture.leg_id,
+            fixture.owner_user.id,
+        )
+        .await?;
+        let assigned_headers = auth_headers_for_user(&state, &fixture.carrier_user).await?;
+        let wrong_carrier = insert_user_with_role_status(
+            &pool,
+            "Wrong Carrier",
+            "wrong-carrier-p12@example.com",
+            UserRole::Carrier,
+            AccountStatus::Approved,
+        )
+        .await?;
+        let wrong_headers = auth_headers_for_user(&state, &wrong_carrier).await?;
+
+        let wrong_location = store_leg_location(
+            State(state.clone()),
+            Path(fixture.leg_id),
+            wrong_headers.clone(),
+            Json(ExecutionLocationPingRequest {
+                lat: 35.1495,
+                lng: -90.0490,
+                recorded_at: None,
+            }),
+        )
+        .await;
+        assert_eq!(
+            wrong_location.expect_err("wrong carrier should be forbidden"),
+            StatusCode::FORBIDDEN
+        );
+
+        let stored_location = store_leg_location(
+            State(state.clone()),
+            Path(fixture.leg_id),
+            assigned_headers.clone(),
+            Json(ExecutionLocationPingRequest {
+                lat: 35.1495,
+                lng: -90.0490,
+                recorded_at: None,
+            }),
+        )
+        .await
+        .map_err(|status| format!("assigned carrier location failed with {status}"))?
+        .0
+        .data;
+        assert!(stored_location.success);
+
+        let exception_response = run_leg_action(
+            State(state.clone()),
+            Path(fixture.leg_id),
+            assigned_headers,
+            Json(ExecutionLegActionRequest {
+                action_key: "report_exception".into(),
+                note: Some("Receiver gate is closed and driver is waiting.".into()),
+            }),
+        )
+        .await
+        .map_err(|status| format!("exception action failed with {status}"))?
+        .0
+        .data;
+        assert!(exception_response.success);
+        assert!(exception_response.message.contains("exception"));
+
+        let event_types = sqlx::query_scalar::<_, String>(
+            "SELECT event_type FROM atmp_outbound_events WHERE tenant_id = 'tenant-p12' ORDER BY id ASC",
+        )
+        .fetch_all(&pool)
+        .await?;
+        assert!(event_types.contains(&"tracking_event".to_string()));
+        assert!(event_types.contains(&"exception_event".to_string()));
+
+        sqlx::query(
+            "UPDATE leg_locations
+             SET recorded_at = CURRENT_TIMESTAMP - INTERVAL '2 hours'
+             WHERE leg_id = $1",
+        )
+        .bind(fixture.leg_id)
+        .execute(&pool)
+        .await?;
+
+        let stale_count = db::tracking::scan_stale_tracking_alerts(&pool, 1, 0).await?;
+        assert!(stale_count >= 1);
+        let stale_events = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM leg_events WHERE type = 'tracking_stale'",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert!(stale_events >= 1);
+
+        Ok(())
+    }
+
+    async fn seed_execution_posting(
+        pool: &db::DbPool,
+        load_id: i64,
+        leg_id: i64,
+        owner_id: i64,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "INSERT INTO tenants (id, name, slug, status, created_at, updated_at)
+             VALUES ('tenant-p12', 'Tenant P12', 'tenant-p12', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .execute(pool)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO stloads_postings
+                (tenant_id, source_system, source_load_id, source_leg_id, posting_number, title,
+                 freight_mode, equipment_type, status, visibility, readiness, published_at, created_by,
+                 created_at, updated_at)
+             VALUES ('tenant-p12', 'test', $1, $2, 'P12-POSTING', 'P12 execution lane',
+                 'road', 'Dry Van', 'awarded', 'private', 'ready', CURRENT_TIMESTAMP, $3,
+                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .bind(load_id.to_string())
+        .bind(leg_id.to_string())
+        .bind(owner_id)
+        .execute(pool)
+        .await?;
 
         Ok(())
     }

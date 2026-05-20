@@ -236,6 +236,7 @@ fn event_tone(event_type_key: &str) -> &'static str {
         "pickup_started" | "pickup_arrived" => "primary",
         "pickup_departed" | "in_transit" => "warning",
         "delivery_arrived" | "delivery_completed" => "success",
+        "exception_reported" | "tracking_stale" => "danger",
         "location_ping" => "info",
         _ => "info",
     }
@@ -270,6 +271,7 @@ pub fn ExecutionLegPage() -> impl IntoView {
     let is_uploading_document = RwSignal::new(false);
     let live_tracking_enabled = RwSignal::new(false);
     let is_toggling_live_tracking = RwSignal::new(false);
+    let is_scanning_stale_tracking = RwSignal::new(false);
     let live_tracking_watcher_id = RwSignal::new(None::<i32>);
     let can_open_admin_handoffs = Signal::derive(move || {
         session::has_permission(&auth_for_admin_handoffs, "access_admin_portal")
@@ -623,6 +625,34 @@ pub fn ExecutionLegPage() -> impl IntoView {
         ));
     };
 
+    let scan_stale_tracking = move |_| {
+        is_scanning_stale_tracking.set(true);
+        action_message.set(None);
+        let auth = auth.clone();
+
+        spawn_local(async move {
+            match api::scan_stale_execution_tracking().await {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+
+            is_scanning_stale_tracking.set(false);
+        });
+    };
+
     view! {
         <article style="display:grid;gap:1.25rem;">
             <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
@@ -771,6 +801,16 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                     <A href=format!("/admin/payments?leg_id={}&source=execution", screen_value.leg_id) attr:style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#e8fff3;color:#166534;text-decoration:none;">
                                         "Payments"
                                     </A>
+                                })}
+                                {can_open_admin_handoffs.get().then(|| view! {
+                                    <button
+                                        type="button"
+                                        style="padding:0.45rem 0.75rem;border-radius:0.75rem;border:none;background:#fee2e2;color:#991b1b;cursor:pointer;"
+                                        disabled=move || is_scanning_stale_tracking.get()
+                                        on:click=scan_stale_tracking
+                                    >
+                                        {move || if is_scanning_stale_tracking.get() { "Scanning tracking..." } else { "Scan stale tracking" }}
+                                    </button>
                                 })}
                             </section>
 
