@@ -1851,17 +1851,19 @@ async fn materialize_load_for_handoff(
         "{}: {} -> {}",
         payload.freight_mode, payload.pickup_city, payload.dropoff_city
     );
+    let owner_user_id = resolve_tms_owner_user_id(&mut *tx, payload).await?;
 
     let load_id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO loads (
             load_number, title, user_id, load_type_id, equipment_id, commodity_type_id,
             weight_unit, weight, special_instructions, is_hazardous, is_temperature_controlled,
             status, leg_count, created_at, updated_at
-         ) VALUES ($1, $2, NULL, NULL, NULL, NULL, $3, $4, $5, $6, $7, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         ) VALUES ($1, $2, $3, NULL, NULL, NULL, $4, $5, $6, $7, $8, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id",
     )
     .bind(load_number.as_str())
     .bind(load_title.as_str())
+    .bind(owner_user_id)
     .bind(payload.weight_unit.as_str())
     .bind(payload.weight)
     .bind(payload.pickup_instructions.as_deref())
@@ -1897,6 +1899,36 @@ async fn materialize_load_for_handoff(
     .await?;
 
     Ok((load_id, load_number))
+}
+
+async fn resolve_tms_owner_user_id(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    payload: &shared::TmsHandoffPayload,
+) -> Result<Option<i64>, sqlx::Error> {
+    let Some(owner_email) = payload.external_refs.as_deref().and_then(|refs| {
+        refs.iter()
+            .find(|external_ref| {
+                matches!(
+                    external_ref.ref_type.as_str(),
+                    "stloads_owner_email" | "owner_email" | "dispatch_account_email"
+                )
+            })
+            .map(|external_ref| external_ref.ref_value.trim())
+            .filter(|value| !value.is_empty())
+    }) else {
+        return Ok(None);
+    };
+
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id
+         FROM users
+         WHERE LOWER(email) = LOWER($1)
+         ORDER BY id DESC
+         LIMIT 1",
+    )
+    .bind(owner_email)
+    .fetch_optional(&mut **tx)
+    .await
 }
 
 async fn insert_location_row(
