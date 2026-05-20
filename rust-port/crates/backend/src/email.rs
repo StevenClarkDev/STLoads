@@ -312,6 +312,35 @@ impl EmailService {
             .await
     }
 
+    pub async fn send_marketplace_critical_event(
+        &self,
+        to_email: &str,
+        to_name: Option<&str>,
+        title: &str,
+        detail: &str,
+    ) -> Result<MailOutcome, String> {
+        let body = branded_status_template(
+            title,
+            "Marketplace operations alert",
+            &escape_html(detail),
+            "Requires review",
+            "This event was marked critical by the Rust marketplace workflow and will retry through the email outbox until delivered or exhausted.",
+            "Open STLoads",
+            &self.config.portal_url,
+            "#fff7ed",
+            "#b45309",
+        );
+
+        self.send_html(
+            to_email,
+            to_name,
+            title,
+            &body,
+            "marketplace_critical_event",
+        )
+        .await
+    }
+
     async fn send_html(
         &self,
         to_email: &str,

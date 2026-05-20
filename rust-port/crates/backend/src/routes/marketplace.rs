@@ -10,9 +10,10 @@ use db::{
     marketplace::{
         BookNowInput, CarrierCancellationInput, CreateCounterofferInput, CreateTenderInviteInput,
         SubmitCarrierOfferInput, book_now_posting, create_counteroffer, create_message,
-        create_tender_invite, find_conversation_by_id, find_offer_by_id, mark_conversation_read,
-        request_carrier_cancellation, respond_to_counteroffer, respond_to_tender_invite,
-        review_offer, submit_carrier_offer,
+        create_tender_invite, find_authorized_conversation_scope, find_conversation_by_id,
+        find_offer_by_id, mark_conversation_read, request_carrier_cancellation,
+        respond_to_counteroffer, respond_to_tender_invite, review_offer, submit_carrier_offer,
+        upsert_conversation_presence, upsert_marketplace_notification_preference,
     },
 };
 use domain::{
@@ -26,10 +27,11 @@ use domain::{
 use serde::{Deserialize, Serialize};
 use shared::{
     ApiResponse, ChatSendMessageRequest, ChatSendMessageResponse, ChatWorkspaceScreen,
-    ConversationReadResponse, CreateCounterofferRequest, CreateTenderInviteRequest,
-    MarketplaceActionResponse, OfferReviewDecision, OfferReviewRequest, OfferReviewResponse,
-    RealtimeEvent, RealtimeEventKind, RealtimeTopic, RespondCounterofferRequest,
-    RespondTenderInviteRequest, SubmitOfferRequest,
+    ConversationPresenceRequest, ConversationPresenceResponse, ConversationReadResponse,
+    CreateCounterofferRequest, CreateTenderInviteRequest, MarketplaceActionResponse,
+    MarketplaceNotificationPreferenceRequest, MarketplaceNotificationPreferenceResponse,
+    OfferReviewDecision, OfferReviewRequest, OfferReviewResponse, RealtimeEvent, RealtimeEventKind,
+    RealtimeTopic, RespondCounterofferRequest, RespondTenderInviteRequest, SubmitOfferRequest,
 };
 use shared::{BookNowRequest, CarrierCancellationRequest};
 
@@ -101,6 +103,14 @@ pub fn router() -> Router<AppState> {
         .route(
             "/conversations/{conversation_id}/read",
             post(mark_conversation_read_handler),
+        )
+        .route(
+            "/conversations/{conversation_id}/presence",
+            post(update_conversation_presence_handler),
+        )
+        .route(
+            "/notification-preferences",
+            post(update_notification_preferences_handler),
         )
 }
 
@@ -736,36 +746,35 @@ async fn send_message_handler(
         }));
     };
 
-    let Ok(Some(conversation)) = find_conversation_by_id(pool, conversation_id).await else {
+    let tenant_id = session_tenant_id(&session);
+    let is_admin = session.user.primary_role() == Some(UserRole::Admin);
+    let Ok(Some(scope)) = find_authorized_conversation_scope(
+        pool,
+        &tenant_id,
+        conversation_id,
+        session.user.id,
+        is_admin,
+    )
+    .await
+    else {
         return Json(ApiResponse::ok(ChatSendMessageResponse {
             success: false,
             conversation_id,
             message_id: 0,
-            message: "The requested conversation was not found.".into(),
+            message: "The requested conversation was not found for this tenant and account.".into(),
         }));
     };
 
-    if session.user.id != conversation.shipper_id && session.user.id != conversation.carrier_id {
-        return Json(ApiResponse::ok(ChatSendMessageResponse {
-            success: false,
-            conversation_id,
-            message_id: 0,
-            message:
-                "This authenticated account is not a participant in the selected conversation."
-                    .into(),
-        }));
-    }
-
     match create_message(pool, conversation_id, session.user.id, &trimmed_body).await {
         Ok(Some(message)) => {
-            let mut target_user_ids = conversation_participant_user_ids(&conversation);
+            let mut target_user_ids = scope_participant_user_ids(&scope);
             target_user_ids.sort_unstable();
             target_user_ids.dedup();
 
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
                     kind: RealtimeEventKind::MessageSent,
-                    leg_id: Some(conversation.load_leg_id.max(0) as u64),
+                    leg_id: Some(scope.load_leg_id.max(0) as u64),
                     conversation_id: Some(conversation_id.max(0) as u64),
                     offer_id: None,
                     message_id: Some(message.id.max(0) as u64),
@@ -829,36 +838,35 @@ async fn mark_conversation_read_handler(
         }));
     };
 
-    let Ok(Some(conversation)) = find_conversation_by_id(pool, conversation_id).await else {
+    let tenant_id = session_tenant_id(&session);
+    let is_admin = session.user.primary_role() == Some(UserRole::Admin);
+    let Ok(Some(scope)) = find_authorized_conversation_scope(
+        pool,
+        &tenant_id,
+        conversation_id,
+        session.user.id,
+        is_admin,
+    )
+    .await
+    else {
         return Json(ApiResponse::ok(ConversationReadResponse {
             success: false,
             conversation_id,
             last_read_message_id: None,
-            message: "The requested conversation was not found.".into(),
+            message: "The requested conversation was not found for this tenant and account.".into(),
         }));
     };
 
-    if session.user.id != conversation.shipper_id && session.user.id != conversation.carrier_id {
-        return Json(ApiResponse::ok(ConversationReadResponse {
-            success: false,
-            conversation_id,
-            last_read_message_id: None,
-            message:
-                "This authenticated account is not a participant in the selected conversation."
-                    .into(),
-        }));
-    }
-
     match mark_conversation_read(pool, conversation_id, session.user.id).await {
         Ok(Some(read_state)) => {
-            let target_user_ids = conversation_participant_user_ids(&conversation);
+            let target_user_ids = scope_participant_user_ids(&scope);
             let last_read_message_id = read_state.last_read_message_id;
 
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
                     kind: RealtimeEventKind::ConversationRead,
-                    leg_id: Some(conversation.load_leg_id.max(0) as u64),
-                    conversation_id: Some(conversation.id.max(0) as u64),
+                    leg_id: Some(scope.load_leg_id.max(0) as u64),
+                    conversation_id: Some(scope.conversation_id.max(0) as u64),
                     offer_id: None,
                     message_id: last_read_message_id.map(|value| value.max(0) as u64),
                     actor_user_id: Some(session.user.id.max(0) as u64),
@@ -889,6 +897,162 @@ async fn mark_conversation_read_handler(
             conversation_id,
             last_read_message_id: None,
             message: format!("Read receipt update failed: {}", error),
+        })),
+    }
+}
+
+async fn update_conversation_presence_handler(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<ConversationPresenceRequest>,
+) -> Json<ApiResponse<ConversationPresenceResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(ConversationPresenceResponse {
+            success: false,
+            conversation_id,
+            state: None,
+            message: format!(
+                "Presence is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        }));
+    };
+
+    let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
+    else {
+        return Json(ApiResponse::ok(ConversationPresenceResponse {
+            success: false,
+            conversation_id,
+            state: None,
+            message: "Sign in before updating conversation presence.".into(),
+        }));
+    };
+
+    let tenant_id = session_tenant_id(&session);
+    let is_admin = session.user.primary_role() == Some(UserRole::Admin);
+    let Ok(Some(scope)) = find_authorized_conversation_scope(
+        pool,
+        &tenant_id,
+        conversation_id,
+        session.user.id,
+        is_admin,
+    )
+    .await
+    else {
+        return Json(ApiResponse::ok(ConversationPresenceResponse {
+            success: false,
+            conversation_id,
+            state: None,
+            message: "The requested conversation was not found for this tenant and account.".into(),
+        }));
+    };
+
+    let state_label = match payload.state.trim() {
+        "typing" => "typing",
+        "away" => "away",
+        _ => "online",
+    };
+
+    match upsert_conversation_presence(pool, conversation_id, session.user.id, state_label).await {
+        Ok(Some(presence)) => {
+            state.publish_realtime(
+                RoutedRealtimeEvent::new(RealtimeEvent {
+                    kind: RealtimeEventKind::ConversationPresenceChanged,
+                    leg_id: Some(scope.load_leg_id.max(0) as u64),
+                    conversation_id: Some(scope.conversation_id.max(0) as u64),
+                    offer_id: scope.offer_id.map(|value| value.max(0) as u64),
+                    message_id: None,
+                    actor_user_id: Some(session.user.id.max(0) as u64),
+                    subject_user_id: Some(session.user.id.max(0) as u64),
+                    presence_state: Some(presence.state.clone()),
+                    last_read_message_id: None,
+                    summary: format!(
+                        "{} is {} in the conversation.",
+                        session.user.name, presence.state
+                    ),
+                })
+                .for_user_ids(scope_participant_user_ids(&scope))
+                .with_topics([RealtimeTopic::Conversation.as_key()]),
+            );
+
+            Json(ApiResponse::ok(ConversationPresenceResponse {
+                success: true,
+                conversation_id,
+                state: Some(presence.state),
+                message: "Conversation presence updated for scoped participants.".into(),
+            }))
+        }
+        Ok(None) => Json(ApiResponse::ok(ConversationPresenceResponse {
+            success: false,
+            conversation_id,
+            state: None,
+            message: "No presence state could be stored for this conversation.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(ConversationPresenceResponse {
+            success: false,
+            conversation_id,
+            state: None,
+            message: format!("Presence update failed: {}", error),
+        })),
+    }
+}
+
+async fn update_notification_preferences_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MarketplaceNotificationPreferenceRequest>,
+) -> Json<ApiResponse<MarketplaceNotificationPreferenceResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(MarketplaceNotificationPreferenceResponse {
+            success: false,
+            email_enabled: payload.email_enabled,
+            critical_email_enabled: payload.critical_email_enabled,
+            realtime_enabled: payload.realtime_enabled,
+            message: format!(
+                "Notification preferences are unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        }));
+    };
+
+    let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
+    else {
+        return Json(ApiResponse::ok(MarketplaceNotificationPreferenceResponse {
+            success: false,
+            email_enabled: payload.email_enabled,
+            critical_email_enabled: payload.critical_email_enabled,
+            realtime_enabled: payload.realtime_enabled,
+            message: "Sign in before updating marketplace notification preferences.".into(),
+        }));
+    };
+
+    let tenant_id = session_tenant_id(&session);
+    match upsert_marketplace_notification_preference(
+        pool,
+        &tenant_id,
+        session.user.id,
+        payload.email_enabled,
+        payload.critical_email_enabled,
+        payload.realtime_enabled,
+    )
+    .await
+    {
+        Ok(preference) => Json(ApiResponse::ok(MarketplaceNotificationPreferenceResponse {
+            success: true,
+            email_enabled: preference.email_enabled,
+            critical_email_enabled: preference.critical_email_enabled,
+            realtime_enabled: preference.realtime_enabled,
+            message: "Marketplace notification preferences saved.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(MarketplaceNotificationPreferenceResponse {
+            success: false,
+            email_enabled: payload.email_enabled,
+            critical_email_enabled: payload.critical_email_enabled,
+            realtime_enabled: payload.realtime_enabled,
+            message: format!("Notification preference update failed: {}", error),
         })),
     }
 }
@@ -974,5 +1138,16 @@ fn conversation_participant_user_ids(
         user_ids.push(conversation.carrier_id as u64);
     }
 
+    user_ids
+}
+
+fn scope_participant_user_ids(scope: &db::marketplace::ConversationScopeRecord) -> Vec<u64> {
+    let mut user_ids = Vec::new();
+    if scope.shipper_id > 0 {
+        user_ids.push(scope.shipper_id as u64);
+    }
+    if scope.carrier_id > 0 {
+        user_ids.push(scope.carrier_id as u64);
+    }
     user_ids
 }

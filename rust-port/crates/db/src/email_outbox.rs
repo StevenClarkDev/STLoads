@@ -33,6 +33,16 @@ pub struct EnqueueEmailParams<'a> {
     pub max_attempts: i32,
 }
 
+#[derive(Debug, Clone)]
+pub struct CriticalMarketplaceEmailParams<'a> {
+    pub template_name: &'a str,
+    pub to_email: &'a str,
+    pub to_name: Option<&'a str>,
+    pub subject: &'a str,
+    pub html_body: &'a str,
+    pub max_attempts: i32,
+}
+
 pub async fn enqueue_email(
     pool: &DbPool,
     params: EnqueueEmailParams<'_>,
@@ -63,6 +73,40 @@ pub async fn enqueue_email(
     .bind(params.subject)
     .bind(params.html_body)
     .bind(params.max_attempts.max(1))
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn enqueue_critical_marketplace_email(
+    pool: &DbPool,
+    params: CriticalMarketplaceEmailParams<'_>,
+) -> Result<EmailOutboxRecord, sqlx::Error> {
+    sqlx::query_as::<_, EmailOutboxRecord>(
+        r#"
+        INSERT INTO email_outbox (
+            template_name,
+            to_email,
+            to_name,
+            subject,
+            html_body,
+            max_attempts,
+            status,
+            next_attempt_at,
+            attempts,
+            locked_at,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, 'pending', CURRENT_TIMESTAMP, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING *
+        "#,
+    )
+    .bind(format!("marketplace_critical_{}", params.template_name.trim()))
+    .bind(params.to_email.trim())
+    .bind(params.to_name)
+    .bind(params.subject.trim())
+    .bind(params.html_body)
+    .bind(params.max_attempts.max(8))
     .fetch_one(pool)
     .await
 }

@@ -535,9 +535,20 @@ async fn build_chat_workspace_screen(
 ) -> Result<ChatWorkspaceScreen, sqlx::Error> {
     let viewer_user_id = viewer.user.id;
     let viewer_role = viewer.user.primary_role();
-    let mut conversations =
-        list_recent_conversation_workspace_records_for_user(pool, viewer_user_id, viewer_role, 25)
-            .await?;
+    let tenant_id = viewer
+        .session
+        .tenant_scope
+        .as_ref()
+        .map(|scope| scope.tenant_id.as_str())
+        .unwrap_or("legacy");
+    let mut conversations = list_recent_conversation_workspace_records_for_user(
+        pool,
+        tenant_id,
+        viewer_user_id,
+        viewer_role,
+        25,
+    )
+    .await?;
 
     let active_conversation = match requested_conversation_id {
         Some(requested_id) => {
@@ -550,6 +561,7 @@ async fn build_chat_workspace_screen(
             } else {
                 find_conversation_workspace_record_for_user(
                     pool,
+                    tenant_id,
                     requested_id,
                     viewer_user_id,
                     viewer_role,

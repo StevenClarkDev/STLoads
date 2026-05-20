@@ -9,18 +9,20 @@ use shared::{
     AuthSessionState, BookLoadLegRequest, BookLoadLegResponse, BookNowRequest,
     CarrierCancellationRequest, ChangePasswordRequest, ChangePasswordResponse,
     ChatSendMessageRequest, ChatSendMessageResponse, ChatWorkspaceScreen, CityUpsertRequest,
-    ConversationReadResponse, CountryUpsertRequest, CreateCounterofferRequest, CreateLoadRequest,
-    CreateLoadResponse, CreateTenderInviteRequest, DeleteKycDocumentResponse,
-    DispatchDeskFollowUpRequest, DispatchDeskFollowUpResponse, DispatchDeskScreen,
-    EscrowFundRequest, EscrowHoldRequest, EscrowLifecycleResponse, EscrowReleaseRequest,
-    ExecutionLegActionRequest, ExecutionLegActionResponse, ExecutionLegScreen,
-    ExecutionLocationPingRequest, ExecutionLocationPingResponse, ForgotPasswordRequest,
-    ForgotPasswordResponse, LoadBoardFilterState, LoadBoardScreen, LoadBuilderScreen,
-    LoadProfileScreen, LocationUpsertRequest, LoginRequest, LoginResponse, LogoutResponse,
-    MarketplaceActionResponse, MasterDataDeleteRequest, MasterDataMutationResponse,
-    MasterDataScreen, OfferReviewRequest, OfferReviewResponse, PortalRoleCountsResponse,
-    RealtimeTopic, RegisterRequest, RegisterResponse, ResendOtpRequest, ResendOtpResponse,
-    ResetPasswordRequest, ResetPasswordResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
+    ConversationPresenceRequest, ConversationPresenceResponse, ConversationReadResponse,
+    CountryUpsertRequest, CreateCounterofferRequest, CreateLoadRequest, CreateLoadResponse,
+    CreateTenderInviteRequest, DeleteKycDocumentResponse, DispatchDeskFollowUpRequest,
+    DispatchDeskFollowUpResponse, DispatchDeskScreen, EscrowFundRequest, EscrowHoldRequest,
+    EscrowLifecycleResponse, EscrowReleaseRequest, ExecutionLegActionRequest,
+    ExecutionLegActionResponse, ExecutionLegScreen, ExecutionLocationPingRequest,
+    ExecutionLocationPingResponse, ForgotPasswordRequest, ForgotPasswordResponse,
+    LoadBoardFilterState, LoadBoardScreen, LoadBuilderScreen, LoadProfileScreen,
+    LocationUpsertRequest, LoginRequest, LoginResponse, LogoutResponse, MarketplaceActionResponse,
+    MarketplaceNotificationPreferenceRequest, MarketplaceNotificationPreferenceResponse,
+    MasterDataDeleteRequest, MasterDataMutationResponse, MasterDataScreen, OfferReviewRequest,
+    OfferReviewResponse, PortalRoleCountsResponse, RealtimeTopic, RegisterRequest,
+    RegisterResponse, ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest,
+    ResetPasswordResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
     RespondCounterofferRequest, RespondTenderInviteRequest, ReviewOnboardingRequest,
     ReviewOnboardingResponse, SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse,
     SelfProfileScreen, SimpleCatalogUpsertRequest, StloadsOperationsScreen,
@@ -453,6 +455,20 @@ pub async fn mark_conversation_read(
 ) -> Result<ConversationReadResponse, String> {
     let path = format!("/marketplace/conversations/{}/read", conversation_id);
     post_api(&path, &serde_json::json!({})).await
+}
+
+pub async fn update_conversation_presence(
+    conversation_id: u64,
+    payload: &ConversationPresenceRequest,
+) -> Result<ConversationPresenceResponse, String> {
+    let path = format!("/marketplace/conversations/{}/presence", conversation_id);
+    post_api(&path, payload).await
+}
+
+pub async fn update_marketplace_notification_preferences(
+    payload: &MarketplaceNotificationPreferenceRequest,
+) -> Result<MarketplaceNotificationPreferenceResponse, String> {
+    post_api("/marketplace/notification-preferences", payload).await
 }
 
 pub async fn fetch_stloads_operations_screen(

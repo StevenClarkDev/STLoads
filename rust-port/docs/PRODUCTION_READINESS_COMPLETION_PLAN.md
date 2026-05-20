@@ -79,25 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P11: Chat, Notifications, And Marketplace Messaging
-
-**Outcome:** Marketplace communication is scoped, auditable, and event-aware.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\routes\marketplace.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\chat.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\email.rs`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\crates\db\src\email_outbox.rs`
-
-- [ ] Tie chat to posting, offer, tender, or booking.
-- [ ] Enforce participant permissions.
-- [ ] Add read receipts and presence.
-- [ ] Add system messages for offers, booking, documents, tracking, payment, and sync failures.
-- [ ] Add notification preferences.
-- [ ] Add email/outbox retry for critical events.
-- [ ] Ensure messages never leak across tenant or carrier boundaries.
-
 ### Task P12: Execution, Tracking, Exceptions, And Mobile Driver Flow
 
 **Outcome:** Booked carriers can execute loads with tracking and exception reporting.
@@ -400,17 +381,16 @@ Do not call STLoads market-ready until every item below is true:
 1. P7 Tenant/RBAC/session hardening.
 2. P16 Placeholder/demo data purge.
 3. P8 Carrier search and alerts.
-4. P11 Chat and notifications.
-5. P12 Execution and tracking.
-6. P13 Documents.
-7. P14 Payments.
-8. P15 Admin ops and reconciliation.
-11. P17 Realtime.
-12. P18 Observability and audit.
-13. P19 Security hardening.
-14. P20 Build and tests.
-15. P21 IBM deployment.
-16. P22 Launch documentation.
+4. P12 Execution and tracking.
+5. P13 Documents.
+6. P14 Payments.
+7. P15 Admin ops and reconciliation.
+8. P17 Realtime.
+9. P18 Observability and audit.
+10. P19 Security hardening.
+11. P20 Build and tests.
+12. P21 IBM deployment.
+13. P22 Launch documentation.
 
 ## Definition Of Done
 

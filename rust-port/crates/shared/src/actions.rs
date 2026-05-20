@@ -251,6 +251,35 @@ pub struct ConversationReadResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationPresenceRequest {
+    pub state: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationPresenceResponse {
+    pub success: bool,
+    pub conversation_id: i64,
+    pub state: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketplaceNotificationPreferenceRequest {
+    pub email_enabled: bool,
+    pub critical_email_enabled: bool,
+    pub realtime_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketplaceNotificationPreferenceResponse {
+    pub success: bool,
+    pub email_enabled: bool,
+    pub critical_email_enabled: bool,
+    pub realtime_enabled: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolveSyncErrorRequest {
     pub resolution_note: Option<String>,
 }

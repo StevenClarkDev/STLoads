@@ -170,6 +170,41 @@ pub struct CancellationRequestRecord {
     pub updated_at: NaiveDateTime,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ConversationScopeRecord {
+    pub conversation_id: i64,
+    pub load_leg_id: i64,
+    pub shipper_id: i64,
+    pub carrier_id: i64,
+    pub tenant_id: Option<String>,
+    pub posting_id: Option<i64>,
+    pub offer_id: Option<i64>,
+    pub tender_id: Option<i64>,
+    pub booking_award_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketplaceSystemMessageInput<'a> {
+    pub tenant_id: &'a str,
+    pub conversation_id: i64,
+    pub actor_user_id: i64,
+    pub event_type: &'a str,
+    pub reference_type: Option<&'a str>,
+    pub reference_id: Option<i64>,
+    pub body: &'a str,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct MarketplaceNotificationPreferenceRecord {
+    pub tenant_id: String,
+    pub user_id: i64,
+    pub email_enabled: bool,
+    pub critical_email_enabled: bool,
+    pub realtime_enabled: bool,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
 impl OfferRecord {
     pub fn status(&self) -> Option<OfferStatus> {
         OfferStatus::from_legacy_code(self.status_id)
@@ -244,7 +279,16 @@ pub async fn submit_carrier_offer(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        create_system_message_tx(&mut tx, conversation_id, input.created_by, message).await?;
+        create_system_message_tx(
+            &mut tx,
+            conversation_id,
+            input.created_by,
+            message,
+            "offer_submitted",
+            Some("offer"),
+            Some(offer_id),
+        )
+        .await?;
     }
 
     let record = find_submitted_offer_tx(&mut tx, offer_id).await?;
@@ -875,18 +919,30 @@ pub async fn list_recent_conversation_workspace_records(
 
 pub async fn list_recent_conversation_workspace_records_for_user(
     pool: &DbPool,
+    tenant_id: &str,
     viewer_user_id: i64,
     viewer_role: Option<UserRole>,
     limit: i64,
 ) -> Result<Vec<ConversationWorkspaceRecord>, sqlx::Error> {
-    if viewer_role == Some(UserRole::Admin) {
-        return list_recent_conversation_workspace_records(pool, limit).await;
-    }
+    let participant_clause = if viewer_role == Some(UserRole::Admin) {
+        ""
+    } else {
+        "AND (c.shipper_id = $2 OR c.carrier_id = $3)"
+    };
 
     sqlx::query_as::<_, ConversationWorkspaceRecord>(&format!(
-        "{}\n        WHERE c.shipper_id = $1 OR c.carrier_id = $2\n        ORDER BY last_activity_at DESC, c.id DESC\n        LIMIT $3",
-        conversation_workspace_select_sql()
+        "{}\n        WHERE EXISTS (
+            SELECT 1
+            FROM stloads_postings posting
+            WHERE posting.source_leg_id = c.load_leg_id::TEXT
+              AND posting.tenant_id = $1
+              AND posting.deleted_at IS NULL
+        )
+        {}\n        ORDER BY last_activity_at DESC, c.id DESC\n        LIMIT $4",
+        conversation_workspace_select_sql(),
+        participant_clause
     ))
+    .bind(tenant_id)
     .bind(viewer_user_id)
     .bind(viewer_user_id)
     .bind(limit)
@@ -909,19 +965,32 @@ pub async fn find_conversation_workspace_record(
 
 pub async fn find_conversation_workspace_record_for_user(
     pool: &DbPool,
+    tenant_id: &str,
     conversation_id: i64,
     viewer_user_id: i64,
     viewer_role: Option<UserRole>,
 ) -> Result<Option<ConversationWorkspaceRecord>, sqlx::Error> {
-    if viewer_role == Some(UserRole::Admin) {
-        return find_conversation_workspace_record(pool, conversation_id).await;
-    }
+    let participant_clause = if viewer_role == Some(UserRole::Admin) {
+        ""
+    } else {
+        "AND (c.shipper_id = $3 OR c.carrier_id = $4)"
+    };
 
     sqlx::query_as::<_, ConversationWorkspaceRecord>(&format!(
-        "{}\n        WHERE c.id = $1 AND (c.shipper_id = $2 OR c.carrier_id = $3)\n        LIMIT 1",
-        conversation_workspace_select_sql()
+        "{}\n        WHERE c.id = $1
+          AND EXISTS (
+            SELECT 1
+            FROM stloads_postings posting
+            WHERE posting.source_leg_id = c.load_leg_id::TEXT
+              AND posting.tenant_id = $2
+              AND posting.deleted_at IS NULL
+          )
+          {}\n        LIMIT 1",
+        conversation_workspace_select_sql(),
+        participant_clause
     ))
     .bind(conversation_id)
+    .bind(tenant_id)
     .bind(viewer_user_id)
     .bind(viewer_user_id)
     .fetch_optional(pool)
@@ -985,6 +1054,69 @@ pub async fn find_conversation_by_id(
     .await
 }
 
+pub async fn find_authorized_conversation_scope(
+    pool: &DbPool,
+    tenant_id: &str,
+    conversation_id: i64,
+    user_id: i64,
+    is_admin: bool,
+) -> Result<Option<ConversationScopeRecord>, sqlx::Error> {
+    sqlx::query_as::<_, ConversationScopeRecord>(
+        r#"
+        SELECT
+            c.id AS conversation_id,
+            c.load_leg_id,
+            c.shipper_id,
+            c.carrier_id,
+            posting.tenant_id,
+            posting.id AS posting_id,
+            offer.id AS offer_id,
+            tender.id AS tender_id,
+            award.id AS booking_award_id
+        FROM conversations c
+        INNER JOIN stloads_postings posting
+          ON posting.source_leg_id = c.load_leg_id::TEXT
+         AND posting.deleted_at IS NULL
+         AND posting.tenant_id = $1
+        LEFT JOIN LATERAL (
+            SELECT o.id
+            FROM offers o
+            WHERE o.conversation_id = c.id
+              AND o.tenant_id = posting.tenant_id
+            ORDER BY o.id DESC
+            LIMIT 1
+        ) offer ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT t.id
+            FROM tenders t
+            WHERE t.posting_id = posting.id
+              AND t.tenant_id = posting.tenant_id
+            ORDER BY t.id DESC
+            LIMIT 1
+        ) tender ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT ba.id
+            FROM booking_awards ba
+            WHERE ba.posting_id = posting.id
+              AND ba.tenant_id = posting.tenant_id
+              AND ba.status IN ('awarded', 'accepted', 'in_transit')
+            ORDER BY ba.id DESC
+            LIMIT 1
+        ) award ON TRUE
+        WHERE c.id = $2
+          AND ($3 OR c.shipper_id = $4 OR c.carrier_id = $5)
+        LIMIT 1
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(conversation_id)
+    .bind(is_admin)
+    .bind(user_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn latest_message_id_for_conversation(
     pool: &DbPool,
     conversation_id: i64,
@@ -1025,6 +1157,71 @@ pub async fn mark_conversation_read(
     .await?;
 
     find_conversation_read_state(pool, conversation_id, user_id).await
+}
+
+pub async fn create_marketplace_system_message(
+    pool: &DbPool,
+    input: MarketplaceSystemMessageInput<'_>,
+) -> Result<Option<MessageDetailRecord>, sqlx::Error> {
+    let Some(_scope) = find_authorized_conversation_scope(
+        pool,
+        input.tenant_id,
+        input.conversation_id,
+        input.actor_user_id,
+        false,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    let message_id = insert_message_with_meta(
+        pool,
+        input.conversation_id,
+        input.actor_user_id,
+        input.body,
+        json!({
+            "system": true,
+            "event_type": input.event_type,
+            "reference_type": input.reference_type,
+            "reference_id": input.reference_id,
+        }),
+    )
+    .await?;
+
+    find_message_detail(pool, message_id).await
+}
+
+pub async fn upsert_marketplace_notification_preference(
+    pool: &DbPool,
+    tenant_id: &str,
+    user_id: i64,
+    email_enabled: bool,
+    critical_email_enabled: bool,
+    realtime_enabled: bool,
+) -> Result<MarketplaceNotificationPreferenceRecord, sqlx::Error> {
+    sqlx::query_as::<_, MarketplaceNotificationPreferenceRecord>(
+        r#"
+        INSERT INTO marketplace_notification_preferences
+            (tenant_id, user_id, email_enabled, critical_email_enabled, realtime_enabled,
+             created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (tenant_id, user_id) DO UPDATE SET
+            email_enabled = EXCLUDED.email_enabled,
+            critical_email_enabled = EXCLUDED.critical_email_enabled,
+            realtime_enabled = EXCLUDED.realtime_enabled,
+            updated_at = CURRENT_TIMESTAMP
+        RETURNING tenant_id, user_id, email_enabled, critical_email_enabled, realtime_enabled,
+                  created_at, updated_at
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(email_enabled)
+    .bind(critical_email_enabled)
+    .bind(realtime_enabled)
+    .fetch_one(pool)
+    .await
 }
 
 pub async fn find_conversation_read_state(
@@ -1349,6 +1546,77 @@ pub async fn create_message(
     Ok(message)
 }
 
+async fn insert_message_with_meta(
+    pool: &DbPool,
+    conversation_id: i64,
+    user_id: i64,
+    body: &str,
+    meta: Value,
+) -> Result<i64, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let Some(_conversation) = sqlx::query_as::<_, ConversationRecord>(
+        "SELECT id, load_leg_id, shipper_id, carrier_id, created_at, updated_at
+         FROM conversations
+         WHERE id = $1
+         LIMIT 1",
+    )
+    .bind(conversation_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.rollback().await?;
+        return Err(sqlx::Error::RowNotFound);
+    };
+
+    let message_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO messages (conversation_id, user_id, body, meta, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id",
+    )
+    .bind(conversation_id)
+    .bind(user_id)
+    .bind(body)
+    .bind(meta)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE conversations
+         SET updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1",
+    )
+    .bind(conversation_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(message_id)
+}
+
+async fn find_message_detail(
+    pool: &DbPool,
+    message_id: i64,
+) -> Result<Option<MessageDetailRecord>, sqlx::Error> {
+    sqlx::query_as::<_, MessageDetailRecord>(
+        r#"
+        SELECT
+            m.id,
+            m.conversation_id,
+            m.user_id,
+            u.name AS author_name,
+            m.body,
+            m.created_at
+        FROM messages m
+        INNER JOIN users u ON u.id = m.user_id
+        WHERE m.id = $1
+        LIMIT 1
+        "#,
+    )
+    .bind(message_id)
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn marketplace_contract_summary() -> domain::marketplace::MarketplaceModuleContract {
     marketplace_module_contract()
 }
@@ -1422,15 +1690,24 @@ async fn create_system_message_tx(
     conversation_id: i64,
     user_id: i64,
     body: &str,
+    event_type: &str,
+    reference_type: Option<&str>,
+    reference_id: Option<i64>,
 ) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar::<_, i64>(
-        "INSERT INTO messages (conversation_id, user_id, body, created_at, updated_at)
-         VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        "INSERT INTO messages (conversation_id, user_id, body, meta, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id",
     )
     .bind(conversation_id)
     .bind(user_id)
     .bind(body)
+    .bind(json!({
+        "system": true,
+        "event_type": event_type,
+        "reference_type": reference_type,
+        "reference_id": reference_id,
+    }))
     .fetch_one(&mut **tx)
     .await
 }

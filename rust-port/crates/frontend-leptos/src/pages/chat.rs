@@ -7,7 +7,8 @@ use crate::{
 };
 use shared::{
     BookNowRequest, CarrierCancellationRequest, ChatSendMessageRequest, ChatWorkspaceScreen,
-    CreateCounterofferRequest, CreateTenderInviteRequest, OfferReviewDecision, OfferReviewRequest,
+    ConversationPresenceRequest, CreateCounterofferRequest, CreateTenderInviteRequest,
+    MarketplaceNotificationPreferenceRequest, OfferReviewDecision, OfferReviewRequest,
     RealtimeEventKind, RealtimeTopic, RespondCounterofferRequest, RespondTenderInviteRequest,
     SubmitOfferRequest,
 };
@@ -47,6 +48,7 @@ pub fn ChatWorkspacePage() -> impl IntoView {
     let cancellation_award_id = RwSignal::new(String::new());
     let cancellation_reason = RwSignal::new(String::new());
     let marketplace_action_loading = RwSignal::new(false);
+    let notification_action_loading = RwSignal::new(false);
     let refresh_nonce = RwSignal::new(0_u64);
     let ws_connected = RwSignal::new(false);
     let ws_handle = RwSignal::new(None::<AbortHandle>);
@@ -186,6 +188,13 @@ pub fn ChatWorkspacePage() -> impl IntoView {
                     session::invalidate_session(&auth, "Your Rust session expired; sign in again.");
                 }
             }
+            let _ = api::update_conversation_presence(
+                conversation_id,
+                &ConversationPresenceRequest {
+                    state: "online".into(),
+                },
+            )
+            .await;
         });
 
         let _ = latest_message_id;
@@ -420,6 +429,42 @@ pub fn ChatWorkspacePage() -> impl IntoView {
             .map(|user| user.role_key != "carrier")
             .unwrap_or(false)
     });
+
+    let save_notification_preferences = move |_| {
+        if !auth.session.get().authenticated {
+            action_message.set(Some(
+                "Sign in before updating marketplace notifications.".into(),
+            ));
+            return;
+        }
+
+        notification_action_loading.set(true);
+        action_message.set(None);
+        let auth = auth.clone();
+        spawn_local(async move {
+            match api::update_marketplace_notification_preferences(
+                &MarketplaceNotificationPreferenceRequest {
+                    email_enabled: true,
+                    critical_email_enabled: true,
+                    realtime_enabled: true,
+                },
+            )
+            .await
+            {
+                Ok(response) => action_message.set(Some(response.message)),
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            notification_action_loading.set(false);
+        });
+    };
 
     view! {
         <article style="display:grid;gap:1rem;">
@@ -694,6 +739,16 @@ pub fn ChatWorkspacePage() -> impl IntoView {
                                     .into_iter()
                                     .map(|note| view! { <p style="margin:0;">{note}</p> })
                                     .collect_view()}
+                                <div style="display:flex;justify-content:flex-start;margin-top:0.5rem;">
+                                    <button
+                                        type="button"
+                                        style="padding:0.55rem 0.85rem;border-radius:0.75rem;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;cursor:pointer;"
+                                        disabled=move || notification_action_loading.get()
+                                        on:click=save_notification_preferences
+                                    >
+                                        {move || if notification_action_loading.get() { "Saving notifications..." } else { "Enable critical notifications" }}
+                                    </button>
+                                </div>
                             </section>
                         </>
                     })}
