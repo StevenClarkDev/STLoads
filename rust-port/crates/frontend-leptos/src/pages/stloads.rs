@@ -29,56 +29,7 @@ fn tone_style(tone: &str) -> &'static str {
 }
 
 fn default_handoff_payload_json() -> String {
-    serde_json::to_string_pretty(&TmsHandoffPayload {
-        tms_load_id: "TMS-RUST-1001".into(),
-        tenant_id: "demo-tenant".into(),
-        external_handoff_id: Some("handoff-demo-1001".into()),
-        party_type: "shipper".into(),
-        freight_mode: "FTL".into(),
-        equipment_type: "Dry Van".into(),
-        commodity_description: Some("Consumer goods".into()),
-        weight: 42000.0,
-        weight_unit: "lbs".into(),
-        piece_count: Some(22),
-        is_hazardous: Some(false),
-        temperature_data: None,
-        container_data: None,
-        securement_data: None,
-        pickup_city: "Dallas".into(),
-        pickup_state: Some("TX".into()),
-        pickup_zip: Some("75201".into()),
-        pickup_country: "US".into(),
-        pickup_address: "100 Market St, Dallas, TX".into(),
-        pickup_window_start: "2026-04-07T09:00:00Z".into(),
-        pickup_window_end: Some("2026-04-07T12:00:00Z".into()),
-        pickup_instructions: Some("Check in at dock 4".into()),
-        pickup_appointment_ref: Some("PU-1001".into()),
-        dropoff_city: "Memphis".into(),
-        dropoff_state: Some("TN".into()),
-        dropoff_zip: Some("38103".into()),
-        dropoff_country: "US".into(),
-        dropoff_address: "200 Carrier Ave, Memphis, TN".into(),
-        dropoff_window_start: "2026-04-08T15:00:00Z".into(),
-        dropoff_window_end: Some("2026-04-08T18:00:00Z".into()),
-        dropoff_instructions: Some("Call receiver before arrival".into()),
-        dropoff_appointment_ref: Some("DO-1001".into()),
-        board_rate: 2450.0,
-        rate_currency: Some("USD".into()),
-        accessorial_flags: None,
-        bid_type: "Fixed".into(),
-        quote_status: None,
-        tender_posture: None,
-        compliance_passed: Some(true),
-        compliance_summary: None,
-        required_documents_status: None,
-        readiness: Some("ready".into()),
-        pushed_by: Some("ops@stloads.com".into()),
-        push_reason: Some("Admin console publish".into()),
-        source_module: Some("leptos_admin".into()),
-        payload_version: Some("1.0".into()),
-        external_refs: None,
-    })
-    .unwrap_or_else(|_| "{}".into())
+    String::new()
 }
 
 fn parse_optional_f64(value: &str) -> Result<Option<f64>, String> {
@@ -620,7 +571,7 @@ pub fn StloadsOperationsPage() -> impl IntoView {
                                 <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
                                     <button type="button" on:click=push_handoff disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:none;border-radius:0.85rem;background:#111827;color:white;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("push") { "Publishing..." } else { "Push handoff" }}</button>
                                     <button type="button" on:click=queue_handoff disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:1px solid #1d4ed8;border-radius:0.85rem;background:#eff6ff;color:#1d4ed8;cursor:pointer;">{move || if pending_action.get().as_deref() == Some("queue") { "Queueing..." } else { "Queue handoff" }}</button>
-                                    <button type="button" on:click=move |_| handoff_payload_json.set(default_handoff_payload_json()) style="padding:0.65rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;background:white;color:#111827;cursor:pointer;">"Reset sample"</button>
+                                    <button type="button" on:click=move |_| handoff_payload_json.set(String::new()) style="padding:0.65rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;background:white;color:#111827;cursor:pointer;">"Clear payload"</button>
                                 </div>
                             </div>
 
@@ -644,9 +595,9 @@ pub fn StloadsOperationsPage() -> impl IntoView {
                                 <label style="display:grid;gap:0.35rem;"><span>"Tenant ID"</span><input prop:value=move || webhook_tenant_id.get() on:input=move |ev| webhook_tenant_id.set(event_target_value(&ev)) style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
                                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
                                     <label style="display:grid;gap:0.35rem;"><span>"TMS status"</span><input prop:value=move || webhook_status.get() on:input=move |ev| webhook_status.set(event_target_value(&ev)) style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
-                                    <label style="display:grid;gap:0.35rem;"><span>"Rate update"</span><input prop:value=move || webhook_rate_update.get() on:input=move |ev| webhook_rate_update.set(event_target_value(&ev)) placeholder="1260.0" style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
+                                    <label style="display:grid;gap:0.35rem;"><span>"Rate update"</span><input prop:value=move || webhook_rate_update.get() on:input=move |ev| webhook_rate_update.set(event_target_value(&ev)) placeholder="Optional decimal amount" style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
                                 </div>
-                                <label style="display:grid;gap:0.35rem;"><span>"Status at"</span><input prop:value=move || webhook_status_at.get() on:input=move |ev| webhook_status_at.set(event_target_value(&ev)) placeholder="2026-04-06T14:00:00Z" style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
+                                <label style="display:grid;gap:0.35rem;"><span>"Status at"</span><input prop:value=move || webhook_status_at.get() on:input=move |ev| webhook_status_at.set(event_target_value(&ev)) placeholder="ISO timestamp from upstream event" style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;" /></label>
                                 <label style="display:grid;gap:0.35rem;"><span>"Webhook detail"</span><textarea prop:value=move || webhook_detail.get() on:input=move |ev| webhook_detail.set(event_target_value(&ev)) rows="3" style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;resize:vertical;" /></label>
                                 <button type="button" on:click=apply_status_webhook disabled=move || pending_action.get().is_some() style="padding:0.65rem 0.9rem;border:none;border-radius:0.85rem;background:#0f172a;color:white;cursor:pointer;justify-self:start;">{move || if pending_action.get().as_deref() == Some("webhook") { "Applying..." } else { "Apply webhook" }}</button>
                             </div>

@@ -805,13 +805,13 @@ fn render_country_panel(
             <input
                 prop:value=move || country_name.get()
                 on:input=move |ev| country_name.set(event_target_value(&ev))
-                placeholder="United States"
+                placeholder="Country name"
                 style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
             />
             <input
                 prop:value=move || country_iso_code.get()
                 on:input=move |ev| country_iso_code.set(event_target_value(&ev))
-                placeholder="US"
+                placeholder="ISO country code"
                 maxlength="8"
                 style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
             />
@@ -859,7 +859,7 @@ fn render_city_panel(
             <input
                 prop:value=move || city_name.get()
                 on:input=move |ev| city_name.set(event_target_value(&ev))
-                placeholder="Houston"
+                placeholder="City name"
                 style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
             />
             <select
@@ -917,7 +917,7 @@ fn render_location_panel(
             <input
                 prop:value=move || location_name.get()
                 on:input=move |ev| location_name.set(event_target_value(&ev))
-                placeholder="Dallas Yard"
+                placeholder="Location name"
                 style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
             />
             <select

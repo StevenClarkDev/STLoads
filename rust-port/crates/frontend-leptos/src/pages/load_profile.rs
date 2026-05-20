@@ -1161,7 +1161,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
                                                 <label style="display:grid;gap:0.35rem;">
                                                     <span>"Document name"</span>
-                                                    <input type="text" prop:value=move || upload_document_name.get() on:input=move |ev| upload_document_name.set(event_target_value(&ev)) placeholder="Rate confirmation" />
+                                                    <input type="text" prop:value=move || upload_document_name.get() on:input=move |ev| upload_document_name.set(event_target_value(&ev)) placeholder="Document name" />
                                                 </label>
                                                 <label style="display:grid;gap:0.35rem;">
                                                     <span>"Document type"</span>
@@ -1191,7 +1191,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
                                                 <label style="display:grid;gap:0.35rem;">
                                                     <span>"Document name"</span>
-                                                    <input type="text" prop:value=move || document_name.get() on:input=move |ev| document_name.set(event_target_value(&ev)) placeholder="Rate confirmation" />
+                                                    <input type="text" prop:value=move || document_name.get() on:input=move |ev| document_name.set(event_target_value(&ev)) placeholder="Document name" />
                                                 </label>
                                                 <label style="display:grid;gap:0.35rem;">
                                                     <span>"Document type"</span>
@@ -1200,7 +1200,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                             </div>
                                             <label style="display:grid;gap:0.35rem;">
                                                 <span>"Storage path or URL"</span>
-                                                <input type="text" prop:value=move || file_path.get() on:input=move |ev| file_path.set(event_target_value(&ev)) placeholder="ibm-cos://bucket/load-docs/rate-confirmation.pdf" />
+                                                <input type="text" prop:value=move || file_path.get() on:input=move |ev| file_path.set(event_target_value(&ev)) placeholder="Object storage path" />
                                             </label>
                                             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.85rem;">
                                                 <label style="display:grid;gap:0.35rem;">

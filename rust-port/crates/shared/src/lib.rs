@@ -70,8 +70,13 @@ pub use screens::{
     LoadHandoffSummary, LoadHistoryRow, LoadProfileField, LoadProfileLegRow, LoadProfileScreen,
     MismatchCard, OperationalHealthCard, ReconciliationLogRow, StatusCard, StloadsOperationsScreen,
     StloadsReconciliationScreen, SyncIssueRow, SyncIssueSummary, load_board_sort_options,
-    load_board_visibility_options, sample_chat_workspace_screen, sample_load_board_screen,
-    sample_stloads_operations_screen, sample_stloads_reconciliation_screen,
+    load_board_visibility_options,
+};
+
+#[cfg(feature = "demo-fixtures")]
+pub use screens::{
+    sample_chat_workspace_screen, sample_load_board_screen, sample_stloads_operations_screen,
+    sample_stloads_reconciliation_screen,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

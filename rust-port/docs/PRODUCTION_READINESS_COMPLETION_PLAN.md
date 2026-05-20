@@ -79,30 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P16: Frontend Placeholder And Demo Data Purge
-
-**Outcome:** The production frontend displays only real API data or honest empty states.
-
-**Files:**
-
-- Review and modify as needed:
-  - `C:\New folder\STLoads-api-review\rust-port\crates\frontend-leptos\src\pages\*.rs`
-  - `C:\New folder\STLoads-api-review\rust-port\crates\shared\src\screens.rs`
-  - `C:\New folder\STLoads-api-review\rust-port\crates\backend\src\screen_data.rs`
-
-- [ ] Search for demo language:
-
-```powershell
-rg -n "demo|sample|placeholder|mock|fake|lorem|test carrier|test load|preview" "C:\New folder\STLoads-api-review\rust-port\crates"
-```
-
-- [ ] Remove production-visible demo loads.
-- [ ] Remove production-visible fake carriers.
-- [ ] Remove static payments, static compliance statuses, and fake tracking rows.
-- [ ] Replace missing data with clear empty states.
-- [ ] Ensure development-only fixtures are behind an explicit `ENVIRONMENT=development` or test feature.
-- [ ] Add frontend smoke tests/screenshots for empty tenant state.
-
 ### Task P17: Realtime And Event Streaming
 
 **Outcome:** Board updates, offers, messages, and execution events update live without unsafe polling.
@@ -291,14 +267,13 @@ Do not call STLoads market-ready until every item below is true:
 ## Recommended Execution Order
 
 1. P7 Tenant/RBAC/session hardening.
-2. P16 Placeholder/demo data purge.
-3. P8 Carrier search and alerts.
-4. P17 Realtime.
-5. P18 Observability and audit.
-6. P19 Security hardening.
-7. P20 Build and tests.
-8. P21 IBM deployment.
-9. P22 Launch documentation.
+2. P8 Carrier search and alerts.
+3. P17 Realtime.
+4. P18 Observability and audit.
+5. P19 Security hardening.
+6. P20 Build and tests.
+7. P21 IBM deployment.
+8. P22 Launch documentation.
 
 ## Definition Of Done
 

@@ -673,7 +673,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
                             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;align-items:start;">
                                 <label style="display:grid;gap:0.35rem;grid-column:span 2;">
                                     <span>"Load title"</span>
-                                    <input type="text" prop:value=move || title.get() on:input=move |ev| title.set(event_target_value(&ev)) placeholder="Dallas to Joliet produce reload" style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;" />
+                                    <input type="text" prop:value=move || title.get() on:input=move |ev| title.set(event_target_value(&ev)) placeholder="Lane title from customer order" style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;" />
                                 </label>
 
                                 <label style="display:grid;gap:0.35rem;">
@@ -940,7 +940,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
                                                                     item.price = value.clone();
                                                                 }
                                                             });
-                                                        } placeholder="2450" style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;" />
+                                                        } placeholder="Quoted rate amount" style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;" />
                                                     </label>
                                                 </div>
                                             </section>

@@ -518,6 +518,7 @@ pub struct ChatWorkspaceScreen {
     pub notes: Vec<String>,
 }
 
+#[cfg(feature = "demo-fixtures")]
 pub fn sample_stloads_operations_screen() -> StloadsOperationsScreen {
     StloadsOperationsScreen {
         title: "STLOADS Operations".into(),
@@ -564,6 +565,7 @@ pub fn sample_stloads_operations_screen() -> StloadsOperationsScreen {
     }
 }
 
+#[cfg(feature = "demo-fixtures")]
 pub fn sample_stloads_reconciliation_screen() -> StloadsReconciliationScreen {
     StloadsReconciliationScreen {
         title: "STLOADS Reconciliation".into(),
@@ -596,6 +598,7 @@ pub fn sample_stloads_reconciliation_screen() -> StloadsReconciliationScreen {
     }
 }
 
+#[cfg(feature = "demo-fixtures")]
 pub fn sample_load_board_screen() -> LoadBoardScreen {
     LoadBoardScreen {
         title: "Manage Loads".into(),
@@ -687,6 +690,7 @@ pub fn load_board_visibility_options() -> Vec<LoadBoardOption> {
     ]
 }
 
+#[cfg(feature = "demo-fixtures")]
 pub fn sample_chat_workspace_screen() -> ChatWorkspaceScreen {
     ChatWorkspaceScreen {
         title: "Private Chat".into(),

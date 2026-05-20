@@ -32,7 +32,6 @@ use shared::{
     LoadBoardTab, MismatchCard, OperationalHealthCard, Pagination, ReconciliationLogRow,
     StatusCard, StloadsOperationsScreen, StloadsReconciliationScreen, SyncIssueRow,
     SyncIssueSummary, load_board_sort_options, load_board_visibility_options,
-    sample_stloads_operations_screen, sample_stloads_reconciliation_screen,
 };
 use tracing::warn;
 
@@ -111,7 +110,7 @@ pub async fn load_board_screen(
             "Marketplace access requires a Rust session.",
             vec![
                 "Sign in before viewing dispatch inventory from the Rust port.".into(),
-                "This screen intentionally avoids sample marketplace data during staged cutover."
+                "This screen intentionally avoids non-production marketplace data during staged cutover."
                     .into(),
             ],
             Some(("Open Rust Login".into(), "/auth/login".into())),
@@ -177,7 +176,7 @@ pub async fn chat_workspace_screen(
             state,
             vec![
                 "Sign in before opening private chat from the Rust port.".into(),
-                "This screen intentionally avoids sample conversation data during staged cutover."
+                "This screen intentionally avoids non-production conversation data during staged cutover."
                     .into(),
             ],
         );
@@ -230,7 +229,8 @@ pub async fn dispatch_desk_screen(
             "Dispatch desk access requires a Rust session.",
             vec![
                 "Sign in before opening quote, tender, facility, closeout, or collections boards from the Rust port.".into(),
-                "This route intentionally avoids sample dispatch desk data during staged cutover.".into(),
+                "This route intentionally avoids non-production dispatch desk data during staged cutover."
+                    .into(),
             ],
         );
     };
@@ -291,7 +291,7 @@ pub async fn stloads_operations_screen(
         Some(pool) => match build_stloads_operations_screen(pool, status_filter.clone()).await {
             Ok(screen) => screen,
             Err(error) => {
-                warn!(error = %error, "failed to build DB-backed STLOADS operations screen; serving fallback sample");
+                warn!(error = %error, "failed to build DB-backed STLOADS operations screen; serving empty fallback");
                 fallback_operations_screen(state, status_filter, Some(error.to_string()))
             }
         },
@@ -308,7 +308,7 @@ pub async fn stloads_reconciliation_screen(
             match build_stloads_reconciliation_screen(pool, action_filter.clone()).await {
                 Ok(screen) => screen,
                 Err(error) => {
-                    warn!(error = %error, "failed to build DB-backed STLOADS reconciliation screen; serving fallback sample");
+                    warn!(error = %error, "failed to build DB-backed STLOADS reconciliation screen; serving empty fallback");
                     fallback_reconciliation_screen(state, action_filter, Some(error.to_string()))
                 }
             }
@@ -575,7 +575,7 @@ async fn build_chat_workspace_screen(
     let Some(active_conversation) = active_conversation else {
         let mut notes = vec![
             "No authorized conversations exist yet for the authenticated account, so the Rust workspace is returning an empty chat shell.".into(),
-            "This route now stays session-scoped rather than falling back to shared sample conversation data.".into(),
+            "This route now stays session-scoped rather than falling back to shared conversation fixtures.".into(),
         ];
 
         if let Some(public_base_url) = state.config.public_base_url.as_ref() {
@@ -2042,20 +2042,14 @@ fn fallback_operations_screen(
     status_filter: Option<String>,
     error: Option<String>,
 ) -> StloadsOperationsScreen {
-    let mut screen = sample_stloads_operations_screen();
-    screen.active_filter = status_filter.or(screen.active_filter);
-    screen.notes.insert(
-        0,
-        format!(
-            "Serving sample operations data because the database is {} on {}.",
-            state.database_state(),
-            state.config.deployment_target
-        ),
-    );
+    let mut screen = empty_operations_screen(status_filter);
+    screen.notes.push(format!(
+        "Operations data is unavailable because the database is {} on {}.",
+        state.database_state(),
+        state.config.deployment_target
+    ));
     if let Some(error) = error {
-        screen
-            .notes
-            .insert(1, format!("Fallback reason: {}", error));
+        screen.notes.push(format!("Data source error: {}", error));
     }
     screen
 }
@@ -2065,22 +2059,170 @@ fn fallback_reconciliation_screen(
     action_filter: Option<String>,
     error: Option<String>,
 ) -> StloadsReconciliationScreen {
-    let mut screen = sample_stloads_reconciliation_screen();
-    screen.active_action = Some(action_filter.unwrap_or_else(|| "all".into()));
-    screen.callouts.insert(
-        0,
-        format!(
-            "Serving sample reconciliation data because the database is {} on {}.",
-            state.database_state(),
-            state.config.deployment_target
-        ),
-    );
+    let mut screen = empty_reconciliation_screen(action_filter.unwrap_or_else(|| "all".into()));
+    screen.callouts.push(format!(
+        "Reconciliation data is unavailable because the database is {} on {}.",
+        state.database_state(),
+        state.config.deployment_target
+    ));
     if let Some(error) = error {
         screen
             .callouts
-            .insert(1, format!("Fallback reason: {}", error));
+            .push(format!("Data source error: {}", error));
     }
     screen
+}
+
+fn empty_operations_screen(status_filter: Option<String>) -> StloadsOperationsScreen {
+    StloadsOperationsScreen {
+        title: "STLOADS Operations".into(),
+        active_filter: status_filter.clone(),
+        sync_issue_summary: SyncIssueSummary {
+            total: 0,
+            critical: 0,
+            error: 0,
+            warning: 0,
+        },
+        health_cards: vec![
+            health_card(
+                "queue_depth",
+                "Queue Depth",
+                0,
+                "No queue data is available.",
+            ),
+            health_card(
+                "webhook_failures",
+                "Webhook Failures",
+                0,
+                "No webhook failure data is available.",
+            ),
+            health_card(
+                "stale_postings",
+                "Stale Postings",
+                0,
+                "No stale posting data is available.",
+            ),
+            health_card(
+                "stale_tracking",
+                "Stale Tracking",
+                0,
+                "No stale tracking data is available.",
+            ),
+            health_card(
+                "payment_failures",
+                "Payment Failures",
+                0,
+                "No payment failure data is available.",
+            ),
+            health_card(
+                "document_failures",
+                "Document Failures",
+                0,
+                "No document failure data is available.",
+            ),
+        ],
+        status_cards: STATUS_ORDER
+            .iter()
+            .map(|(key, label, tone, note)| StatusCard {
+                key: (*key).into(),
+                label: (*label).into(),
+                value: 0,
+                tone: (*tone).into(),
+                note: Some((*note).into()),
+                is_active: status_filter.as_deref() == Some(*key),
+            })
+            .collect(),
+        recent_sync_issues: Vec::new(),
+        dead_letter_events: Vec::new(),
+        handoffs: Vec::new(),
+        notes: vec!["No production operations records are available for this tenant.".into()],
+        pagination: Pagination {
+            page: 1,
+            per_page: 25,
+            total: 0,
+        },
+    }
+}
+
+fn empty_reconciliation_screen(active_action: String) -> StloadsReconciliationScreen {
+    let mut action_filters = vec!["all".to_string()];
+    action_filters.extend(
+        reconciliation_action_descriptors()
+            .iter()
+            .map(|descriptor| descriptor.legacy_label.to_string()),
+    );
+
+    StloadsReconciliationScreen {
+        title: "STLOADS Reconciliation".into(),
+        mismatch_cards: vec![
+            MismatchCard {
+                label: "Published".into(),
+                value: 0,
+                tone: "success".into(),
+                note: "No active board postings are available.".into(),
+            },
+            MismatchCard {
+                label: "TMS Cancelled".into(),
+                value: 0,
+                tone: "danger".into(),
+                note: "No cancelled upstream mismatches are available.".into(),
+            },
+            MismatchCard {
+                label: "TMS Delivered".into(),
+                value: 0,
+                tone: "warning".into(),
+                note: "No delivered upstream mismatches are available.".into(),
+            },
+            MismatchCard {
+                label: "TMS Invoiced/Settled".into(),
+                value: 0,
+                tone: "info".into(),
+                note: "No finance mismatch data is available.".into(),
+            },
+            MismatchCard {
+                label: "No TMS Status".into(),
+                value: 0,
+                tone: "secondary".into(),
+                note: "No missing upstream status data is available.".into(),
+            },
+            MismatchCard {
+                label: "Stale 30d+".into(),
+                value: 0,
+                tone: "dark".into(),
+                note: "No stale handoff data is available.".into(),
+            },
+            MismatchCard {
+                label: "ATMP Delivered".into(),
+                value: 0,
+                tone: "success".into(),
+                note: "No delivered callback data is available.".into(),
+            },
+            MismatchCard {
+                label: "ATMP Queue".into(),
+                value: 0,
+                tone: "primary".into(),
+                note: "No queued callback data is available.".into(),
+            },
+            MismatchCard {
+                label: "ATMP Dead Letter".into(),
+                value: 0,
+                tone: "danger".into(),
+                note: "No dead-letter callback data is available.".into(),
+            },
+        ],
+        action_filters,
+        active_action: Some(active_action),
+        error_breakdown: Vec::new(),
+        logs: Vec::new(),
+        callouts: vec![
+            "No production reconciliation records are available for this tenant.".into(),
+        ],
+        pagination: Pagination {
+            page: 1,
+            per_page: 30,
+            total: 0,
+        },
+    }
 }
 
 fn normalize_load_board_tab(value: Option<&str>) -> String {
@@ -2433,5 +2575,125 @@ fn transition_label(from: Option<&str>, to: Option<&str>) -> Option<String> {
         )),
         (Some(from), None) => Some(title_case_legacy_label(from)),
         (None, Some(to)) => Some(title_case_legacy_label(to)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::broadcast;
+
+    use crate::{
+        config::RuntimeConfig, document_storage::DocumentStorageService, email::EmailService,
+        integration_auth::IntegrationAuthState, realtime_bus::RoutedRealtimeEvent, state::AppState,
+        stripe::StripeService,
+    };
+
+    fn no_pool_state() -> AppState {
+        let config = RuntimeConfig {
+            bind_addr: "127.0.0.1".into(),
+            port: 3001,
+            deployment_target: "backend-test".into(),
+            environment: "production".into(),
+            public_base_url: Some("https://stloads.test".into()),
+            cors_allowed_origins: vec!["https://stloads.test".into()],
+            run_migrations: false,
+            database_url: None,
+            database_schema: None,
+            document_storage_backend: "local".into(),
+            document_storage_root: "./runtime/test-documents".into(),
+            object_storage_bucket: None,
+            object_storage_region: "us-south".into(),
+            object_storage_endpoint: None,
+            object_storage_access_key_id: None,
+            object_storage_secret_access_key: None,
+            object_storage_session_token: None,
+            object_storage_force_path_style: false,
+            object_storage_prefix: "tests".into(),
+            stripe_webhook_shared_secret: None,
+            stripe_webhook_connect_secret: None,
+            stripe_secret_key: None,
+            stripe_api_base_url: "https://api.stripe.com/v1".into(),
+            stripe_connect_refresh_url: None,
+            stripe_connect_return_url: None,
+            stripe_live_transfers_required: false,
+            atmp_outbound_base_url: None,
+            atmp_integration_shared_secret: None,
+            atmp_integration_require_signature: false,
+            atmp_integration_replay_window_seconds: 300,
+            atmp_integration_rate_limit_per_minute: 120,
+            atmp_outbound_worker_enabled: false,
+            atmp_outbound_interval_seconds: 30,
+            atmp_outbound_batch_size: 25,
+            atmp_outbound_max_attempts: 8,
+            tms_shared_secret: None,
+            tms_reconciliation_worker_enabled: false,
+            tms_reconciliation_interval_seconds: 21_600,
+            tms_retry_worker_enabled: false,
+            tms_retry_interval_seconds: 300,
+            tms_retry_batch_size: 10,
+            tms_retry_max_attempts: 5,
+            tms_stale_handoff_days: 30,
+            mail_mailer: "log".into(),
+            mail_host: None,
+            mail_port: 587,
+            mail_username: None,
+            mail_password: None,
+            mail_encryption: None,
+            mail_from_address: "noreply@stloads.test".into(),
+            mail_from_name: "STLoads".into(),
+            mail_fail_open: true,
+            mail_outbox_enabled: false,
+            mail_outbox_worker_enabled: false,
+            mail_outbox_batch_size: 25,
+            mail_outbox_retry_interval_seconds: 60,
+            mail_outbox_max_attempts: 5,
+            portal_url: "https://stloads.test".into(),
+        };
+        let (realtime_tx, _) = broadcast::channel::<RoutedRealtimeEvent>(16);
+        AppState {
+            document_storage: DocumentStorageService::from_config(&config),
+            email: EmailService::from_config_with_pool(&config, None),
+            stripe: StripeService::from_config(&config),
+            integration_auth: IntegrationAuthState::default(),
+            config,
+            pool: None,
+            realtime_tx,
+        }
+    }
+
+    #[tokio::test]
+    async fn operations_fallback_uses_empty_production_state_without_sample_rows() {
+        let state = no_pool_state();
+
+        let screen = super::stloads_operations_screen(&state, Some("published".into())).await;
+
+        assert_eq!(screen.sync_issue_summary.total, 0);
+        assert!(screen.recent_sync_issues.is_empty());
+        assert!(screen.dead_letter_events.is_empty());
+        assert!(screen.handoffs.is_empty());
+        assert_eq!(screen.pagination.total, 0);
+        assert!(
+            screen
+                .notes
+                .iter()
+                .all(|note| !note.to_ascii_lowercase().contains("sample"))
+        );
+    }
+
+    #[tokio::test]
+    async fn reconciliation_fallback_uses_empty_production_state_without_sample_rows() {
+        let state = no_pool_state();
+
+        let screen = super::stloads_reconciliation_screen(&state, Some("all".into())).await;
+
+        assert!(screen.logs.is_empty());
+        assert!(screen.error_breakdown.is_empty());
+        assert_eq!(screen.pagination.total, 0);
+        assert!(
+            screen
+                .callouts
+                .iter()
+                .all(|note| !note.to_ascii_lowercase().contains("sample"))
+        );
     }
 }

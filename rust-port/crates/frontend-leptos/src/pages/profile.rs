@@ -584,7 +584,7 @@ pub fn ProfilePage() -> impl IntoView {
                                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
                                         <label style="display:grid;gap:0.35rem;">
                                             <span>"Document name"</span>
-                                            <input type="text" prop:value=move || upload_document_name.get() on:input=move |ev| upload_document_name.set(event_target_value(&ev)) placeholder="Certificate of Insurance" />
+                                            <input type="text" prop:value=move || upload_document_name.get() on:input=move |ev| upload_document_name.set(event_target_value(&ev)) placeholder="Document name" />
                                         </label>
                                         <label style="display:grid;gap:0.35rem;">
                                             <span>"Document type"</span>
@@ -620,7 +620,7 @@ pub fn ProfilePage() -> impl IntoView {
                                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
                                         <label style="display:grid;gap:0.35rem;">
                                             <span>"Document name"</span>
-                                            <input type="text" prop:value=move || editing_document_name.get() on:input=move |ev| editing_document_name.set(event_target_value(&ev)) placeholder="Certificate of Insurance" />
+                                            <input type="text" prop:value=move || editing_document_name.get() on:input=move |ev| editing_document_name.set(event_target_value(&ev)) placeholder="Document name" />
                                         </label>
                                         <label style="display:grid;gap:0.35rem;">
                                             <span>"Document type"</span>
