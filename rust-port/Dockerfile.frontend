@@ -1,5 +1,7 @@
 FROM registry.access.redhat.com/ubi9/ubi:latest AS builder
 WORKDIR /app
+ARG BUILD_REVISION=local
+ARG BUILD_CREATED=unknown
 
 RUN dnf install -y \
         ca-certificates \
@@ -30,11 +32,18 @@ RUN trunk build --release \
     && cp -R assets/images dist/assets/
 
 FROM nginx:1.27-alpine AS runtime
+ARG BUILD_REVISION=local
+ARG BUILD_CREATED=unknown
+LABEL org.opencontainers.image.title="STLoads Rust Frontend" \
+      org.opencontainers.image.description="STLoads Leptos frontend for IBM Code Engine" \
+      org.opencontainers.image.revision="${BUILD_REVISION}" \
+      org.opencontainers.image.created="${BUILD_CREATED}"
 RUN apk add --no-cache gettext
 COPY nginx.frontend.conf.template /etc/nginx/templates/default.conf.template
 COPY runtime-config.js.template /app/templates/runtime-config.js.template
 COPY frontend-entrypoint.sh /frontend-entrypoint.sh
 COPY --from=builder /app/crates/frontend-leptos/dist /usr/share/nginx/html
+RUN chmod +x /frontend-entrypoint.sh
 
 ENV BACKEND_UPSTREAM=https://stloads-rust-backend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud \
     BACKEND_API_BASE_URL= \

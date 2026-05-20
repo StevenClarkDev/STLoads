@@ -1,5 +1,7 @@
 FROM registry.access.redhat.com/ubi9/ubi:latest AS builder
 WORKDIR /app
+ARG BUILD_REVISION=local
+ARG BUILD_CREATED=unknown
 
 RUN dnf install -y \
         ca-certificates \
@@ -25,6 +27,12 @@ COPY crates ./crates
 RUN cargo build --locked --release -p backend
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest AS runtime
+ARG BUILD_REVISION=local
+ARG BUILD_CREATED=unknown
+LABEL org.opencontainers.image.title="STLoads Rust Backend" \
+      org.opencontainers.image.description="STLoads Axum backend for IBM Code Engine" \
+      org.opencontainers.image.revision="${BUILD_REVISION}" \
+      org.opencontainers.image.created="${BUILD_CREATED}"
 RUN microdnf install -y ca-certificates tzdata shadow-utils \
     && microdnf clean all \
     && update-ca-trust \

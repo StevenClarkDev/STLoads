@@ -1,12 +1,15 @@
 # IBM Code Engine Deployment Guide
 
-This is the simplest first deployment path for the current Rust port.
+This is the repeatable deployment path for the STLoads Rust staging stack on IBM Code Engine.
 
 ## What We Deploy Right Now
 
-Today, the deployable Rust workload is the Axum backend API in `crates/backend`.
+The staging stack has two Code Engine applications:
 
-That means this guide gets you to a live backend with:
+- `stloads-rust-backend`: Axum backend API in `crates/backend`.
+- `stloads-rust-frontend`: Leptos frontend in `crates/frontend-leptos`, served by nginx and proxied to the backend.
+
+The backend provides:
 - auth/session routes
 - onboarding and KYC routes
 - load board APIs
@@ -19,27 +22,30 @@ That means this guide gets you to a live backend with:
 - realtime websocket endpoint
 - protected document upload and download routed through IBM Cloud Object Storage-compatible storage
 
-The Leptos frontend crate is not yet packaged as its own deployable IBM workload, so the safest first IBM milestone is: deploy the backend first, point it at IBM PostgreSQL and IBM Cloud Object Storage, then run the smoke script and staging checklist against the live Code Engine URL.
+The frontend provides the Rust operator and marketplace surface and is deployed from `Dockerfile.frontend`.
 
 ## Files Added For IBM
 
 - `Dockerfile`: backend container image for Code Engine.
+- `Dockerfile.frontend`: frontend container image for Code Engine.
 - `.dockerignore`: keeps local build contexts small.
 - `.ceignore`: keeps Code Engine local-source uploads small.
 - `.env.ibm.example`: runtime variable template for IBM.
 - `scripts/seed_postgres_smoke_data.sql`: disposable PostgreSQL smoke dataset.
 - `scripts/smoke_test_backend.ps1`: end-to-end backend smoke run, now including execution lifecycle checks.
+- `scripts/deploy_code_engine_staging.ps1`: repeatable local-source deploy wrapper for backend and frontend.
+- `scripts/production_readiness_check.ps1`: build/test/readiness gate.
 - `docs/IBM_STAGING_SMOKE_CHECKLIST.md`: hosted validation checklist for PostgreSQL plus IBM COS.
 
-## Recommended First Path
+## Recommended Path
 
-Use Code Engine local-source deployment from your workstation.
+Use Code Engine local-source deployment from your workstation through the deploy wrapper.
 
 Why this is the easiest first path:
-- you do not need to learn Rust-specific IBM packaging first
-- you do not need Docker for the first deploy
-- Code Engine can build the image from the local `rust-port` folder and store it in IBM Container Registry automatically
-- the same Dockerfile can still be reused later for CI/CD
+- Code Engine builds both images and pushes them into IBM Container Registry.
+- Backend and frontend commands stay consistent across deploys.
+- Runtime secrets remain in Code Engine secrets, not source.
+- The same Dockerfiles can still be reused later for CI/CD.
 
 ## Prerequisites
 
@@ -149,14 +155,37 @@ ibmcloud ce secret create --name stloads-rust-runtime --from-env-file .\rust-por
 
 ## Step 6: Deploy From Local Source
 
-Run this from the repo root (`e:\Projects\STLoads`).
+Run this from `C:\New folder\STLoads-api-review\rust-port`.
 
 ```powershell
-ibmcloud ce app create `
+powershell -ExecutionPolicy Bypass -File ".\scripts\deploy_code_engine_staging.ps1" `
+  -ProjectName "stloads-rust-staging" `
+  -RuntimeSecretName "stloads-rust-runtime" `
+  -BackendAppName "stloads-rust-backend" `
+  -FrontendAppName "stloads-rust-frontend" `
+  -BackendOutboundBaseUrl "https://dispatch-api.268io0zej89v.us-south.codeengine.appdomain.cloud" `
+  -FrontendPublicUrl "https://portal.stloads.com" `
+  -GoogleMapsApiKey "YOUR_BROWSER_RESTRICTED_GOOGLE_KEY"
+```
+
+The script:
+- selects the `stloads-rust-staging` Code Engine project
+- creates a clean build context outside `rust-port`
+- deploys the backend with `Dockerfile`
+- deploys the frontend with `Dockerfile.frontend`
+- keeps the backend on `stloads-rust-runtime`
+- uses the cluster-local backend upstream for frontend proxy calls
+- cleans the temporary build context after the deploy
+
+If you need to run the raw backend command:
+
+```powershell
+ibmcloud ce app update `
   --name stloads-rust-backend `
   --build-source .\rust-port `
   --build-dockerfile Dockerfile `
   --env-from-secret stloads-rust-runtime `
+  --env ATMP_OUTBOUND_BASE_URL=https://dispatch-api.268io0zej89v.us-south.codeengine.appdomain.cloud `
   --port 8080 `
   --cpu 1 `
   --memory 2G `
@@ -165,20 +194,44 @@ ibmcloud ce app create `
   --request-timeout 600
 ```
 
+If you need to run the raw frontend command:
+
+```powershell
+ibmcloud ce app update `
+  --name stloads-rust-frontend `
+  --build-source .\rust-port `
+  --build-dockerfile Dockerfile.frontend `
+  --env BACKEND_UPSTREAM=http://stloads-rust-backend.28hm0zrfwqqw.svc.cluster.local `
+  --env BACKEND_API_BASE_URL= `
+  --env FRONTEND_PUBLIC_URL=https://portal.stloads.com `
+  --env GOOGLE_MAPS_API_KEY=YOUR_BROWSER_RESTRICTED_GOOGLE_KEY `
+  --port 8080 `
+  --cpu 1 `
+  --memory 2G `
+  --min-scale 1 `
+  --max-scale 2 `
+  --request-timeout 600 `
+  --wait
+```
+
 Notes:
 - `--build-source .\rust-port` tells Code Engine to upload the Rust workspace from your local machine.
-- `--build-dockerfile Dockerfile` tells Code Engine to use the Dockerfile in `rust-port`.
+- `--build-dockerfile Dockerfile` or `Dockerfile.frontend` selects the backend or frontend build.
 - `--request-timeout 600` is important because this app includes websocket and realtime behavior and Code Engine caps app connections at 10 minutes.
 - `--min-scale 1` avoids cold-start pain during the first admin, chat, document, and execution testing pass.
+- The frontend `BACKEND_UPSTREAM` points at the backend cluster-local URL so browser traffic stays on the frontend host while API traffic is proxied internally.
+- The frontend build can run longer than the Code Engine CLI wait window. Submit it without `--wait`, then use `ibmcloud ce buildrun get` or `ibmcloud ce app get --name stloads-rust-frontend` until the new revision is ready.
 
 ## Step 7: Get The Live URL And Logs
 
 ```powershell
 ibmcloud ce app get --name stloads-rust-backend
+ibmcloud ce app get --name stloads-rust-frontend
 ibmcloud ce app logs --name stloads-rust-backend --follow
+ibmcloud ce app logs --name stloads-rust-frontend --follow
 ```
 
-The `app get` output includes the default Code Engine public URL.
+The `app get` output includes the default Code Engine public URLs and the pinned image digests for the active revisions.
 
 ## Step 8: Seed IBM PostgreSQL And Run The Hosted Smoke Pass
 
@@ -192,6 +245,22 @@ Then run the smoke test against the live Code Engine URL:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "rust-port\scripts\smoke_test_backend.ps1" -BaseUrl "https://YOUR-CODE-ENGINE-URL"
+```
+
+For the full hosted cutover bundle:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "rust-port\scripts\verify_backend_cutover_hosted.ps1" `
+  -BaseUrl "https://stloads-rust-backend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud" `
+  -FrontendUrl "https://stloads-rust-frontend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud"
+```
+
+For the P20/P21 readiness gate:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "rust-port\scripts\production_readiness_check.ps1" `
+  -BackendBaseUrl "https://stloads-rust-backend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud" `
+  -HostedFrontendUrl "https://stloads-rust-frontend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud"
 ```
 
 Important notes:
@@ -249,18 +318,10 @@ ibmcloud ce domainmapping create --domain-name api.example.com --target stloads-
 Every time you want to redeploy new backend code:
 
 ```powershell
-ibmcloud ce app update `
-  --name stloads-rust-backend `
-  --build-source .\rust-port `
-  --build-dockerfile Dockerfile `
-  --env-from-secret stloads-rust-runtime `
-  --port 8080 `
-  --cpu 1 `
-  --memory 2G `
-  --min-scale 1 `
-  --max-scale 2 `
-  --request-timeout 600
+powershell -ExecutionPolicy Bypass -File ".\rust-port\scripts\deploy_code_engine_staging.ps1"
 ```
+
+Use `-SkipBackend` or `-SkipFrontend` only when intentionally rolling one app.
 
 ## If You Prefer Docker Later
 
@@ -268,11 +329,18 @@ The included `Dockerfile` also supports a manual image workflow.
 
 That path is useful later for CI/CD, but for the first IBM deployment the local-source Code Engine flow is simpler and less error-prone.
 
-## Important Current Limitation
+## Production Secret Rule
 
-The backend is ready for this first IBM deployment path.
+Do not commit production secrets or generated runtime env files. Runtime values belong in the Code Engine secret named `stloads-rust-runtime`. Browser-safe frontend values such as a browser-restricted Google Maps key can be passed to the frontend app as Code Engine env vars.
 
-The frontend is not yet packaged as its own finalized IBM workload, so treat this as:
-- backend deployment first
-- IBM PostgreSQL plus IBM Cloud Object Storage validation second
-- frontend hosting and cutover after that
+## Required P21 Signoff
+
+Do not call a staging deploy complete until:
+- backend app is deployed and ready
+- frontend app is deployed and ready
+- `/health` returns HTTP 200
+- `/readiness` returns HTTP 200
+- frontend root returns HTTP 200
+- security headers are present on `/health`
+- hosted frontend demo-data scan passes
+- `verify_backend_cutover_hosted.ps1` or the equivalent smoke bundle validates login, carrier board search, offer/book, ATMP publish, and outbound retry behavior

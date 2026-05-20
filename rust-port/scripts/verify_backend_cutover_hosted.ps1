@@ -211,6 +211,19 @@ function Invoke-DbNonQuery {
     throw 'Neither a local psql client nor a reachable Docker daemon is available for database writes.'
 }
 
+function Invoke-FrontendRootSmoke {
+    param([Parameter(Mandatory = $true)][string]$Url)
+
+    $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 60
+    if ($response.StatusCode -ne 200) {
+        throw "Frontend root returned HTTP $($response.StatusCode)."
+    }
+    if ([string]::IsNullOrWhiteSpace($response.Content)) {
+        throw 'Frontend root returned an empty body.'
+    }
+    return $response.StatusCode
+}
+
 function Require-EnvValue {
     param(
         [string[]]$Paths,
@@ -236,8 +249,20 @@ $seedMethod = Invoke-SeedDatabase -DbUrl $resolvedDbUrl
 Write-Step 'Running hosted API smoke validation'
 & (Join-Path $PSScriptRoot 'smoke_test_backend.ps1') -BaseUrl $BaseUrl
 
+Write-Step 'Verifying hosted frontend root'
+$frontendStatus = Invoke-FrontendRootSmoke -Url $FrontendUrl
+
 Write-Step 'Running hosted Rust role and lifecycle matrix validation'
 & (Join-Path $PSScriptRoot 'verify_rust_role_matrix.ps1') -BaseUrl $BaseUrl -FrontendUrl $FrontendUrl
+
+Write-Step 'Running production readiness gate against hosted frontend'
+& (Join-Path $PSScriptRoot 'production_readiness_check.ps1') `
+    -HostedFrontendUrl $FrontendUrl `
+    -SkipEnvCheck `
+    -SkipClippy `
+    -SkipFrontendBuild `
+    -SkipHostedSmoke `
+    -SkipDbBackedTests
 
 Write-Step 'Running hosted SMTP validation'
 & (Join-Path $PSScriptRoot 'verify_smtp_hosted.ps1') -BaseUrl $BaseUrl -DatabaseUrl $resolvedDbUrl
@@ -265,6 +290,8 @@ Write-Step 'Hosted backend cutover summary'
     first_seed_method = $seedMethod
     second_seed_method = $secondSeedMethod
     smoke_test_backend = 'ok'
+    frontend_root_status = $frontendStatus
+    production_readiness_gate = 'ok'
     rust_role_matrix = 'ok'
     smtp_hosted = 'ok'
     tms_workers_hosted = 'ok'

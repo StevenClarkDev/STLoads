@@ -79,32 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task P21: IBM Code Engine Deployment
-
-**Outcome:** Backend and frontend deploy cleanly and repeatably to IBM.
-
-**Files:**
-
-- Modify: `C:\New folder\STLoads-api-review\rust-port\Dockerfile`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\Dockerfile.frontend`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\docs\IBM_CODE_ENGINE_DEPLOYMENT.md`
-- Modify: `C:\New folder\STLoads-api-review\rust-port\scripts\verify_backend_cutover_hosted.ps1`
-
-- [ ] Build backend image.
-- [ ] Build frontend image.
-- [ ] Push images to IBM Container Registry.
-- [ ] Deploy backend to Code Engine.
-- [ ] Deploy frontend to Code Engine.
-- [ ] Set production secrets in Code Engine, not in source.
-- [ ] Verify `/health`.
-- [ ] Verify `/readiness`.
-- [ ] Verify frontend loads.
-- [ ] Verify login.
-- [ ] Verify ATMP publish smoke.
-- [ ] Verify carrier board search.
-- [ ] Verify offer/book smoke.
-- [ ] Verify outbound ATMP event retry path in staging.
-
 ### Task P22: Launch Documentation And Partner Readiness
 
 **Outcome:** STLoads has enough product, support, and sales documentation to go to market.
@@ -180,8 +154,7 @@ Do not call STLoads market-ready until every item below is true:
 
 1. P7 Tenant/RBAC/session hardening.
 2. P8 Carrier search and alerts.
-3. P21 IBM deployment.
-4. P22 Launch documentation.
+3. P22 Launch documentation.
 
 ## Definition Of Done
 
