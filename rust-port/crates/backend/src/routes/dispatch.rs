@@ -61,8 +61,10 @@ struct LoadBoardQuery {
     tab: Option<String>,
     origin: Option<String>,
     destination: Option<String>,
+    load_type: Option<String>,
     equipment: Option<String>,
     mode: Option<String>,
+    status: Option<String>,
     date_from: Option<String>,
     date_to: Option<String>,
     min_rate: Option<String>,
@@ -109,8 +111,10 @@ fn load_board_filters_from_query(query: &LoadBoardQuery) -> LoadBoardSearchFilte
     LoadBoardSearchFilters {
         origin: clean_string(query.origin.as_deref()),
         destination: clean_string(query.destination.as_deref()),
+        load_type: clean_string(query.load_type.as_deref()),
         equipment: clean_string(query.equipment.as_deref()),
         mode: clean_string(query.mode.as_deref()),
+        status: clean_string(query.status.as_deref()),
         date_from: parse_date(query.date_from.as_deref()),
         date_to: parse_date(query.date_to.as_deref()),
         min_rate: parse_f64(query.min_rate.as_deref()),
@@ -133,8 +137,10 @@ fn load_board_filters_from_state(state: &LoadBoardFilterState) -> LoadBoardSearc
     LoadBoardSearchFilters {
         origin: clean_string(state.origin.as_deref()),
         destination: clean_string(state.destination.as_deref()),
+        load_type: clean_string(state.load_type.as_deref()),
         equipment: clean_string(state.equipment.as_deref()),
         mode: clean_string(state.mode.as_deref()),
+        status: clean_string(state.status.as_deref()),
         date_from: parse_date(state.date_from.as_deref()),
         date_to: parse_date(state.date_to.as_deref()),
         min_rate: parse_f64(state.min_rate.as_deref()),
@@ -148,8 +154,10 @@ fn load_board_filters_from_state(state: &LoadBoardFilterState) -> LoadBoardSearc
         service_level: clean_string(state.service_level.as_deref()),
         visibility: clean_string(state.visibility.as_deref()),
         sort: clean_string(state.sort.as_deref()),
-        page: 1,
-        per_page: 20,
+        page: parse_i64(state.page.as_deref()).unwrap_or(1).max(1),
+        per_page: parse_i64(state.per_page.as_deref())
+            .unwrap_or(20)
+            .clamp(1, 100),
     }
 }
 
@@ -165,6 +173,13 @@ fn parse_f64(value: Option<&str>) -> Option<f64> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .and_then(|value| value.parse::<f64>().ok())
+}
+
+fn parse_i64(value: Option<&str>) -> Option<i64> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<i64>().ok())
 }
 
 fn parse_date(value: Option<&str>) -> Option<NaiveDate> {

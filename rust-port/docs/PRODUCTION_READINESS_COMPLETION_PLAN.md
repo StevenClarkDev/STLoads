@@ -79,18 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task E2: Marketplace Search And Eligibility Proof
-
-**Outcome:** Carrier-facing marketplace discovery uses real data and blocks ineligible carriers.
-
-- [ ] Verify carrier search uses real load data only.
-- [ ] Verify filters for lane, equipment, load type, dates, status, and eligibility.
-- [ ] Verify pagination behaves correctly with production-like row counts.
-- [ ] Verify hidden, closed, withdrawn, already-booked, and ineligible freight is excluded.
-- [ ] Verify compliance, document, tenant, and role gates block noncompliant carriers.
-- [ ] Add or update automated tests for search and eligibility behavior.
-- [ ] Browser-test broker, shipper, forwarder, and carrier views.
-
 ### Task E3: Marketplace Booking Workflow Proof
 
 **Outcome:** Offer, counter, tender, book-now, cancellation, and duplicate-booking protection are proven end to end.
@@ -177,11 +165,10 @@ Do not call STLoads market-ready until every item below is true:
 
 ## Recommended Execution Order
 
-1. E2 Marketplace search and eligibility proof.
-2. E3 Marketplace booking workflow proof.
-3. E4 Documents, tracking, and exception sync proof.
-4. E5 Payments and recovery proof.
-5. E7 Final IBM staging launch gate.
+1. E3 Marketplace booking workflow proof.
+2. E4 Documents, tracking, and exception sync proof.
+3. E5 Payments and recovery proof.
+4. E7 Final IBM staging launch gate.
 
 ## Definition Of Done
 

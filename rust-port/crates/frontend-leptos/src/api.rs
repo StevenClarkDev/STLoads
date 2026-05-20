@@ -288,8 +288,10 @@ pub async fn fetch_load_board_screen(
     let mut query = vec![format!("tab={}", encode_query(tab))];
     push_filter(&mut query, "origin", filters.origin.as_deref());
     push_filter(&mut query, "destination", filters.destination.as_deref());
+    push_filter(&mut query, "load_type", filters.load_type.as_deref());
     push_filter(&mut query, "equipment", filters.equipment.as_deref());
     push_filter(&mut query, "mode", filters.mode.as_deref());
+    push_filter(&mut query, "status", filters.status.as_deref());
     push_filter(&mut query, "date_from", filters.date_from.as_deref());
     push_filter(&mut query, "date_to", filters.date_to.as_deref());
     push_filter(&mut query, "min_rate", filters.min_rate.as_deref());
@@ -305,6 +307,8 @@ pub async fn fetch_load_board_screen(
     );
     push_filter(&mut query, "visibility", filters.visibility.as_deref());
     push_filter(&mut query, "sort", filters.sort.as_deref());
+    push_filter(&mut query, "page", filters.page.as_deref());
+    push_filter(&mut query, "per_page", filters.per_page.as_deref());
     if let Some(value) = filters.hazmat {
         query.push(format!("hazmat={value}"));
     }

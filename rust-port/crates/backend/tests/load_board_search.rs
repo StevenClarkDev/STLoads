@@ -34,8 +34,10 @@ async fn carrier_search_excludes_hidden_closed_withdrawn_and_ineligible_freight(
     let filters = db::dispatch::LoadBoardSearchFilters {
         origin: Some("Dallas".into()),
         destination: Some("Memphis".into()),
+        load_type: None,
         equipment: Some("Dry Van".into()),
         mode: Some("road".into()),
+        status: None,
         date_from: None,
         date_to: None,
         min_rate: None,
@@ -89,8 +91,10 @@ async fn saved_search_and_alert_rules_are_tenant_scoped() {
     let filters = db::dispatch::LoadBoardSearchFilters {
         origin: Some("Dallas".into()),
         destination: Some("Memphis".into()),
+        load_type: None,
         equipment: None,
         mode: None,
+        status: None,
         date_from: None,
         date_to: None,
         min_rate: Some(1000.0),
@@ -143,6 +147,92 @@ async fn saved_search_and_alert_rules_are_tenant_scoped() {
     );
 }
 
+#[tokio::test]
+#[serial(load_board_search_db)]
+async fn carrier_search_filters_and_paginates_production_sized_results() {
+    let Some(pool) = backend::test_support::prepare_pool().await.unwrap() else {
+        return;
+    };
+
+    let carrier = backend::test_support::insert_user_with_role_status(
+        &pool,
+        "Carrier Pagination",
+        "carrier-pagination-p8@example.com",
+        domain::auth::UserRole::Carrier,
+        domain::auth::AccountStatus::Approved,
+    )
+    .await
+    .unwrap();
+    seed_carrier_profile(&pool, carrier.id).await;
+
+    let mut expected_ids = Vec::new();
+    for index in 0..35 {
+        let fixture = seed_search_fixture(
+            &pool,
+            &format!("PAGE-P8-{index:02}"),
+            Some("published"),
+            None,
+        )
+        .await;
+        expected_ids.push(fixture.leg_id);
+    }
+
+    let booked_by_other =
+        seed_search_fixture(&pool, "BOOKED-OTHER-P8", Some("published"), None).await;
+    sqlx::query(
+        "UPDATE load_legs SET booked_carrier_id = $1, booked_at = CURRENT_TIMESTAMP WHERE id = $2",
+    )
+    .bind(carrier.id + 10_000)
+    .bind(booked_by_other.leg_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let filters = db::dispatch::LoadBoardSearchFilters {
+        origin: Some("Dallas".into()),
+        destination: Some("Memphis".into()),
+        load_type: Some("Full Truckload".into()),
+        equipment: Some("Dry Van".into()),
+        mode: Some("road".into()),
+        status: Some("new".into()),
+        date_from: Some(chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
+        date_to: Some(chrono::NaiveDate::from_ymd_opt(2026, 6, 30).unwrap()),
+        min_rate: Some(2000.0),
+        max_rate: Some(3000.0),
+        min_rpm: Some(5.0),
+        max_rpm: Some(6.0),
+        min_weight: Some(40000.0),
+        max_weight: Some(43000.0),
+        hazmat: Some(false),
+        temperature_controlled: Some(false),
+        service_level: Some("standard".into()),
+        visibility: Some("public".into()),
+        sort: Some("pickup_date".into()),
+        page: 2,
+        per_page: 10,
+    };
+
+    let total = db::dispatch::count_load_board_for_carrier(&pool, carrier.id, &filters)
+        .await
+        .unwrap();
+    let page_two = db::dispatch::search_load_board_for_carrier(&pool, carrier.id, &filters)
+        .await
+        .unwrap();
+
+    assert_eq!(total, 35);
+    assert_eq!(page_two.len(), 10);
+    assert!(
+        page_two
+            .iter()
+            .all(|row| expected_ids.contains(&row.leg_id))
+    );
+    assert!(
+        !page_two
+            .iter()
+            .any(|row| row.leg_id == booked_by_other.leg_id)
+    );
+}
+
 #[derive(Debug)]
 struct SearchFixture {
     leg_id: i64,
@@ -179,6 +269,8 @@ async fn seed_search_fixture(
     sqlx::query(
         "UPDATE loads
          SET title = $1,
+             load_type_id = $3,
+             equipment_id = $4,
              weight = 42000,
              is_hazardous = FALSE,
              is_temperature_controlled = FALSE,
@@ -187,6 +279,20 @@ async fn seed_search_fixture(
     )
     .bind(format!("Search fixture {suffix}"))
     .bind(fixture.load_id)
+    .bind(seed_load_type(pool).await)
+    .bind(seed_equipment(pool).await)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE load_legs
+         SET pickup_date = '2026-05-21 09:00:00',
+             delivery_date = '2026-05-22 17:00:00',
+             bid_status = 'Fixed',
+             price = 2500
+         WHERE id = $1",
+    )
+    .bind(fixture.leg_id)
     .execute(pool)
     .await
     .unwrap();
@@ -268,6 +374,47 @@ async fn seed_search_fixture(
     SearchFixture {
         leg_id: fixture.leg_id,
     }
+}
+
+async fn seed_load_type(pool: &db::DbPool) -> i64 {
+    if let Some(id) = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM load_types WHERE name = 'Full Truckload' LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .unwrap()
+    {
+        return id;
+    }
+
+    sqlx::query_scalar::<_, i64>(
+        "INSERT INTO load_types (name, created_at, updated_at)
+         VALUES ('Full Truckload', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn seed_equipment(pool: &db::DbPool) -> i64 {
+    if let Some(id) =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM equipments WHERE name = 'Dry Van' LIMIT 1")
+            .fetch_optional(pool)
+            .await
+            .unwrap()
+    {
+        return id;
+    }
+
+    sqlx::query_scalar::<_, i64>(
+        "INSERT INTO equipments (name, created_at, updated_at)
+         VALUES ('Dry Van', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
 }
 
 async fn seed_tenant(pool: &db::DbPool, tenant_id: &str) {

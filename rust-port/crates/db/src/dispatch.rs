@@ -307,8 +307,10 @@ pub struct LoadBoardMetricsRecord {
 pub struct LoadBoardSearchFilters {
     pub origin: Option<String>,
     pub destination: Option<String>,
+    pub load_type: Option<String>,
     pub equipment: Option<String>,
     pub mode: Option<String>,
+    pub status: Option<String>,
     pub date_from: Option<NaiveDate>,
     pub date_to: Option<NaiveDate>,
     pub min_rate: Option<f64>,
@@ -1298,35 +1300,17 @@ pub async fn list_load_board_legs_for_carrier_filtered(
     tab_filter: Option<&str>,
     limit: i64,
 ) -> Result<Vec<LoadBoardLegRecord>, sqlx::Error> {
-    let (filter_clause, limit_placeholder, needs_carrier_bind) = match tab_filter {
-        Some("recommended") => (
-            "AND ll.status_id IN (1, 2, 3) AND ll.booked_carrier_id IS NULL",
-            1,
-            false,
-        ),
-        Some("booked") => ("AND ll.booked_carrier_id = $1", 2, true),
-        _ => (
-            "AND ((ll.status_id IN (1, 2, 3) AND ll.booked_carrier_id IS NULL) OR ll.booked_carrier_id = $1)",
-            2,
-            true,
-        ),
-    };
+    let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(load_board_select_sql());
+    builder.push(" WHERE ll.deleted_at IS NULL");
+    push_carrier_board_scope(&mut builder, carrier_user_id, tab_filter);
+    push_carrier_board_visibility_and_eligibility(&mut builder, carrier_user_id);
+    builder.push(" ORDER BY COALESCE(ll.pickup_date, ll.created_at) ASC, ll.id DESC LIMIT ");
+    builder.push_bind(limit.clamp(1, 100));
 
-    let query = format!(
-        "{}\n        WHERE ll.deleted_at IS NULL\n        {}\n        ORDER BY COALESCE(ll.pickup_date, ll.created_at) ASC, ll.id DESC\n        LIMIT ${}",
-        load_board_select_sql(),
-        filter_clause,
-        limit_placeholder
-    );
-
-    let query = sqlx::query_as::<_, LoadBoardLegRecord>(&query);
-    let query = if needs_carrier_bind {
-        query.bind(carrier_user_id).bind(limit)
-    } else {
-        query.bind(limit)
-    };
-
-    query.fetch_all(pool).await
+    builder
+        .build_query_as::<LoadBoardLegRecord>()
+        .fetch_all(pool)
+        .await
 }
 
 pub async fn search_load_board_for_carrier(
@@ -1337,14 +1321,87 @@ pub async fn search_load_board_for_carrier(
     let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(load_board_select_sql());
     builder.push(
         r#"
-        LEFT JOIN equipments equipment ON equipment.id = l.equipment_id
-        WHERE ll.deleted_at IS NULL
-          AND ((ll.status_id IN (1, 2, 3) AND ll.booked_carrier_id IS NULL) OR ll.booked_carrier_id = "#,
+        LEFT JOIN load_types load_type ON load_type.id = l.load_type_id
+        LEFT JOIN equipments equipment ON equipment.id = l.equipment_id"#,
     );
-    builder.push_bind(carrier_user_id);
-    builder.push(")");
+    builder.push(" WHERE ll.deleted_at IS NULL");
+    push_carrier_board_scope(&mut builder, carrier_user_id, None);
+    push_carrier_board_visibility_and_eligibility(&mut builder, carrier_user_id);
+    apply_load_board_search_filters(&mut builder, filters);
+    push_load_board_sort(&mut builder, filters.sort.as_deref());
+
+    let per_page = filters.per_page.clamp(1, 100);
+    let page = filters.page.max(1);
+    builder.push(" LIMIT ");
+    builder.push_bind(per_page);
+    builder.push(" OFFSET ");
+    builder.push_bind((page - 1) * per_page);
+
+    builder
+        .build_query_as::<LoadBoardLegRecord>()
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn count_load_board_for_carrier(
+    pool: &DbPool,
+    carrier_user_id: i64,
+    filters: &LoadBoardSearchFilters,
+) -> Result<i64, sqlx::Error> {
+    let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(
+        r#"
+        SELECT COUNT(*)
+        FROM load_legs ll
+        INNER JOIN loads l ON l.id = ll.load_id AND l.deleted_at IS NULL
+        LEFT JOIN locations pickup ON pickup.id = ll.pickup_location_id
+        LEFT JOIN locations delivery ON delivery.id = ll.delivery_location_id
+        LEFT JOIN stloads_handoffs handoff ON handoff.id = (
+            SELECT handoff_inner.id
+            FROM stloads_handoffs handoff_inner
+            WHERE handoff_inner.load_id = l.id
+            ORDER BY handoff_inner.id DESC
+            LIMIT 1
+        )
+        LEFT JOIN load_types load_type ON load_type.id = l.load_type_id
+        LEFT JOIN equipments equipment ON equipment.id = l.equipment_id
+        WHERE ll.deleted_at IS NULL"#,
+    );
+    push_carrier_board_scope(&mut builder, carrier_user_id, None);
+    push_carrier_board_visibility_and_eligibility(&mut builder, carrier_user_id);
+    apply_load_board_search_filters(&mut builder, filters);
+
+    builder.build_query_scalar::<i64>().fetch_one(pool).await
+}
+
+fn push_carrier_board_scope(
+    builder: &mut QueryBuilder<Postgres>,
+    carrier_user_id: i64,
+    tab_filter: Option<&str>,
+) {
+    match tab_filter {
+        Some("recommended") => {
+            builder.push(" AND ll.status_id IN (1, 2, 3) AND ll.booked_carrier_id IS NULL");
+        }
+        Some("booked") => {
+            builder.push(" AND ll.booked_carrier_id = ");
+            builder.push_bind(carrier_user_id);
+        }
+        _ => {
+            builder.push(
+                " AND ((ll.status_id IN (1, 2, 3) AND ll.booked_carrier_id IS NULL) OR ll.booked_carrier_id = ",
+            );
+            builder.push_bind(carrier_user_id);
+            builder.push(")");
+        }
+    }
+}
+
+fn push_carrier_board_visibility_and_eligibility(
+    builder: &mut QueryBuilder<Postgres>,
+    carrier_user_id: i64,
+) {
     builder.push(
-        " AND COALESCE(handoff.status, 'published') NOT IN ('withdrawn', 'closed', 'hidden')",
+        " AND COALESCE(handoff.status, 'published') NOT IN ('withdrawn', 'closed', 'hidden', 'canceled')",
     );
     builder.push(
         r#"
@@ -1366,21 +1423,6 @@ pub async fn search_load_board_for_carrier(
     );
     builder.push_bind(carrier_user_id);
     builder.push(" AND carrier_profile.deleted_at IS NULL)");
-
-    apply_load_board_search_filters(&mut builder, filters);
-    push_load_board_sort(&mut builder, filters.sort.as_deref());
-
-    let per_page = filters.per_page.clamp(1, 100);
-    let page = filters.page.max(1);
-    builder.push(" LIMIT ");
-    builder.push_bind(per_page);
-    builder.push(" OFFSET ");
-    builder.push_bind((page - 1) * per_page);
-
-    builder
-        .build_query_as::<LoadBoardLegRecord>()
-        .fetch_all(pool)
-        .await
 }
 
 pub async fn upsert_load_board_saved_search(
@@ -1776,6 +1818,10 @@ fn apply_load_board_search_filters(
         builder.push(" AND delivery.name ILIKE ");
         builder.push_bind(value);
     }
+    if let Some(value) = normalized_like(filters.load_type.as_deref()) {
+        builder.push(" AND COALESCE(load_type.name, '') ILIKE ");
+        builder.push_bind(value);
+    }
     if let Some(value) = normalized_like(filters.equipment.as_deref()) {
         builder.push(" AND COALESCE(handoff.equipment_type, equipment.name, '') ILIKE ");
         builder.push_bind(value);
@@ -1783,6 +1829,18 @@ fn apply_load_board_search_filters(
     if let Some(value) = normalized_exact(filters.mode.as_deref()) {
         builder.push(" AND LOWER(COALESCE(handoff.freight_mode, 'road')) = ");
         builder.push_bind(value);
+    }
+    if let Some(value) = normalized_status_filter(filters.status.as_deref()) {
+        match value {
+            LoadBoardStatusFilter::LegStatus(status_id) => {
+                builder.push(" AND ll.status_id = ");
+                builder.push_bind(status_id);
+            }
+            LoadBoardStatusFilter::HandoffStatus(status) => {
+                builder.push(" AND LOWER(COALESCE(handoff.status, 'published')) = ");
+                builder.push_bind(status);
+            }
+        }
     }
     if let Some(value) = filters.date_from {
         builder.push(" AND ll.pickup_date >= ");
@@ -1870,6 +1928,43 @@ fn normalized_exact(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_ascii_lowercase)
+}
+
+enum LoadBoardStatusFilter {
+    LegStatus(i16),
+    HandoffStatus(String),
+}
+
+fn normalized_status_filter(value: Option<&str>) -> Option<LoadBoardStatusFilter> {
+    let value = value?.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    if let Ok(status_id) = value.parse::<i16>() {
+        return Some(LoadBoardStatusFilter::LegStatus(status_id));
+    }
+
+    let normalized = value.to_ascii_lowercase().replace([' ', '-'], "_");
+    let leg_status = match normalized.as_str() {
+        "draft" => Some(0),
+        "new" | "open" => Some(1),
+        "reviewed" => Some(2),
+        "offer_ready" | "published" => Some(3),
+        "booked" => Some(4),
+        "escrow_funded" | "funded" => Some(5),
+        "pickup_started" => Some(6),
+        "at_pickup" => Some(7),
+        "in_transit" => Some(8),
+        "at_delivery" => Some(9),
+        "delivered" => Some(10),
+        "paid_out" => Some(11),
+        _ => None,
+    };
+
+    leg_status
+        .map(LoadBoardStatusFilter::LegStatus)
+        .or_else(|| Some(LoadBoardStatusFilter::HandoffStatus(normalized)))
 }
 
 pub async fn list_dispatch_desk_legs_filtered(

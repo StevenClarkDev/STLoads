@@ -163,8 +163,10 @@ pub struct LoadBoardRow {
 pub struct LoadBoardFilterState {
     pub origin: Option<String>,
     pub destination: Option<String>,
+    pub load_type: Option<String>,
     pub equipment: Option<String>,
     pub mode: Option<String>,
+    pub status: Option<String>,
     pub date_from: Option<String>,
     pub date_to: Option<String>,
     pub min_rate: Option<String>,
@@ -178,6 +180,8 @@ pub struct LoadBoardFilterState {
     pub service_level: Option<String>,
     pub visibility: Option<String>,
     pub sort: Option<String>,
+    pub page: Option<String>,
+    pub per_page: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -299,8 +299,10 @@ pub fn LoadBoardPage() -> impl IntoView {
                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.75rem;">
                     {filter_input("Origin", draft_filters, |state, value| state.origin = value)}
                     {filter_input("Destination", draft_filters, |state, value| state.destination = value)}
+                    {filter_input("Load type", draft_filters, |state, value| state.load_type = value)}
                     {filter_input("Equipment", draft_filters, |state, value| state.equipment = value)}
                     {filter_input("Mode", draft_filters, |state, value| state.mode = value)}
+                    {filter_input("Status", draft_filters, |state, value| state.status = value)}
                     {filter_input("Pickup from", draft_filters, |state, value| state.date_from = value)}
                     {filter_input("Pickup to", draft_filters, |state, value| state.date_to = value)}
                     {filter_input("Min rate", draft_filters, |state, value| state.min_rate = value)}
@@ -352,7 +354,10 @@ pub fn LoadBoardPage() -> impl IntoView {
                         } />
                         "Temp controlled"
                     </label>
-                    <button type="button" style="padding:0.55rem 0.9rem;border-radius:0.75rem;border:1px solid #111827;background:#111827;color:white;cursor:pointer;" on:click=apply_filters>"Search"</button>
+                    <button type="button" style="padding:0.55rem 0.9rem;border-radius:0.75rem;border:1px solid #111827;background:#111827;color:white;cursor:pointer;" on:click=move |_| {
+                        draft_filters.update(|state| state.page = Some("1".into()));
+                        apply_filters(());
+                    }>"Search"</button>
                     <button type="button" style="padding:0.55rem 0.9rem;border-radius:0.75rem;border:1px solid #d4d4d8;background:white;cursor:pointer;" on:click=clear_filters>"Clear"</button>
                     <input placeholder="Saved search name" prop:value=move || saved_search_name.get() on:input=move |ev| saved_search_name.set(event_target_value(&ev)) style="padding:0.55rem;border:1px solid #d4d4d8;border-radius:0.65rem;" />
                     <label style="display:flex;gap:0.4rem;align-items:center;">
@@ -451,6 +456,26 @@ pub fn LoadBoardPage() -> impl IntoView {
                                 .map(|note| view! { <p style="margin:0;">{note}</p> })
                                 .collect_view()}
                             <small>{format!("Page {} of {} visible rows", value.pagination.page, value.pagination.total)}</small>
+                            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                                <button type="button" style="padding:0.45rem 0.75rem;border:1px solid #d4d4d8;border-radius:0.65rem;background:white;cursor:pointer;" disabled=move || {
+                                    screen.get().map(|value| value.pagination.page <= 1).unwrap_or(true)
+                                } on:click=move |_| {
+                                    draft_filters.update(|state| {
+                                        let current = state.page.as_deref().and_then(|value| value.parse::<u64>().ok()).unwrap_or(1);
+                                        state.page = Some(current.saturating_sub(1).max(1).to_string());
+                                    });
+                                    filters.set(draft_filters.get());
+                                }>"Previous"</button>
+                                <button type="button" style="padding:0.45rem 0.75rem;border:1px solid #d4d4d8;border-radius:0.65rem;background:white;cursor:pointer;" disabled=move || {
+                                    screen.get().map(|value| value.pagination.page.saturating_mul(value.pagination.per_page) >= value.pagination.total).unwrap_or(true)
+                                } on:click=move |_| {
+                                    draft_filters.update(|state| {
+                                        let current = state.page.as_deref().and_then(|value| value.parse::<u64>().ok()).unwrap_or(1);
+                                        state.page = Some(current.saturating_add(1).to_string());
+                                    });
+                                    filters.set(draft_filters.get());
+                                }>"Next"</button>
+                            </div>
                         </>
                     }
                 })}

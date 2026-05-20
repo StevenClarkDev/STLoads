@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
 use db::dispatch::{
-    LoadBoardSearchFilters, count_dispatch_desk_legs_filtered, list_dispatch_desk_legs_filtered,
-    list_load_board_legs_filtered, list_load_board_legs_for_carrier_filtered,
-    list_load_board_legs_for_owner_filtered, list_load_board_saved_searches, load_board_metrics,
-    load_board_metrics_for_carrier, load_board_metrics_for_owner, load_board_tab_counts,
-    load_board_tab_counts_for_carrier, load_board_tab_counts_for_owner,
-    search_load_board_for_carrier,
+    LoadBoardSearchFilters, count_dispatch_desk_legs_filtered, count_load_board_for_carrier,
+    list_dispatch_desk_legs_filtered, list_load_board_legs_filtered,
+    list_load_board_legs_for_carrier_filtered, list_load_board_legs_for_owner_filtered,
+    list_load_board_saved_searches, load_board_metrics, load_board_metrics_for_carrier,
+    load_board_metrics_for_owner, load_board_tab_counts, load_board_tab_counts_for_carrier,
+    load_board_tab_counts_for_owner, search_load_board_for_carrier,
 };
 use db::marketplace::{
     ConversationPresenceRecord, ConversationReadRecord, OfferRecord,
@@ -301,6 +301,7 @@ async fn build_load_board_screen(
     search_filters: LoadBoardSearchFilters,
 ) -> Result<LoadBoardScreen, sqlx::Error> {
     let viewer_role = viewer.user.primary_role();
+    let mut search_total_override = None;
     let (tab_counts, metrics, rows, role_label, recommendation_notes) = match viewer_role {
         Some(UserRole::Admin) => (
             load_board_tab_counts(pool).await?,
@@ -316,6 +317,11 @@ async fn build_load_board_screen(
             load_board_tab_counts_for_carrier(pool, viewer.user.id).await?,
             load_board_metrics_for_carrier(pool, viewer.user.id).await?,
             if search_filters_has_values(&search_filters) {
+                search_total_override = Some(
+                    count_load_board_for_carrier(pool, viewer.user.id, &search_filters)
+                        .await?
+                        .max(0) as u64,
+                );
                 search_load_board_for_carrier(pool, viewer.user.id, &search_filters).await?
             } else {
                 list_load_board_legs_for_carrier_filtered(
@@ -489,9 +495,18 @@ async fn build_load_board_screen(
         rows,
         recommendation_notes,
         pagination: Pagination {
-            page: 1,
-            per_page: 20,
-            total: count_map.get(active_tab.as_str()).copied().unwrap_or(0),
+            page: if search_filters_has_values(&search_filters) {
+                search_filters.page.max(1) as u64
+            } else {
+                1
+            },
+            per_page: if search_filters_has_values(&search_filters) {
+                search_filters.per_page.clamp(1, 100) as u64
+            } else {
+                20
+            },
+            total: search_total_override
+                .unwrap_or_else(|| count_map.get(active_tab.as_str()).copied().unwrap_or(0)),
         },
     })
 }
@@ -2165,8 +2180,10 @@ fn normalize_load_board_tab(value: Option<&str>) -> String {
 fn search_filters_has_values(filters: &LoadBoardSearchFilters) -> bool {
     filters.origin.is_some()
         || filters.destination.is_some()
+        || filters.load_type.is_some()
         || filters.equipment.is_some()
         || filters.mode.is_some()
+        || filters.status.is_some()
         || filters.date_from.is_some()
         || filters.date_to.is_some()
         || filters.min_rate.is_some()
@@ -2186,8 +2203,10 @@ fn load_board_filter_state(filters: &LoadBoardSearchFilters) -> LoadBoardFilterS
     LoadBoardFilterState {
         origin: filters.origin.clone(),
         destination: filters.destination.clone(),
+        load_type: filters.load_type.clone(),
         equipment: filters.equipment.clone(),
         mode: filters.mode.clone(),
+        status: filters.status.clone(),
         date_from: filters
             .date_from
             .map(|value| value.format("%Y-%m-%d").to_string()),
@@ -2205,6 +2224,8 @@ fn load_board_filter_state(filters: &LoadBoardSearchFilters) -> LoadBoardFilterS
         service_level: filters.service_level.clone(),
         visibility: filters.visibility.clone(),
         sort: filters.sort.clone(),
+        page: Some(filters.page.max(1).to_string()),
+        per_page: Some(filters.per_page.clamp(1, 100).to_string()),
     }
 }
 
