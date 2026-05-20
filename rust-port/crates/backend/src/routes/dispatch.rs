@@ -2395,7 +2395,7 @@ async fn build_load_builder_screen(
         })
     } else {
         notes.push(
-            "This Rust builder ports core load creation with multi-leg posting and direct handoff into the Rust load profile workflow.".into(),
+            "This marketplace builder creates STLoads postings for carrier bidding, booking, documents, and payment workflow.".into(),
         );
         None
     };
@@ -2411,14 +2411,14 @@ async fn build_load_builder_screen(
 
     LoadBuilderScreen {
         title: if is_edit_mode {
-            "Edit Load".into()
+            "Edit Marketplace Load".into()
         } else {
-            "Create Load".into()
+            "Create Marketplace Load".into()
         },
         subtitle: if is_edit_mode {
-            "Rust builder for revising load details and multi-leg routes before dispatch execution begins.".into()
+            "Revise marketplace posting details before carrier booking and execution workflow begins.".into()
         } else {
-            "First-pass Rust builder for core load details and multi-leg creation.".into()
+            "Create a marketplace load posting for carrier bidding, booking, documents, and payment workflow.".into()
         },
         mode: if is_edit_mode {
             "edit".into()
@@ -2426,9 +2426,9 @@ async fn build_load_builder_screen(
             "create".into()
         },
         submit_label: if is_edit_mode {
-            "Save load changes".into()
+            "Save marketplace changes".into()
         } else {
-            "Create load".into()
+            "Post marketplace load".into()
         },
         load_id: draft.as_ref().map(|value| value.load_id),
         draft,
@@ -2480,20 +2480,20 @@ fn empty_load_builder_screen(
 
     LoadBuilderScreen {
         title: if load_id.is_some() {
-            "Edit Load".into()
+            "Edit Marketplace Load".into()
         } else {
-            "Create Load".into()
+            "Create Marketplace Load".into()
         },
-        subtitle: "Secure Rust builder".into(),
+        subtitle: "Secure marketplace posting builder".into(),
         mode: if load_id.is_some() {
             "edit".into()
         } else {
             "create".into()
         },
         submit_label: if load_id.is_some() {
-            "Save load changes".into()
+            "Save marketplace changes".into()
         } else {
-            "Create load".into()
+            "Post marketplace load".into()
         },
         load_id: load_id.map(|value| value.max(0) as u64),
         draft: None,

@@ -641,11 +641,11 @@ pub fn LoadBuilderPage() -> impl IntoView {
         <article style="display:grid;gap:1.25rem;max-width:1100px;">
             <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
                 <div style="display:grid;gap:0.35rem;">
-                    <h2>{move || screen.get().map(|value| value.title).unwrap_or_else(|| "Create Load".into())}</h2>
-                    <p>{move || screen.get().map(|value| value.subtitle).unwrap_or_else(|| "Rust builder for Google-address load creation.".into())}</p>
+                    <h2>{move || screen.get().map(|value| value.title).unwrap_or_else(|| "Create Marketplace Load".into())}</h2>
+                    <p>{move || screen.get().map(|value| value.subtitle).unwrap_or_else(|| "Create a marketplace load posting for carrier bidding, booking, documents, and payment workflow.".into())}</p>
                 </div>
                 <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;">
-                    <A href="/loads" attr:style="padding:0.7rem 1rem;border-radius:0.9rem;background:#f4f4f5;color:#111827;text-decoration:none;">"Back to load board"</A>
+                    <A href="/loads" attr:style="padding:0.7rem 1rem;border-radius:0.9rem;background:#f4f4f5;color:#111827;text-decoration:none;">"Back to marketplace loads"</A>
                     <span style="padding:0.35rem 0.65rem;border-radius:999px;background:#eff6ff;color:#1d4ed8;">
                         {move || if is_submitting.get() { "Saving..." } else if google_ready.get() { "Google address mode" } else { "Address setup pending" }}
                     </span>
@@ -661,7 +661,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
             {move || {
                 if is_loading.get() && screen.get().is_none() {
                     view! {
-                        <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;">"Loading Rust load-builder master data..."</section>
+                        <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fafaf9;">"Loading marketplace load data..."</section>
                     }.into_any()
                 } else if screen.get().is_none() {
                     view! {

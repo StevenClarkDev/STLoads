@@ -63,7 +63,7 @@ pub fn UserFrame(children: Children) -> impl IntoView {
             search_navigate(&destination, Default::default());
         } else if !query.trim().is_empty() {
             auth.notice.set(Some(
-                "Try dashboard, loads, create load, quote desk, chat, profile, onboarding, or admin."
+                "Try dashboard, marketplace loads, post load, quote desk, chat, profile, onboarding, or admin."
                     .into(),
             ));
         }
@@ -147,13 +147,13 @@ pub fn UserFrame(children: Children) -> impl IntoView {
                         <section class="php-sidebar-section">
                             <div class="php-sidebar-title">
                                 <i class="fas fa-box"></i>
-                                <span>"Load Management"</span>
+                                <span>"Marketplace Loads"</span>
                             </div>
                             <nav class="php-sidebar-links">
                                 <A href="/loads" attr:class=move || sidebar_link_class(pathname().starts_with("/loads"))>
                                     <span class="php-sidebar-link-main">
                                         <i class="fas fa-truck"></i>
-                                        <span>"My Loads"</span>
+                                        <span>"My Marketplace Loads"</span>
                                     </span>
                                     <i class="fas fa-chevron-right"></i>
                                 </A>
@@ -161,7 +161,7 @@ pub fn UserFrame(children: Children) -> impl IntoView {
                                     <A href="/loads/new" attr:class=sidebar_link_class(pathname() == "/loads/new")>
                                         <span class="php-sidebar-link-main">
                                             <i class="fas fa-plus-circle"></i>
-                                            <span>"Create Load"</span>
+                                            <span>"Post Marketplace Load"</span>
                                         </span>
                                         <i class="fas fa-chevron-right"></i>
                                     </A>
