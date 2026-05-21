@@ -29,7 +29,140 @@ fn tone_style(tone: &str) -> &'static str {
 }
 
 fn default_handoff_payload_json() -> String {
-    String::new()
+    r#"{
+  "payload_version": "dispatch-stloads-v2",
+  "tms_load_id": "ATMP-COMPLIANCE-1001",
+  "tenant_id": "tenant-compliance",
+  "external_handoff_id": "dispatch-handoff-1001",
+  "party_type": "shipper",
+  "freight_mode": "road",
+  "equipment_type": "Dry Van",
+  "commodity_description": "Compliance controlled freight",
+  "weight": 42000.0,
+  "weight_unit": "lbs",
+  "piece_count": 20,
+  "is_hazardous": false,
+  "pickup_city": "Dallas",
+  "pickup_state": "TX",
+  "pickup_zip": "75201",
+  "pickup_country": "US",
+  "pickup_address": "100 Market St, Dallas, TX",
+  "pickup_window_start": "2026-06-01T09:00:00Z",
+  "pickup_window_end": "2026-06-01T12:00:00Z",
+  "dropoff_city": "Memphis",
+  "dropoff_state": "TN",
+  "dropoff_zip": "38103",
+  "dropoff_country": "US",
+  "dropoff_address": "200 Carrier Ave, Memphis, TN",
+  "dropoff_window_start": "2026-06-02T15:00:00Z",
+  "dropoff_window_end": "2026-06-02T18:00:00Z",
+  "board_rate": 2450.0,
+  "rate_currency": "USD",
+  "bid_type": "Fixed",
+  "compliance_passed": true,
+  "compliance_envelope": {
+    "schema_version": "compliance-envelope-v1",
+    "compliance_envelope_id": "env-1001",
+    "tenant_id": "tenant-compliance",
+    "dispatch_load_id": "load-1001",
+    "dispatch_load_code": "ATMP-COMPLIANCE-1001",
+    "paperwork_packet_id": "packet-1001",
+    "document_packet_url": "https://dispatch.example.test/packet-1001.pdf",
+    "document_packet_hash": "sha256:packet1001",
+    "mode": "road",
+    "lane": {
+      "origin_country": "US",
+      "destination_country": "US",
+      "transit_countries": []
+    },
+    "operating_role": "broker",
+    "gate_results": [],
+    "required_documents": [],
+    "retention": {
+      "retention_category": "freight_load_file",
+      "retention_period_years": 3,
+      "retention_expires_at": "2029-06-02T00:00:00Z"
+    },
+    "audit": {
+      "created_by": "dispatch-api",
+      "created_at": "2026-06-01T09:00:00Z",
+      "audit_event_ids": ["audit-1001"],
+      "packet_hash": "sha256:packet1001"
+    }
+  },
+  "required_documents_status": {
+    "bol": "generated",
+    "freight_bill": "generated",
+    "rate_confirmation": "generated",
+    "dispatch_sheet": "generated",
+    "pod_placeholder": "generated"
+  },
+  "paperwork_packet_id": "packet-1001",
+  "document_packet_url": "https://dispatch.example.test/packet-1001.pdf",
+  "document_packet_hash": "sha256:packet1001",
+  "bol_number": "BOL-1001",
+  "freight_bill_number": "FB-1001",
+  "atmp_operating_role": "broker",
+  "carrier_authority_snapshot": {
+    "usdot_number": "123456",
+    "authority_status": "active"
+  },
+  "insurance_snapshot": {
+    "cargo_insurance_status": "active",
+    "auto_liability_status": "active"
+  },
+  "compliance_blockers": [],
+  "retention_metadata": {
+    "retention_category": "freight_load_file",
+    "retention_period_years": 3,
+    "retention_expires_at": "2029-06-02T00:00:00Z"
+  },
+  "audit_event_ids": ["audit-1001"],
+  "executive_override": false,
+  "executive_override_reason": null,
+  "executive_override_by": null,
+  "executive_override_at": null,
+  "customs_movement_type": null,
+  "customs_readiness": "not_required",
+  "customs_documents_status": {},
+  "ACE_entry_number": null,
+  "ISF_status": null,
+  "in_bond_status": null,
+  "AES_ITN": null,
+  "PGA_requirements": [],
+  "readiness": "publishable",
+  "pushed_by": "dispatch-api",
+  "push_reason": "operator compliance sample",
+  "source_module": "atmp-dispatch",
+  "external_refs": [
+    {
+      "ref_type": "dispatch_load_id",
+      "ref_value": "load-1001",
+      "ref_source": "atmp-dispatch"
+    },
+    {
+      "ref_type": "dispatch_handoff_id",
+      "ref_value": "handoff-1001",
+      "ref_source": "atmp-dispatch"
+    },
+    {
+      "ref_type": "paperwork_packet_id",
+      "ref_value": "packet-1001",
+      "ref_source": "atmp-dispatch"
+    },
+    {
+      "ref_type": "bol_number",
+      "ref_value": "BOL-1001",
+      "ref_source": "atmp-dispatch"
+    },
+    {
+      "ref_type": "freight_bill_number",
+      "ref_value": "FB-1001",
+      "ref_source": "atmp-dispatch"
+    }
+  ]
+}"#
+    .to_string()
 }
 
 fn parse_optional_f64(value: &str) -> Result<Option<f64>, String> {

@@ -48,8 +48,36 @@ fn sample_payload() -> TmsHandoffPayload {
                 "ref_type": "dispatch_load_id",
                 "ref_value": "load-1001",
                 "ref_source": "atmp-dispatch"
+            },
+            {
+                "ref_type": "dispatch_handoff_id",
+                "ref_value": "handoff-1001",
+                "ref_source": "atmp-dispatch"
+            },
+            {
+                "ref_type": "paperwork_packet_id",
+                "ref_value": "packet-1001",
+                "ref_source": "atmp-dispatch"
+            },
+            {
+                "ref_type": "bol_number",
+                "ref_value": "BOL-1001",
+                "ref_source": "atmp-dispatch"
+            },
+            {
+                "ref_type": "freight_bill_number",
+                "ref_value": "FB-1001",
+                "ref_source": "atmp-dispatch"
             }
         ],
+        "compliance_envelope": {
+            "schema_version": "compliance-envelope-v1",
+            "compliance_envelope_id": "env-1001",
+            "tenant_id": "tenant-compliance",
+            "dispatch_load_id": "load-1001",
+            "dispatch_load_code": "ATMP-COMPLIANCE-1001",
+            "paperwork_packet_id": "packet-1001"
+        },
         "paperwork_packet_id": "packet-1001",
         "document_packet_url": "https://dispatch.example.test/packet-1001.pdf",
         "document_packet_hash": "sha256:packet1001",
