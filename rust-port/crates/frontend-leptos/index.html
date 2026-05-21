@@ -898,6 +898,11 @@
             display: grid;
             grid-template-columns: 275px minmax(0, 1fr);
             min-height: 0;
+            transition: grid-template-columns 0.2s ease;
+        }
+
+        .php-page-body-wrapper.sidebar-collapsed {
+            grid-template-columns: 76px minmax(0, 1fr);
         }
 
         .php-sidebar {
@@ -913,6 +918,7 @@
         .php-sidebar-logo {
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 0.8rem;
             padding: 0.35rem 0.5rem 0.9rem;
         }
@@ -920,6 +926,68 @@
         .php-sidebar-logo img {
             max-width: 136px;
             height: auto;
+        }
+
+        .php-sidebar-collapse {
+            width: 34px;
+            height: 34px;
+            border: 1px solid #d6e0e8;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #1F537B;
+            display: grid;
+            place-items: center;
+            cursor: pointer;
+            flex: 0 0 auto;
+        }
+
+        .php-sidebar-collapse:hover {
+            background: #f1f6fb;
+        }
+
+        .sidebar-collapsed .php-sidebar {
+            padding: 1rem 0.55rem 1.25rem;
+            overflow-x: hidden;
+        }
+
+        .sidebar-collapsed .php-sidebar-logo {
+            justify-content: center;
+            padding-inline: 0;
+        }
+
+        .sidebar-collapsed .php-sidebar-logo img,
+        .sidebar-collapsed .php-sidebar-title span,
+        .sidebar-collapsed .php-sidebar-link-main span,
+        .sidebar-collapsed .php-sidebar-link i:last-child {
+            display: none;
+        }
+
+        .sidebar-collapsed .php-sidebar-section {
+            justify-items: center;
+        }
+
+        .sidebar-collapsed .php-sidebar-title {
+            justify-content: center;
+            padding: 0;
+        }
+
+        .sidebar-collapsed .php-sidebar-links {
+            width: 100%;
+        }
+
+        .sidebar-collapsed .php-sidebar-link {
+            justify-content: center;
+            padding: 0.82rem 0;
+        }
+
+        .sidebar-collapsed .php-sidebar-link-main {
+            justify-content: center;
+            gap: 0;
+        }
+
+        .sidebar-collapsed .php-sidebar-link-main i {
+            width: 20px;
+            text-align: center;
         }
 
         .php-sidebar-section {

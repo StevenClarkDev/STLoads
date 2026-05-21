@@ -14,6 +14,11 @@ pub fn UserFrame(children: Children) -> impl IntoView {
     let logout_navigate = navigate.clone();
     let search_navigate = navigate.clone();
     let quick_jump = RwSignal::new(String::new());
+    let sidebar_collapsed = RwSignal::new(read_sidebar_collapsed());
+
+    Effect::new(move |_| {
+        write_sidebar_collapsed(sidebar_collapsed.get());
+    });
 
     let logout = move |_| {
         let auth = auth.clone();
@@ -122,10 +127,19 @@ pub fn UserFrame(children: Children) -> impl IntoView {
                     </div>
                 </header>
 
-                <div class="php-page-body-wrapper">
+                <div class=move || body_wrapper_class(sidebar_collapsed.get())>
                     <aside class="php-sidebar">
                         <div class="php-sidebar-logo">
                             <img src="/assets/images/stloads/logo-bg_none-small.png" alt="LoadBoard" />
+                            <button
+                                type="button"
+                                class="php-sidebar-collapse"
+                                title=move || sidebar_toggle_label(sidebar_collapsed.get())
+                                aria-label=move || sidebar_toggle_label(sidebar_collapsed.get())
+                                on:click=move |_| sidebar_collapsed.update(|value| *value = !*value)
+                            >
+                                <i class=move || if sidebar_collapsed.get() { "fas fa-chevron-right" } else { "fas fa-chevron-left" }></i>
+                            </button>
                         </div>
 
                         <section class="php-sidebar-section">
@@ -281,6 +295,68 @@ fn sidebar_link_class(active: bool) -> &'static str {
         "php-sidebar-link"
     }
 }
+
+fn body_wrapper_class(collapsed: bool) -> &'static str {
+    if collapsed {
+        "php-page-body-wrapper sidebar-collapsed"
+    } else {
+        "php-page-body-wrapper"
+    }
+}
+
+fn sidebar_toggle_label(collapsed: bool) -> &'static str {
+    if collapsed {
+        "Show navigation"
+    } else {
+        "Hide navigation"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sidebar_wrapper_class_tracks_collapsed_state() {
+        assert_eq!(body_wrapper_class(false), "php-page-body-wrapper");
+        assert_eq!(
+            body_wrapper_class(true),
+            "php-page-body-wrapper sidebar-collapsed"
+        );
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_sidebar_collapsed() -> bool {
+    web_sys::window()
+        .and_then(|window| window.local_storage().ok())
+        .flatten()
+        .and_then(|storage| storage.get_item("stloads.sidebar.collapsed").ok())
+        .flatten()
+        .map(|value| value == "true")
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_sidebar_collapsed() -> bool {
+    false
+}
+
+#[cfg(target_arch = "wasm32")]
+fn write_sidebar_collapsed(collapsed: bool) {
+    if let Some(storage) = web_sys::window()
+        .and_then(|window| window.local_storage().ok())
+        .flatten()
+    {
+        let _ = storage.set_item(
+            "stloads.sidebar.collapsed",
+            if collapsed { "true" } else { "false" },
+        );
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn write_sidebar_collapsed(_collapsed: bool) {}
 
 fn user_quick_jump_path(
     query: &str,
