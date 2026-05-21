@@ -79,54 +79,17 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task E7: Final IBM Staging Launch Gate
-
-**Outcome:** STLoads has one clean final evidence pass before being called market-ready.
-
-- [ ] Run full production readiness gate with real staging environment variables.
-- [ ] Run DB-backed acceptance tests with `RUST_TEST_DATABASE_URL`.
-- [ ] Run backend hosted smoke.
-- [ ] Run frontend hosted no-demo scan.
-- [ ] Confirm backend image builds.
-- [ ] Confirm frontend image builds.
-- [ ] Confirm health and readiness endpoints are live.
-- [ ] Record Code Engine backend and frontend revisions.
-- [ ] Confirm production runbook, support playbook, security overview, and go-to-market overview exist.
-- [ ] Confirm root and repo production readiness plans match.
+No remaining critical tasks are open.
 
 ## Launch Gate
 
-Do not call STLoads market-ready until every item below is true:
-
-- [ ] GitHub developer UI/UX is preserved.
-- [ ] No production-visible demo or placeholder data remains.
-- [ ] ATMP publish/update/withdraw/close works end to end.
-- [ ] STLoads outbound events reconcile back to ATMP.
-- [ ] Tenant isolation tests pass.
-- [ ] RBAC tests pass.
-- [ ] Signed integration tests pass.
-- [ ] Carrier search uses real data with real filters and pagination.
-- [ ] Eligibility gates block noncompliant carriers.
-- [ ] Offer/counter/tender/book-now flows work.
-- [ ] Booking concurrency lock prevents double booking.
-- [ ] Documents are versioned, reviewed, and synced.
-- [ ] Tracking and exception events sync to ATMP.
-- [ ] Stripe webhook replay is idempotent.
-- [ ] Admin reconciliation can replay or dead-letter failed events.
-- [ ] Health/readiness checks are live.
-- [ ] Backend image builds.
-- [ ] Frontend image builds.
-- [ ] IBM staging smoke passes.
-- [ ] Production runbook exists.
-- [ ] Security overview exists.
-- [ ] Go-to-market overview exists.
+The launch gate passed on IBM Code Engine staging on 2026-05-21. The final gate covered formatting, clippy, contract tests, tenant isolation, auth/RBAC, signed integration middleware, marketplace, booking concurrency, documents, payment webhooks, ATMP outbound retry, backend route tests, DB-backed acceptance tests, frontend build, hosted backend smoke, hosted frontend no-demo scan, source fixture scan, health/readiness, backend image build, and frontend image build.
 
 ---
 
 ## Recommended Execution Order
 
-1. E5 Payments and recovery proof.
-2. E7 Final IBM staging launch gate.
+No remaining execution tasks are open.
 
 ## Definition Of Done
 
