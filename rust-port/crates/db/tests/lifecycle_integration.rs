@@ -823,6 +823,37 @@ async fn tms_publication_blocks_active_board_when_required_documents_are_missing
 
 #[tokio::test]
 #[serial]
+async fn tms_publication_ignores_domestic_customs_placeholders_when_envelope_is_not_controlled()
+-> Result<(), Box<dyn std::error::Error>> {
+    let Some(pool) = prepare_pool().await? else {
+        return Ok(());
+    };
+
+    let mut payload = sample_tms_payload("TMS-DOMESTIC-CUSTOMS-PLACEHOLDERS-1001");
+    payload.payload_version = Some("dispatch-stloads-v2".into());
+    payload.customs_readiness = Some("not_applicable".into());
+    payload.isf_status = Some("not applicable".into());
+    payload.in_bond_status = Some("none".into());
+    payload.customs_documents_status = Some(serde_json::json!({
+        "customs_entry_packet": "not_applicable"
+    }));
+    payload.pga_requirements = Some(serde_json::json!({
+        "status": "not applicable"
+    }));
+
+    let publish_result = push_handoff(&pool, &payload).await?;
+
+    assert_eq!(
+        publish_result.handoff.status, "published",
+        "Domestic ATMP handoffs with explicit customs_controlled=false must not be quarantined for placeholder customs fields"
+    );
+    assert!(publish_result.load_id.is_some());
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
 async fn tms_publication_allows_executive_override_with_audit_event()
 -> Result<(), Box<dyn std::error::Error>> {
     let Some(pool) = prepare_pool().await? else {

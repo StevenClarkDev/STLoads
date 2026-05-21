@@ -1446,37 +1446,75 @@ fn document_status_ready(value: Option<&serde_json::Value>) -> bool {
 }
 
 fn customs_controlled(payload: &shared::TmsHandoffPayload) -> bool {
-    payload
+    if let Some(explicit) = payload
         .compliance_envelope
         .as_ref()
         .and_then(|envelope| envelope.pointer("/customs/customs_controlled"))
         .and_then(|value| value.as_bool())
-        .unwrap_or(false)
-        || present(payload.customs_movement_type.as_deref())
-        || present(payload.customs_readiness.as_deref())
-        || payload.customs_documents_status.is_some()
-        || present(payload.ace_entry_number.as_deref())
-        || present(payload.isf_status.as_deref())
-        || present(payload.in_bond_status.as_deref())
-        || present(payload.aes_itn.as_deref())
-        || payload.pga_requirements.is_some()
+    {
+        return explicit;
+    }
+
+    active_customs_text(payload.customs_movement_type.as_deref())
+        || active_customs_text(payload.customs_readiness.as_deref())
+        || active_customs_value(payload.customs_documents_status.as_ref())
+        || active_customs_text(payload.ace_entry_number.as_deref())
+        || active_customs_text(payload.isf_status.as_deref())
+        || active_customs_text(payload.in_bond_status.as_deref())
+        || active_customs_text(payload.aes_itn.as_deref())
+        || active_customs_value(payload.pga_requirements.as_ref())
 }
 
 fn handoff_customs_controlled(handoff: &StloadsHandoffRecord) -> bool {
-    handoff
+    if let Some(explicit) = handoff
         .compliance_envelope
         .as_ref()
         .and_then(|envelope| envelope.pointer("/customs/customs_controlled"))
         .and_then(|value| value.as_bool())
-        .unwrap_or(false)
-        || present(handoff.customs_movement_type.as_deref())
-        || present(handoff.customs_readiness.as_deref())
-        || handoff.customs_documents_status.is_some()
-        || present(handoff.ace_entry_number.as_deref())
-        || present(handoff.isf_status.as_deref())
-        || present(handoff.in_bond_status.as_deref())
-        || present(handoff.aes_itn.as_deref())
-        || handoff.pga_requirements.is_some()
+    {
+        return explicit;
+    }
+
+    active_customs_text(handoff.customs_movement_type.as_deref())
+        || active_customs_text(handoff.customs_readiness.as_deref())
+        || active_customs_value(handoff.customs_documents_status.as_ref())
+        || active_customs_text(handoff.ace_entry_number.as_deref())
+        || active_customs_text(handoff.isf_status.as_deref())
+        || active_customs_text(handoff.in_bond_status.as_deref())
+        || active_customs_text(handoff.aes_itn.as_deref())
+        || active_customs_value(handoff.pga_requirements.as_ref())
+}
+
+fn active_customs_text(value: Option<&str>) -> bool {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    !matches!(
+        value.to_ascii_lowercase().as_str(),
+        "none"
+            | "n/a"
+            | "na"
+            | "not_applicable"
+            | "not applicable"
+            | "not required"
+            | "domestic"
+            | "false"
+            | "no"
+    )
+}
+
+fn active_customs_value(value: Option<&Value>) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    match value {
+        Value::Null => false,
+        Value::Bool(flag) => *flag,
+        Value::String(text) => active_customs_text(Some(text.as_str())),
+        Value::Array(items) => items.iter().any(|item| active_customs_value(Some(item))),
+        Value::Object(fields) => fields.values().any(|field| active_customs_value(Some(field))),
+        Value::Number(_) => true,
+    }
 }
 
 fn normalized_optional(value: Option<&str>) -> Option<String> {
@@ -2518,6 +2556,8 @@ pub async fn process_retryable_handoffs(
     limit: i64,
     max_attempts: i32,
 ) -> Result<TmsRetryRunSummary, sqlx::Error> {
+    ensure_stloads_compliance_storage(pool).await?;
+
     let handoff_ids = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT id
@@ -2586,6 +2626,8 @@ pub async fn run_reconciliation_scan(
     pool: &DbPool,
     stale_days: i64,
 ) -> Result<TmsReconciliationScanSummary, sqlx::Error> {
+    ensure_stloads_compliance_storage(pool).await?;
+
     let mut summary = TmsReconciliationScanSummary::default();
 
     let archive_ids = sqlx::query_scalar::<_, i64>(
@@ -2868,7 +2910,7 @@ async fn insert_handoff_row(
             isf_status, in_bond_status, aes_itn, pga_requirements, readiness,
             pushed_by, push_reason, source_module, queued_at, retry_count, last_push_result,
             payload_version, raw_payload, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71, $72, $73, 0, $74, $75, $76, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71, 0, $72, $73, $74, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id",
     )
     .bind(payload.tms_load_id.as_str())
