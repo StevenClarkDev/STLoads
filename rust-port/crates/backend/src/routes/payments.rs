@@ -2080,6 +2080,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn account_updated_webhook_syncs_connect_state_without_auth_status_side_effect() {
+        let Some(pool) = crate::test_support::prepare_pool().await.unwrap() else {
+            return;
+        };
+        let fixture = crate::test_support::insert_load_fixture(&pool, 8)
+            .await
+            .unwrap();
+        let mut state = crate::test_support::test_state(pool.clone());
+        state.config.stripe_webhook_shared_secret = Some("whsec_test".into());
+
+        set_user_stripe_connect_account_id(
+            &pool,
+            fixture.carrier_user.id,
+            "acct_account_updated_p14",
+        )
+        .await
+        .unwrap();
+        let original_status =
+            sqlx::query_scalar::<_, i16>("SELECT status FROM users WHERE id = $1")
+                .bind(fixture.carrier_user.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let payload = serde_json::json!({
+            "id": "evt_account_updated_p14",
+            "type": "account.updated",
+            "data": {
+                "object": {
+                    "id": "acct_account_updated_p14",
+                    "payouts_enabled": true,
+                    "requirements": {
+                        "currently_due": [],
+                        "eventually_due": [],
+                        "past_due": []
+                    }
+                }
+            }
+        })
+        .to_string();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-stripe-webhook-secret",
+            HeaderValue::from_static("whsec_test"),
+        );
+
+        let response = stripe_webhook(State(state), headers, Bytes::from(payload))
+            .await
+            .unwrap()
+            .0
+            .data;
+        assert!(response.acknowledged);
+
+        let updated = sqlx::query_as::<_, (bool, Option<String>, i16)>(
+            "SELECT payouts_enabled, kyc_status, status FROM users WHERE id = $1",
+        )
+        .bind(fixture.carrier_user.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(updated.0);
+        assert_eq!(updated.1.as_deref(), Some("verified"));
+        assert_eq!(updated.2, original_status);
+    }
+
+    #[tokio::test]
     async fn release_requires_clear_finance_workflows_before_settlement_ready() {
         let Some(pool) = crate::test_support::prepare_pool().await.unwrap() else {
             return;

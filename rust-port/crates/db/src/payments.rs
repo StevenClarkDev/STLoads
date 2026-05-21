@@ -514,7 +514,6 @@ pub async fn update_user_connect_state(
         "UPDATE users
          SET payouts_enabled = $1,
              kyc_status = $2,
-             status = CASE WHEN $1 = TRUE THEN 1 ELSE 3 END,
              updated_at = CURRENT_TIMESTAMP
          WHERE stripe_connect_account_id = $3",
     )
