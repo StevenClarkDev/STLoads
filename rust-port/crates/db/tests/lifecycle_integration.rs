@@ -582,3 +582,39 @@ async fn tms_retry_worker_publishes_queued_handoff() -> Result<(), Box<dyn std::
 
     Ok(())
 }
+
+#[tokio::test]
+#[serial]
+async fn tms_publication_blocks_active_board_when_required_documents_are_missing()
+-> Result<(), Box<dyn std::error::Error>> {
+    let Some(pool) = prepare_pool().await? else {
+        return Ok(());
+    };
+
+    let mut payload = sample_tms_payload("TMS-COMPLIANCE-MISSING-DOCS-1001");
+    payload.payload_version = Some("dispatch-stloads-v2".into());
+    payload.compliance_passed = Some(true);
+    payload.readiness = Some("publishable".into());
+    payload.required_documents_status = Some(serde_json::json!({
+        "bol": "generated",
+        "freight_bill": "pending",
+        "rate_confirmation": "generated",
+        "dispatch_sheet": "generated"
+    }));
+
+    let publish_result = push_handoff(&pool, &payload).await?;
+
+    assert_ne!(
+        publish_result.handoff.status, "published",
+        "STLOADS must not create an active board record when required document statuses are missing"
+    );
+    assert!(
+        matches!(
+            publish_result.handoff.status.as_str(),
+            "quarantined" | "blocked" | "queued"
+        ),
+        "missing required documents should quarantine, block, or queue the handoff instead of publishing it"
+    );
+
+    Ok(())
+}
