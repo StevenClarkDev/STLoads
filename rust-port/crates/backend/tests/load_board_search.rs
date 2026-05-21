@@ -233,6 +233,48 @@ async fn carrier_search_filters_and_paginates_production_sized_results() {
     );
 }
 
+#[tokio::test]
+#[serial(load_board_search_db)]
+async fn carrier_load_board_rows_expose_transport_mode() {
+    let Some(pool) = backend::test_support::prepare_pool().await.unwrap() else {
+        return;
+    };
+
+    let carrier = backend::test_support::insert_user_with_role_status(
+        &pool,
+        "Carrier Mode",
+        "carrier-mode-p8@example.com",
+        domain::auth::UserRole::Carrier,
+        domain::auth::AccountStatus::Approved,
+    )
+    .await
+    .unwrap();
+    seed_carrier_profile(&pool, carrier.id).await;
+
+    let visible = seed_search_fixture(&pool, "MODE-RAIL-P8", Some("published"), None).await;
+    sqlx::query(
+        "UPDATE stloads_handoffs
+         SET freight_mode = 'rail',
+             raw_payload = COALESCE(raw_payload, '{}'::jsonb) || jsonb_build_object('transport_mode', 'rail')
+         WHERE load_id = (SELECT load_id FROM load_legs WHERE id = $1)",
+    )
+    .bind(visible.leg_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let rows =
+        db::dispatch::list_load_board_legs_for_carrier_filtered(&pool, carrier.id, Some("all"), 20)
+            .await
+            .unwrap();
+    let row = rows
+        .into_iter()
+        .find(|row| row.leg_id == visible.leg_id)
+        .expect("seeded rail posting should be visible");
+
+    assert_eq!(row.transport_mode.as_deref(), Some("rail"));
+}
+
 #[derive(Debug)]
 struct SearchFixture {
     leg_id: i64,

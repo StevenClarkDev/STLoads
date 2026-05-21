@@ -8,7 +8,7 @@ use crate::{
 };
 use shared::{
     BookLoadLegRequest, LoadBoardFilterState, LoadBoardRow, LoadBoardScreen, RealtimeEventKind,
-    RealtimeTopic, SaveLoadBoardSearchRequest,
+    RealtimeTopic, SaveLoadBoardSearchRequest, SubmitOfferRequest,
 };
 
 fn tone_style(tone: &str) -> &'static str {
@@ -38,6 +38,7 @@ pub fn LoadBoardPage() -> impl IntoView {
     let error_message = RwSignal::new(None::<String>);
     let action_message = RwSignal::new(None::<String>);
     let pending_leg_id = RwSignal::new(None::<u64>);
+    let pending_posting_id = RwSignal::new(None::<u64>);
     let refresh_nonce = RwSignal::new(0_u64);
     let ws_connected = RwSignal::new(false);
     let ws_handle = RwSignal::new(None::<AbortHandle>);
@@ -187,6 +188,64 @@ pub fn LoadBoardPage() -> impl IntoView {
         });
     };
 
+    let submit_bid = move |posting_id: u64, amount_label: String| {
+        let current_session = auth.session.get();
+        let can_bid = current_session
+            .user
+            .as_ref()
+            .map(|user| user.role_key == "carrier")
+            .unwrap_or(false);
+
+        if !can_bid {
+            action_message.set(Some(
+                "Only carrier accounts can bid on marketplace loads.".into(),
+            ));
+            return;
+        }
+
+        let amount = parse_amount_label(&amount_label).unwrap_or(0.0);
+        if amount <= 0.0 {
+            action_message.set(Some(
+                "This posting needs a valid rate before bidding.".into(),
+            ));
+            return;
+        }
+
+        pending_posting_id.set(Some(posting_id));
+        action_message.set(None);
+        let auth = auth.clone();
+
+        spawn_local(async move {
+            let response = api::submit_marketplace_offer(
+                posting_id,
+                &SubmitOfferRequest {
+                    amount,
+                    currency: Some("USD".into()),
+                    message: Some("Carrier bid from Marketplace Loads.".into()),
+                    idempotency_key: None,
+                },
+            )
+            .await;
+
+            match response {
+                Ok(result) => {
+                    action_message.set(Some(result.message));
+                    if result.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+
+            pending_posting_id.set(None);
+        });
+    };
+
     let can_self_book = Signal::derive(move || {
         auth.session
             .get()
@@ -317,6 +376,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.6rem;">
                         {filter_input("Origin", draft_filters, |state, value| state.origin = value)}
                         {filter_input("Destination", draft_filters, |state, value| state.destination = value)}
+                        {filter_input("Mode", draft_filters, |state, value| state.mode = value)}
                         {filter_input("Equipment", draft_filters, |state, value| state.equipment = value)}
                         {filter_input("Pickup from", draft_filters, |state, value| state.date_from = value)}
                         {filter_input("Pickup to", draft_filters, |state, value| state.date_to = value)}
@@ -382,6 +442,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                             <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;position:sticky;left:0;background:#f8fafc;z-index:3;">"Load"</th>
                             <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Origin"</th>
                             <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Destination"</th>
+                            <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Mode"</th>
                             <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Pickup"</th>
                             <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Delivery"</th>
                             <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Rate"</th>
@@ -396,7 +457,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                             if is_loading.get() && screen.get().is_none() {
                                 view! {
                                     <tr>
-                                        <td colspan="10" style="padding:1rem;">"Loading loads..."</td>
+                                        <td colspan="11" style="padding:1rem;">"Loading loads..."</td>
                                     </tr>
                                 }.into_any()
                             } else {
@@ -404,19 +465,19 @@ pub fn LoadBoardPage() -> impl IntoView {
                                     .get()
                                     .map(|value| {
                                         if value.rows.is_empty() {
-                                            view! { <tr><td colspan="10" style="padding:1rem;">"No loads found."</td></tr> }.into_any()
+                                            view! { <tr><td colspan="11" style="padding:1rem;">"No loads found."</td></tr> }.into_any()
                                         } else {
                                             value.rows
                                                 .into_iter()
                                                 .enumerate()
-                                                .map(|(index, row)| render_row(index, row, pending_leg_id, book_leg, can_self_book.get(), can_view_profile.get()))
+                                                .map(|(index, row)| render_row(index, row, pending_leg_id, pending_posting_id, book_leg, submit_bid, can_self_book.get(), can_view_profile.get()))
                                                 .collect_view()
                                                 .into_any()
                                         }
                                     })
                                     .unwrap_or_else(|| view! {
                                         <tr>
-                                            <td colspan="10" style="padding:1rem;">"No loads found."</td>
+                                            <td colspan="11" style="padding:1rem;">"No loads found."</td>
                                         </tr>
                                     }.into_any())
                             }
@@ -462,16 +523,20 @@ fn render_row(
     index: usize,
     row: LoadBoardRow,
     pending_leg_id: RwSignal<Option<u64>>,
+    pending_posting_id: RwSignal<Option<u64>>,
     book_leg: impl Fn(u64) + Copy + 'static,
+    submit_bid: impl Fn(u64, String) + Copy + 'static,
     can_self_book: bool,
     can_view_profile: bool,
 ) -> impl IntoView {
     let LoadBoardRow {
         load_id,
         leg_id,
+        posting_id,
         leg_code,
         origin_label,
         destination_label,
+        mode_label,
         pickup_date_label,
         delivery_date_label,
         status_label,
@@ -490,12 +555,15 @@ fn render_row(
     } = row;
 
     let is_booking = Signal::derive(move || pending_leg_id.get() == Some(leg_id));
+    let is_bidding = Signal::derive(move || pending_posting_id.get() == posting_id);
     let show_book_button = can_self_book && booked_carrier_id.is_none();
+    let show_bid_button = can_self_book && booked_carrier_id.is_none() && posting_id.is_some();
     let origin_title = origin_label.clone();
     let destination_title = destination_label.clone();
     let origin_short = compact_location(&origin_label);
     let destination_short = compact_location(&destination_label);
     let code_short = compact_code(&leg_code);
+    let amount_for_bid = amount_label.clone();
     let fit_label = recommended_score
         .map(|score| format!("{}", score))
         .unwrap_or_else(|| "-".into());
@@ -516,6 +584,9 @@ fn render_row(
             </td>
             <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;max-width:180px;" title=destination_title>
                 <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{destination_short}</span>
+            </td>
+            <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;white-space:nowrap;">
+                <span style="display:inline-flex;align-items:center;padding:0.2rem 0.45rem;border-radius:999px;border:1px solid #cbd5e1;background:#f8fafc;color:#334155;font-weight:700;font-size:0.78rem;">{mode_label}</span>
             </td>
             <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;white-space:nowrap;">{pickup_date_label}</td>
             <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;white-space:nowrap;">{delivery_date_label}</td>
@@ -558,9 +629,33 @@ fn render_row(
                         {move || if is_booking.get() { "Booking..." } else { "Book" }}
                     </button>
                 })}
+                {show_bid_button.then(|| {
+                    let posting_id = posting_id.unwrap_or_default();
+                    view! {
+                        <button
+                            type="button"
+                            style="padding:0.45rem 0.65rem;border-radius:0.5rem;border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;cursor:pointer;"
+                            disabled=move || is_bidding.get()
+                            on:click=move |_| submit_bid(posting_id, amount_for_bid.clone())
+                        >
+                            {move || if is_bidding.get() { "Bidding..." } else { "Bid" }}
+                        </button>
+                    }
+                })}
+                {(!can_self_book && posting_id.is_some()).then(|| view! {
+                    <A href="/chat" attr:style="color:#1d4ed8;text-decoration:none;">"Review bids"</A>
+                })}
             </td>
         </tr>
     }
+}
+
+fn parse_amount_label(value: &str) -> Option<f64> {
+    let cleaned = value
+        .chars()
+        .filter(|ch| ch.is_ascii_digit() || *ch == '.')
+        .collect::<String>();
+    cleaned.parse::<f64>().ok()
 }
 
 fn compact_location(value: &str) -> String {

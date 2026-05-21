@@ -261,6 +261,7 @@ pub struct CarrierPreferenceRecord {
 pub struct LoadBoardLegRecord {
     pub leg_id: i64,
     pub load_id: i64,
+    pub posting_id: Option<i64>,
     pub leg_no: i32,
     pub leg_code: Option<String>,
     pub load_number: Option<String>,
@@ -277,6 +278,7 @@ pub struct LoadBoardLegRecord {
     pub booked_amount: Option<f64>,
     pub escrow_status: Option<String>,
     pub stloads_status: Option<String>,
+    pub transport_mode: Option<String>,
     pub stloads_retry_count: Option<i32>,
     pub stloads_alert_title: Option<String>,
     pub created_at: NaiveDateTime,
@@ -1764,6 +1766,7 @@ fn load_board_select_sql() -> &'static str {
         SELECT
             ll.id AS leg_id,
             ll.load_id,
+            COALESCE(handoff.posting_id, posting.id) AS posting_id,
             ll.leg_no,
             ll.leg_code,
             l.load_number,
@@ -1780,6 +1783,7 @@ fn load_board_select_sql() -> &'static str {
             ll.booked_amount::double precision AS booked_amount,
             escrow.status AS escrow_status,
             handoff.status AS stloads_status,
+            LOWER(COALESCE(handoff.raw_payload->>'transport_mode', handoff.freight_mode, 'road')) AS transport_mode,
             handoff.retry_count AS stloads_retry_count,
             sync_issue.title AS stloads_alert_title,
             ll.created_at
@@ -1794,6 +1798,15 @@ fn load_board_select_sql() -> &'static str {
             FROM stloads_handoffs handoff_inner
             WHERE handoff_inner.load_id = l.id
             ORDER BY handoff_inner.id DESC
+            LIMIT 1
+        )
+        LEFT JOIN stloads_postings posting ON posting.id = (
+            SELECT posting_inner.id
+            FROM stloads_postings posting_inner
+            WHERE posting_inner.source_load_id = l.id::text
+              AND (posting_inner.source_leg_id IS NULL OR posting_inner.source_leg_id = ll.id::text)
+              AND posting_inner.deleted_at IS NULL
+            ORDER BY posting_inner.id DESC
             LIMIT 1
         )
         LEFT JOIN stloads_sync_errors sync_issue ON sync_issue.id = (

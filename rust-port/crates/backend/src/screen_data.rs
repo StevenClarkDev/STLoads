@@ -428,6 +428,7 @@ async fn build_load_board_screen(
             LoadBoardRow {
                 load_id: row.load_id.max(0) as u64,
                 leg_id: row.leg_id.max(0) as u64,
+                posting_id: row.posting_id.map(|value| value.max(0) as u64),
                 leg_code: row.leg_code.clone().unwrap_or_else(|| {
                     format!(
                         "{}-{}",
@@ -442,6 +443,7 @@ async fn build_load_board_screen(
                 destination_label: row
                     .delivery_location_name
                     .unwrap_or_else(|| "Unknown delivery".into()),
+                mode_label: mode_label(row.transport_mode.as_deref()),
                 pickup_date_label: format_date(row.pickup_date.as_ref()),
                 delivery_date_label: format_date(row.delivery_date.as_ref()),
                 status_label,
@@ -2423,6 +2425,19 @@ fn payment_label(status: Option<&str>, is_booked_or_live: bool) -> String {
         Some(other) => title_case_legacy_label(other),
         None if is_booked_or_live => "Funding setup needed".into(),
         None => "Not funded".into(),
+    }
+}
+
+fn mode_label(value: Option<&str>) -> String {
+    match value.unwrap_or("road").trim().to_lowercase().as_str() {
+        "road" | "land" | "truck" | "truckload" => "Road".into(),
+        "rail" => "Rail".into(),
+        "ocean" | "maritime" | "sea" => "Ocean".into(),
+        "air" => "Air".into(),
+        "intermodal" | "multi" => "Intermodal".into(),
+        "courier" => "Courier".into(),
+        other if other.is_empty() => "Road".into(),
+        other => title_case_legacy_label(other),
     }
 }
 
