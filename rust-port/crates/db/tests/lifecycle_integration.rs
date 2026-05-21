@@ -444,6 +444,153 @@ async fn tms_rate_update_marks_requeue_required_and_updates_leg_price()
 
 #[tokio::test]
 #[serial]
+async fn stloads_handoff_persists_compliance_snapshot() -> Result<(), Box<dyn std::error::Error>> {
+    let Some(pool) = prepare_pool().await? else {
+        return Ok(());
+    };
+
+    let mut payload = sample_tms_payload("TMS-COMPLIANCE-STORAGE-1001");
+    payload.payload_version = Some("dispatch-stloads-v2".into());
+    payload.compliance_envelope = Some(serde_json::json!({
+        "schema_version": "compliance-envelope-v1",
+        "compliance_envelope_id": "ce-1001",
+        "paperwork_packet_id": "packet-1001"
+    }));
+    payload.compliance_summary = Some(serde_json::json!({ "status": "clear" }));
+    payload.required_documents_status = Some(serde_json::json!({
+        "bol": "generated",
+        "freight_bill": "generated"
+    }));
+    payload.paperwork_packet_id = Some("packet-1001".into());
+    payload.document_packet_url =
+        Some("https://dispatch.example.test/packets/packet-1001.pdf".into());
+    payload.document_packet_hash = Some("sha256:packet-1001".into());
+    payload.bol_number = Some("BOL-1001".into());
+    payload.freight_bill_number = Some("FB-1001".into());
+    payload.atmp_operating_role = Some("freight_forwarder".into());
+    payload.carrier_authority_snapshot = Some(serde_json::json!({ "authority_status": "active" }));
+    payload.insurance_snapshot = Some(serde_json::json!({ "cargo": "active" }));
+    payload.compliance_blockers = Some(serde_json::json!([]));
+    payload.retention_metadata = Some(serde_json::json!({ "retention_period_years": 3 }));
+    payload.audit_event_ids = Some(vec!["audit-1001".into(), "audit-1002".into()]);
+    payload.executive_override = Some(true);
+    payload.executive_override_reason =
+        Some("Compliance officer approved controlled release".into());
+    payload.executive_override_by = Some("exec@example.test".into());
+    payload.executive_override_at = Some("2026-04-07T13:00:00Z".into());
+    payload.customs_movement_type = Some("import".into());
+    payload.customs_readiness = Some("released".into());
+    payload.customs_documents_status =
+        Some(serde_json::json!({ "commercial_invoice": "attached" }));
+    payload.ace_entry_number = Some("ACE-1001".into());
+    payload.isf_status = Some("accepted".into());
+    payload.in_bond_status = Some("closed".into());
+    payload.aes_itn = Some("X202604071001".into());
+    payload.pga_requirements = Some(serde_json::json!(["FDA"]));
+
+    let publish_result = push_handoff(&pool, &payload).await?;
+
+    let row = sqlx::query(
+        "SELECT
+            compliance_envelope,
+            paperwork_packet_id,
+            document_packet_url,
+            document_packet_hash,
+            bol_number,
+            freight_bill_number,
+            atmp_operating_role,
+            carrier_authority_snapshot,
+            insurance_snapshot,
+            compliance_blockers,
+            retention_metadata,
+            audit_event_ids,
+            executive_override,
+            executive_override_reason,
+            executive_override_by,
+            executive_override_at,
+            customs_movement_type,
+            customs_readiness,
+            customs_documents_status,
+            ace_entry_number,
+            isf_status,
+            in_bond_status,
+            aes_itn,
+            pga_requirements,
+            raw_payload
+         FROM stloads_handoffs
+         WHERE id = $1",
+    )
+    .bind(publish_result.handoff.id)
+    .fetch_one(&pool)
+    .await?;
+
+    assert_eq!(
+        row.try_get::<Option<String>, _>("paperwork_packet_id")?
+            .as_deref(),
+        Some("packet-1001")
+    );
+    assert_eq!(
+        row.try_get::<Option<String>, _>("bol_number")?.as_deref(),
+        Some("BOL-1001")
+    );
+    assert_eq!(
+        row.try_get::<Option<String>, _>("freight_bill_number")?
+            .as_deref(),
+        Some("FB-1001")
+    );
+    assert_eq!(
+        row.try_get::<Option<String>, _>("document_packet_hash")?
+            .as_deref(),
+        Some("sha256:packet-1001")
+    );
+    assert_eq!(
+        row.try_get::<Option<String>, _>("customs_movement_type")?
+            .as_deref(),
+        Some("import")
+    );
+    assert_eq!(
+        row.try_get::<Option<String>, _>("ace_entry_number")?
+            .as_deref(),
+        Some("ACE-1001")
+    );
+    assert_eq!(
+        row.try_get::<Option<String>, _>("in_bond_status")?
+            .as_deref(),
+        Some("closed")
+    );
+    assert!(row.try_get::<bool, _>("executive_override")?);
+    assert_eq!(
+        row.try_get::<Option<serde_json::Value>, _>("audit_event_ids")?,
+        Some(serde_json::json!(["audit-1001", "audit-1002"]))
+    );
+    assert_eq!(
+        row.try_get::<Option<serde_json::Value>, _>("pga_requirements")?,
+        Some(serde_json::json!(["FDA"]))
+    );
+    let raw_payload = row.try_get::<Option<serde_json::Value>, _>("raw_payload")?;
+    assert_eq!(
+        raw_payload
+            .as_ref()
+            .and_then(|value| value.get("paperwork_packet_id"))
+            .and_then(|value| value.as_str()),
+        Some("packet-1001")
+    );
+
+    let stored_handoff = find_handoff_by_id(&pool, publish_result.handoff.id)
+        .await?
+        .expect("stored handoff should hydrate compliance fields");
+    assert_eq!(
+        stored_handoff.paperwork_packet_id.as_deref(),
+        Some("packet-1001")
+    );
+    assert_eq!(stored_handoff.ace_entry_number.as_deref(), Some("ACE-1001"));
+    assert!(stored_handoff.executive_override);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
 async fn email_outbox_records_retry_and_delivery_state() -> Result<(), Box<dyn std::error::Error>> {
     let Some(pool) = prepare_pool().await? else {
         return Ok(());

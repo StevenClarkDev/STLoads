@@ -14,6 +14,69 @@ use sqlx::FromRow;
 
 use crate::DbPool;
 
+const STLOADS_COMPLIANCE_STORAGE_SQL: &[&str] = &[
+    "ALTER TABLE stloads_handoffs
+        ADD COLUMN IF NOT EXISTS paperwork_packet_id TEXT,
+        ADD COLUMN IF NOT EXISTS document_packet_url TEXT,
+        ADD COLUMN IF NOT EXISTS document_packet_hash TEXT,
+        ADD COLUMN IF NOT EXISTS bol_number TEXT,
+        ADD COLUMN IF NOT EXISTS freight_bill_number TEXT,
+        ADD COLUMN IF NOT EXISTS atmp_operating_role TEXT,
+        ADD COLUMN IF NOT EXISTS carrier_authority_snapshot JSONB,
+        ADD COLUMN IF NOT EXISTS insurance_snapshot JSONB,
+        ADD COLUMN IF NOT EXISTS compliance_blockers JSONB,
+        ADD COLUMN IF NOT EXISTS retention_metadata JSONB,
+        ADD COLUMN IF NOT EXISTS audit_event_ids JSONB,
+        ADD COLUMN IF NOT EXISTS executive_override BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS executive_override_reason TEXT,
+        ADD COLUMN IF NOT EXISTS executive_override_by TEXT,
+        ADD COLUMN IF NOT EXISTS executive_override_at TEXT,
+        ADD COLUMN IF NOT EXISTS customs_movement_type TEXT,
+        ADD COLUMN IF NOT EXISTS customs_readiness TEXT,
+        ADD COLUMN IF NOT EXISTS customs_documents_status JSONB,
+        ADD COLUMN IF NOT EXISTS ace_entry_number TEXT,
+        ADD COLUMN IF NOT EXISTS isf_status TEXT,
+        ADD COLUMN IF NOT EXISTS in_bond_status TEXT,
+        ADD COLUMN IF NOT EXISTS aes_itn TEXT,
+        ADD COLUMN IF NOT EXISTS pga_requirements JSONB",
+    "CREATE INDEX IF NOT EXISTS idx_stloads_handoffs_paperwork_packet_id
+        ON stloads_handoffs (paperwork_packet_id)
+        WHERE paperwork_packet_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_stloads_handoffs_bol_number
+        ON stloads_handoffs (bol_number)
+        WHERE bol_number IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_stloads_handoffs_freight_bill_number
+        ON stloads_handoffs (freight_bill_number)
+        WHERE freight_bill_number IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_stloads_handoffs_document_packet_hash
+        ON stloads_handoffs (document_packet_hash)
+        WHERE document_packet_hash IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_stloads_handoffs_ace_entry_number
+        ON stloads_handoffs (ace_entry_number)
+        WHERE ace_entry_number IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_stloads_handoffs_in_bond_status
+        ON stloads_handoffs (in_bond_status)
+        WHERE in_bond_status IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_stloads_handoffs_customs_movement_type
+        ON stloads_handoffs (customs_movement_type)
+        WHERE customs_movement_type IS NOT NULL",
+];
+
+async fn ensure_stloads_compliance_storage(pool: &DbPool) -> Result<(), sqlx::Error> {
+    for statement in STLOADS_COMPLIANCE_STORAGE_SQL {
+        sqlx::query(statement).execute(pool).await?;
+    }
+
+    Ok(())
+}
+
+fn audit_event_ids_json(payload: &shared::TmsHandoffPayload) -> Option<Value> {
+    payload
+        .audit_event_ids
+        .as_ref()
+        .and_then(|event_ids| serde_json::to_value(event_ids).ok())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct StloadsHandoffRecord {
     pub id: i64,
@@ -60,8 +123,32 @@ pub struct StloadsHandoffRecord {
     pub quote_status: Option<String>,
     pub tender_posture: Option<String>,
     pub compliance_passed: bool,
+    pub compliance_envelope: Option<Value>,
     pub compliance_summary: Option<Value>,
     pub required_documents_status: Option<Value>,
+    pub paperwork_packet_id: Option<String>,
+    pub document_packet_url: Option<String>,
+    pub document_packet_hash: Option<String>,
+    pub bol_number: Option<String>,
+    pub freight_bill_number: Option<String>,
+    pub atmp_operating_role: Option<String>,
+    pub carrier_authority_snapshot: Option<Value>,
+    pub insurance_snapshot: Option<Value>,
+    pub compliance_blockers: Option<Value>,
+    pub retention_metadata: Option<Value>,
+    pub audit_event_ids: Option<Value>,
+    pub executive_override: bool,
+    pub executive_override_reason: Option<String>,
+    pub executive_override_by: Option<String>,
+    pub executive_override_at: Option<String>,
+    pub customs_movement_type: Option<String>,
+    pub customs_readiness: Option<String>,
+    pub customs_documents_status: Option<Value>,
+    pub ace_entry_number: Option<String>,
+    pub isf_status: Option<String>,
+    pub in_bond_status: Option<String>,
+    pub aes_itn: Option<String>,
+    pub pga_requirements: Option<Value>,
     pub readiness: String,
     pub pushed_by: Option<String>,
     pub push_reason: Option<String>,
@@ -245,6 +332,8 @@ pub async fn find_active_handoff_by_tms_load(
     tms_load_id: &str,
     tenant_id: &str,
 ) -> Result<Option<StloadsHandoffRecord>, sqlx::Error> {
+    ensure_stloads_compliance_storage(pool).await?;
+
     sqlx::query_as::<_, StloadsHandoffRecord>(
         "SELECT id, tms_load_id, tenant_id, external_handoff_id, load_id, status, tms_status,
                 tms_status_at, party_type, freight_mode, equipment_type, commodity_description,
@@ -254,7 +343,13 @@ pub async fn find_active_handoff_by_tms_load(
                 dropoff_city, dropoff_state, dropoff_zip, dropoff_country, dropoff_address,
                 dropoff_window_start, dropoff_window_end, dropoff_instructions, dropoff_appointment_ref,
                 board_rate::double precision AS board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
-                compliance_passed, compliance_summary, required_documents_status, readiness, pushed_by,
+                compliance_passed, compliance_envelope, compliance_summary, required_documents_status,
+                paperwork_packet_id, document_packet_url, document_packet_hash, bol_number, freight_bill_number,
+                atmp_operating_role, carrier_authority_snapshot, insurance_snapshot, compliance_blockers,
+                retention_metadata, audit_event_ids, executive_override, executive_override_reason,
+                executive_override_by, executive_override_at, customs_movement_type, customs_readiness,
+                customs_documents_status, ace_entry_number, isf_status, in_bond_status, aes_itn,
+                pga_requirements, readiness, pushed_by,
                 push_reason, source_module, queued_at, published_at, withdrawn_at, closed_at,
                 retry_count, last_push_result, payload_version, last_webhook_at, raw_payload,
                 created_at, updated_at
@@ -273,6 +368,8 @@ pub async fn list_recent_handoffs(
     pool: &DbPool,
     limit: i64,
 ) -> Result<Vec<StloadsHandoffRecord>, sqlx::Error> {
+    ensure_stloads_compliance_storage(pool).await?;
+
     sqlx::query_as::<_, StloadsHandoffRecord>(
         "SELECT id, tms_load_id, tenant_id, external_handoff_id, load_id, status, tms_status,
                 tms_status_at, party_type, freight_mode, equipment_type, commodity_description,
@@ -282,7 +379,13 @@ pub async fn list_recent_handoffs(
                 dropoff_city, dropoff_state, dropoff_zip, dropoff_country, dropoff_address,
                 dropoff_window_start, dropoff_window_end, dropoff_instructions, dropoff_appointment_ref,
                 board_rate::double precision AS board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
-                compliance_passed, compliance_summary, required_documents_status, readiness, pushed_by,
+                compliance_passed, compliance_envelope, compliance_summary, required_documents_status,
+                paperwork_packet_id, document_packet_url, document_packet_hash, bol_number, freight_bill_number,
+                atmp_operating_role, carrier_authority_snapshot, insurance_snapshot, compliance_blockers,
+                retention_metadata, audit_event_ids, executive_override, executive_override_reason,
+                executive_override_by, executive_override_at, customs_movement_type, customs_readiness,
+                customs_documents_status, ace_entry_number, isf_status, in_bond_status, aes_itn,
+                pga_requirements, readiness, pushed_by,
                 push_reason, source_module, queued_at, published_at, withdrawn_at, closed_at,
                 retry_count, last_push_result, payload_version, last_webhook_at, raw_payload,
                 created_at, updated_at
@@ -935,6 +1038,8 @@ pub async fn find_latest_handoff_for_load(
     pool: &DbPool,
     load_id: i64,
 ) -> Result<Option<StloadsHandoffRecord>, sqlx::Error> {
+    ensure_stloads_compliance_storage(pool).await?;
+
     sqlx::query_as::<_, StloadsHandoffRecord>(
         "SELECT id, tms_load_id, tenant_id, external_handoff_id, load_id, status, tms_status,
                 tms_status_at, party_type, freight_mode, equipment_type, commodity_description,
@@ -944,7 +1049,13 @@ pub async fn find_latest_handoff_for_load(
                 dropoff_city, dropoff_state, dropoff_zip, dropoff_country, dropoff_address,
                 dropoff_window_start, dropoff_window_end, dropoff_instructions, dropoff_appointment_ref,
                 board_rate::double precision AS board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
-                compliance_passed, compliance_summary, required_documents_status, readiness, pushed_by,
+                compliance_passed, compliance_envelope, compliance_summary, required_documents_status,
+                paperwork_packet_id, document_packet_url, document_packet_hash, bol_number, freight_bill_number,
+                atmp_operating_role, carrier_authority_snapshot, insurance_snapshot, compliance_blockers,
+                retention_metadata, audit_event_ids, executive_override, executive_override_reason,
+                executive_override_by, executive_override_at, customs_movement_type, customs_readiness,
+                customs_documents_status, ace_entry_number, isf_status, in_bond_status, aes_itn,
+                pga_requirements, readiness, pushed_by,
                 push_reason, source_module, queued_at, published_at, withdrawn_at, closed_at,
                 retry_count, last_push_result, payload_version, last_webhook_at, raw_payload,
                 created_at, updated_at
@@ -962,6 +1073,8 @@ pub async fn find_handoff_by_id(
     pool: &DbPool,
     handoff_id: i64,
 ) -> Result<Option<StloadsHandoffRecord>, sqlx::Error> {
+    ensure_stloads_compliance_storage(pool).await?;
+
     sqlx::query_as::<_, StloadsHandoffRecord>(
         "SELECT id, tms_load_id, tenant_id, external_handoff_id, load_id, status, tms_status,
                 tms_status_at, party_type, freight_mode, equipment_type, commodity_description,
@@ -971,7 +1084,13 @@ pub async fn find_handoff_by_id(
                 dropoff_city, dropoff_state, dropoff_zip, dropoff_country, dropoff_address,
                 dropoff_window_start, dropoff_window_end, dropoff_instructions, dropoff_appointment_ref,
                 board_rate::double precision AS board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
-                compliance_passed, compliance_summary, required_documents_status, readiness, pushed_by,
+                compliance_passed, compliance_envelope, compliance_summary, required_documents_status,
+                paperwork_packet_id, document_packet_url, document_packet_hash, bol_number, freight_bill_number,
+                atmp_operating_role, carrier_authority_snapshot, insurance_snapshot, compliance_blockers,
+                retention_metadata, audit_event_ids, executive_override, executive_override_reason,
+                executive_override_by, executive_override_at, customs_movement_type, customs_readiness,
+                customs_documents_status, ace_entry_number, isf_status, in_bond_status, aes_itn,
+                pga_requirements, readiness, pushed_by,
                 push_reason, source_module, queued_at, published_at, withdrawn_at, closed_at,
                 retry_count, last_push_result, payload_version, last_webhook_at, raw_payload,
                 created_at, updated_at
@@ -1017,6 +1136,8 @@ pub async fn queue_handoff(
     pool: &DbPool,
     payload: &shared::TmsHandoffPayload,
 ) -> Result<StloadsHandoffRecord, sqlx::Error> {
+    ensure_stloads_compliance_storage(pool).await?;
+
     let mut tx = pool.begin().await?;
     let raw_payload = serde_json::to_value(payload).unwrap_or(serde_json::Value::Null);
     let handoff_id = insert_handoff_row(
@@ -1050,6 +1171,8 @@ pub async fn push_handoff(
     pool: &DbPool,
     payload: &shared::TmsHandoffPayload,
 ) -> Result<MaterializedHandoffResult, sqlx::Error> {
+    ensure_stloads_compliance_storage(pool).await?;
+
     let mut tx = pool.begin().await?;
     let raw_payload = serde_json::to_value(payload).unwrap_or(serde_json::Value::Null);
     let handoff_id = insert_handoff_row(
@@ -1151,6 +1274,8 @@ pub async fn requeue_handoff(
     .bind(handoff_id)
     .execute(&mut *tx)
     .await?;
+
+    update_handoff_compliance_snapshot(&mut tx, handoff_id, &payload, &raw_payload).await?;
 
     insert_handoff_event_row(
         &mut tx,
@@ -1761,6 +1886,7 @@ async fn insert_handoff_row(
     let pickup_window_end = parse_optional_datetime(payload.pickup_window_end.as_deref());
     let dropoff_window_start = parse_required_datetime(&payload.dropoff_window_start)?;
     let dropoff_window_end = parse_optional_datetime(payload.dropoff_window_end.as_deref());
+    let audit_event_ids = audit_event_ids_json(payload);
 
     let handoff_id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO stloads_handoffs (
@@ -1772,10 +1898,16 @@ async fn insert_handoff_row(
             dropoff_city, dropoff_state, dropoff_zip, dropoff_country, dropoff_address,
             dropoff_window_start, dropoff_window_end, dropoff_instructions, dropoff_appointment_ref,
             board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
-            compliance_passed, compliance_summary, required_documents_status, readiness,
+            compliance_passed, compliance_envelope, compliance_summary, required_documents_status,
+            paperwork_packet_id, document_packet_url, document_packet_hash, bol_number,
+            freight_bill_number, atmp_operating_role, carrier_authority_snapshot, insurance_snapshot,
+            compliance_blockers, retention_metadata, audit_event_ids, executive_override,
+            executive_override_reason, executive_override_by, executive_override_at,
+            customs_movement_type, customs_readiness, customs_documents_status, ace_entry_number,
+            isf_status, in_bond_status, aes_itn, pga_requirements, readiness,
             pushed_by, push_reason, source_module, queued_at, retry_count, last_push_result,
             payload_version, raw_payload, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, 0, $48, $49, $50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71, $72, $73, 0, $74, $75, $76, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id",
     )
     .bind(payload.tms_load_id.as_str())
@@ -1818,8 +1950,32 @@ async fn insert_handoff_row(
     .bind(payload.quote_status.as_deref())
     .bind(payload.tender_posture.as_deref())
     .bind(payload.compliance_passed.unwrap_or(false))
+    .bind(payload.compliance_envelope.clone())
     .bind(payload.compliance_summary.clone())
     .bind(payload.required_documents_status.clone())
+    .bind(payload.paperwork_packet_id.as_deref())
+    .bind(payload.document_packet_url.as_deref())
+    .bind(payload.document_packet_hash.as_deref())
+    .bind(payload.bol_number.as_deref())
+    .bind(payload.freight_bill_number.as_deref())
+    .bind(payload.atmp_operating_role.as_deref())
+    .bind(payload.carrier_authority_snapshot.clone())
+    .bind(payload.insurance_snapshot.clone())
+    .bind(payload.compliance_blockers.clone())
+    .bind(payload.retention_metadata.clone())
+    .bind(audit_event_ids)
+    .bind(payload.executive_override.unwrap_or(false))
+    .bind(payload.executive_override_reason.as_deref())
+    .bind(payload.executive_override_by.as_deref())
+    .bind(payload.executive_override_at.as_deref())
+    .bind(payload.customs_movement_type.as_deref())
+    .bind(payload.customs_readiness.as_deref())
+    .bind(payload.customs_documents_status.clone())
+    .bind(payload.ace_entry_number.as_deref())
+    .bind(payload.isf_status.as_deref())
+    .bind(payload.in_bond_status.as_deref())
+    .bind(payload.aes_itn.as_deref())
+    .bind(payload.pga_requirements.clone())
     .bind(payload.readiness.as_deref().unwrap_or("pending"))
     .bind(payload.pushed_by.as_deref())
     .bind(payload.push_reason.as_deref())
@@ -1832,6 +1988,84 @@ async fn insert_handoff_row(
     .await?;
 
     Ok(handoff_id)
+}
+
+async fn update_handoff_compliance_snapshot(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    handoff_id: i64,
+    payload: &shared::TmsHandoffPayload,
+    raw_payload: &serde_json::Value,
+) -> Result<(), sqlx::Error> {
+    let audit_event_ids = audit_event_ids_json(payload);
+
+    sqlx::query(
+        "UPDATE stloads_handoffs
+         SET compliance_passed = $1,
+             compliance_envelope = $2,
+             compliance_summary = $3,
+             required_documents_status = $4,
+             paperwork_packet_id = $5,
+             document_packet_url = $6,
+             document_packet_hash = $7,
+             bol_number = $8,
+             freight_bill_number = $9,
+             atmp_operating_role = $10,
+             carrier_authority_snapshot = $11,
+             insurance_snapshot = $12,
+             compliance_blockers = $13,
+             retention_metadata = $14,
+             audit_event_ids = $15,
+             executive_override = $16,
+             executive_override_reason = $17,
+             executive_override_by = $18,
+             executive_override_at = $19,
+             customs_movement_type = $20,
+             customs_readiness = $21,
+             customs_documents_status = $22,
+             ace_entry_number = $23,
+             isf_status = $24,
+             in_bond_status = $25,
+             aes_itn = $26,
+             pga_requirements = $27,
+             raw_payload = $28,
+             payload_version = $29,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $30",
+    )
+    .bind(payload.compliance_passed.unwrap_or(false))
+    .bind(payload.compliance_envelope.clone())
+    .bind(payload.compliance_summary.clone())
+    .bind(payload.required_documents_status.clone())
+    .bind(payload.paperwork_packet_id.as_deref())
+    .bind(payload.document_packet_url.as_deref())
+    .bind(payload.document_packet_hash.as_deref())
+    .bind(payload.bol_number.as_deref())
+    .bind(payload.freight_bill_number.as_deref())
+    .bind(payload.atmp_operating_role.as_deref())
+    .bind(payload.carrier_authority_snapshot.clone())
+    .bind(payload.insurance_snapshot.clone())
+    .bind(payload.compliance_blockers.clone())
+    .bind(payload.retention_metadata.clone())
+    .bind(audit_event_ids)
+    .bind(payload.executive_override.unwrap_or(false))
+    .bind(payload.executive_override_reason.as_deref())
+    .bind(payload.executive_override_by.as_deref())
+    .bind(payload.executive_override_at.as_deref())
+    .bind(payload.customs_movement_type.as_deref())
+    .bind(payload.customs_readiness.as_deref())
+    .bind(payload.customs_documents_status.clone())
+    .bind(payload.ace_entry_number.as_deref())
+    .bind(payload.isf_status.as_deref())
+    .bind(payload.in_bond_status.as_deref())
+    .bind(payload.aes_itn.as_deref())
+    .bind(payload.pga_requirements.clone())
+    .bind(raw_payload)
+    .bind(payload.payload_version.as_deref().unwrap_or("1.0"))
+    .bind(handoff_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
 }
 
 async fn materialize_load_for_handoff(
