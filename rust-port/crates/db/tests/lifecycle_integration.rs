@@ -211,20 +211,35 @@ fn sample_tms_payload(tms_load_id: &str) -> TmsHandoffPayload {
         quote_status: None,
         tender_posture: None,
         compliance_passed: Some(true),
-        compliance_envelope: None,
-        compliance_summary: None,
-        required_documents_status: None,
-        paperwork_packet_id: None,
+        compliance_envelope: Some(serde_json::json!({
+            "schema_version": "compliance-envelope-v1",
+            "compliance_envelope_id": format!("ce-{tms_load_id}"),
+            "paperwork_packet_id": format!("packet-{tms_load_id}"),
+            "customs": {
+                "customs_controlled": false
+            }
+        })),
+        compliance_summary: Some(serde_json::json!({ "status": "clear" })),
+        required_documents_status: Some(serde_json::json!({
+            "bol": "generated",
+            "freight_bill": "generated",
+            "rate_confirmation": "generated",
+            "dispatch_sheet": "generated"
+        })),
+        paperwork_packet_id: Some(format!("packet-{tms_load_id}")),
         document_packet_url: None,
-        document_packet_hash: None,
-        bol_number: None,
-        freight_bill_number: None,
-        atmp_operating_role: None,
+        document_packet_hash: Some(format!("sha256:{tms_load_id}")),
+        bol_number: Some(format!("BOL-{tms_load_id}")),
+        freight_bill_number: Some(format!("FB-{tms_load_id}")),
+        atmp_operating_role: Some("broker".into()),
         carrier_authority_snapshot: None,
         insurance_snapshot: None,
-        compliance_blockers: None,
-        retention_metadata: None,
-        audit_event_ids: None,
+        compliance_blockers: Some(serde_json::json!([])),
+        retention_metadata: Some(serde_json::json!({
+            "retention_category": "freight_load_file",
+            "retention_period_years": 3
+        })),
+        audit_event_ids: Some(vec![format!("audit-{tms_load_id}")]),
         executive_override: None,
         executive_override_reason: None,
         executive_override_by: None,
@@ -786,6 +801,65 @@ async fn tms_publication_blocks_active_board_when_required_documents_are_missing
         ),
         "missing required documents should quarantine, block, or queue the handoff instead of publishing it"
     );
+
+    let sync_error_class: String = sqlx::query_scalar(
+        "SELECT error_class FROM stloads_sync_errors WHERE handoff_id = $1 ORDER BY id DESC LIMIT 1",
+    )
+    .bind(publish_result.handoff.id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(sync_error_class, "missing_required_document");
+
+    let quarantine_event: String = sqlx::query_scalar(
+        "SELECT event_type FROM stloads_handoff_events WHERE handoff_id = $1 ORDER BY id DESC LIMIT 1",
+    )
+    .bind(publish_result.handoff.id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(quarantine_event, "compliance_quarantined");
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn tms_publication_allows_executive_override_with_audit_event()
+-> Result<(), Box<dyn std::error::Error>> {
+    let Some(pool) = prepare_pool().await? else {
+        return Ok(());
+    };
+
+    let mut payload = sample_tms_payload("TMS-COMPLIANCE-OVERRIDE-1001");
+    payload.payload_version = Some("dispatch-stloads-v2".into());
+    payload.compliance_passed = Some(false);
+    payload.required_documents_status = Some(serde_json::json!({
+        "bol": "generated",
+        "freight_bill": "pending"
+    }));
+    payload.executive_override = Some(true);
+    payload.executive_override_reason = Some("Executive approved emergency posting.".into());
+    payload.executive_override_by = Some("executive@example.test".into());
+    payload.executive_override_at = Some("2026-04-07T14:00:00Z".into());
+
+    let publish_result = push_handoff(&pool, &payload).await?;
+
+    assert_eq!(publish_result.handoff.status, "published");
+    assert!(publish_result.load_id.is_some());
+
+    let override_event: String = sqlx::query_scalar(
+        "SELECT event_type FROM stloads_handoff_events WHERE handoff_id = $1 AND event_type = 'executive_override' LIMIT 1",
+    )
+    .bind(publish_result.handoff.id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(override_event, "executive_override");
+
+    let sync_error_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM stloads_sync_errors WHERE handoff_id = $1")
+            .bind(publish_result.handoff.id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(sync_error_count, 0);
 
     Ok(())
 }

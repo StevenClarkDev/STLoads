@@ -1026,6 +1026,18 @@ pub struct TmsRetryRunSummary {
     pub messages: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+struct HandoffComplianceDecision {
+    publishable: bool,
+    status: HandoffStatus,
+    event_type: &'static str,
+    sync_error_class: Option<&'static str>,
+    severity: &'static str,
+    title: &'static str,
+    detail: String,
+    used_override: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TmsReconciliationScanSummary {
     pub auto_archived: usize,
@@ -1113,6 +1125,31 @@ pub async fn create_sync_error(
     source_module: Option<&str>,
     performed_by: Option<&str>,
 ) -> Result<(), sqlx::Error> {
+    insert_sync_error_pool(
+        pool,
+        handoff_id,
+        error_class,
+        severity,
+        title,
+        detail,
+        source_module,
+        performed_by,
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn insert_sync_error_pool(
+    pool: &DbPool,
+    handoff_id: Option<i64>,
+    error_class: &str,
+    severity: &str,
+    title: &str,
+    detail: Option<&str>,
+    source_module: Option<&str>,
+    performed_by: Option<&str>,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO stloads_sync_errors (
             handoff_id, error_class, severity, title, detail, source_module, performed_by,
@@ -1130,6 +1167,184 @@ pub async fn create_sync_error(
     .await?;
 
     Ok(())
+}
+
+async fn insert_sync_error_row(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    handoff_id: Option<i64>,
+    error_class: &str,
+    severity: &str,
+    title: &str,
+    detail: Option<&str>,
+    source_module: Option<&str>,
+    performed_by: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO stloads_sync_errors (
+            handoff_id, error_class, severity, title, detail, source_module, performed_by,
+            resolved, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(handoff_id)
+    .bind(error_class)
+    .bind(severity)
+    .bind(title)
+    .bind(detail)
+    .bind(source_module)
+    .bind(performed_by)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+fn evaluate_handoff_compliance(payload: &shared::TmsHandoffPayload) -> HandoffComplianceDecision {
+    let mut missing = Vec::new();
+    let compliance_claimed = payload.compliance_passed.unwrap_or(false);
+    let override_complete = payload.executive_override.unwrap_or(false)
+        && present(payload.executive_override_reason.as_deref())
+        && present(payload.executive_override_by.as_deref())
+        && present(payload.executive_override_at.as_deref());
+
+    if !compliance_claimed {
+        missing.push("compliance_passed");
+    }
+    if payload.compliance_envelope.is_none() {
+        missing.push("compliance_envelope");
+    }
+    if !present(payload.paperwork_packet_id.as_deref()) {
+        missing.push("paperwork_packet_id");
+    }
+    if !present(payload.bol_number.as_deref()) {
+        missing.push("bol_number");
+    }
+    if !present(payload.freight_bill_number.as_deref()) {
+        missing.push("freight_bill_number");
+    }
+    if !documents_ready(payload.required_documents_status.as_ref()) {
+        missing.push("required_documents_status");
+    }
+    if payload.retention_metadata.is_none() {
+        missing.push("retention_metadata");
+    }
+
+    if customs_controlled(payload) {
+        if !present(payload.customs_readiness.as_deref()) {
+            missing.push("customs_readiness");
+        }
+        if payload.customs_documents_status.is_none() {
+            missing.push("customs_documents_status");
+        }
+        if !present(payload.ace_entry_number.as_deref()) {
+            missing.push("ACE_entry_number");
+        }
+        if !present(payload.isf_status.as_deref()) {
+            missing.push("ISF_status");
+        }
+        if !present(payload.in_bond_status.as_deref()) {
+            missing.push("in_bond_status");
+        }
+        if !present(payload.aes_itn.as_deref()) {
+            missing.push("AES_ITN");
+        }
+        if payload.pga_requirements.is_none() {
+            missing.push("PGA_requirements");
+        }
+    }
+
+    if missing.is_empty() {
+        return HandoffComplianceDecision {
+            publishable: true,
+            status: HandoffStatus::Published,
+            event_type: "published",
+            sync_error_class: None,
+            severity: "info",
+            title: "Compliance clear",
+            detail: "Compliance gate passed.".into(),
+            used_override: false,
+        };
+    }
+
+    if override_complete {
+        return HandoffComplianceDecision {
+            publishable: true,
+            status: HandoffStatus::Published,
+            event_type: "executive_override",
+            sync_error_class: None,
+            severity: "warning",
+            title: "Executive override accepted",
+            detail: format!(
+                "Executive override allowed publication with missing compliance fields: {}.",
+                missing.join(", ")
+            ),
+            used_override: true,
+        };
+    }
+
+    let sync_error_class = if compliance_claimed {
+        "missing_required_document"
+    } else {
+        "compliance_not_passed"
+    };
+    let title = if compliance_claimed {
+        "Dispatch claimed compliance but required STLOADS fields are missing."
+    } else {
+        "Dispatch handoff failed the STLOADS compliance gate."
+    };
+
+    HandoffComplianceDecision {
+        publishable: false,
+        status: HandoffStatus::Quarantined,
+        event_type: "compliance_quarantined",
+        sync_error_class: Some(sync_error_class),
+        severity: "critical",
+        title,
+        detail: format!(
+            "STLOADS quarantined the handoff before publication. Missing or incomplete fields: {}.",
+            missing.join(", ")
+        ),
+        used_override: false,
+    }
+}
+
+fn present(value: Option<&str>) -> bool {
+    value.is_some_and(|value| !value.trim().is_empty())
+}
+
+fn documents_ready(value: Option<&serde_json::Value>) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+
+    ["bol", "freight_bill"]
+        .into_iter()
+        .all(|key| document_status_ready(object.get(key)))
+}
+
+fn document_status_ready(value: Option<&serde_json::Value>) -> bool {
+    value
+        .and_then(|value| value.as_str())
+        .is_some_and(|status| matches!(status, "generated" | "attached" | "clear" | "ready"))
+}
+
+fn customs_controlled(payload: &shared::TmsHandoffPayload) -> bool {
+    payload
+        .compliance_envelope
+        .as_ref()
+        .and_then(|envelope| envelope.pointer("/customs/customs_controlled"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+        || present(payload.customs_movement_type.as_deref())
+        || present(payload.customs_readiness.as_deref())
+        || payload.customs_documents_status.is_some()
+        || present(payload.ace_entry_number.as_deref())
+        || present(payload.isf_status.as_deref())
+        || present(payload.in_bond_status.as_deref())
+        || present(payload.aes_itn.as_deref())
+        || payload.pga_requirements.is_some()
 }
 
 pub async fn queue_handoff(
@@ -1175,6 +1390,7 @@ pub async fn push_handoff(
 
     let mut tx = pool.begin().await?;
     let raw_payload = serde_json::to_value(payload).unwrap_or(serde_json::Value::Null);
+    let compliance_decision = evaluate_handoff_compliance(payload);
     let handoff_id = insert_handoff_row(
         &mut tx,
         payload,
@@ -1196,6 +1412,75 @@ pub async fn push_handoff(
 
     if let Some(external_refs) = payload.external_refs.as_deref() {
         insert_external_refs_rows(&mut tx, handoff_id, external_refs).await?;
+    }
+
+    if !compliance_decision.publishable {
+        sqlx::query(
+            "UPDATE stloads_handoffs
+             SET status = $1,
+                 last_push_result = $2,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $3",
+        )
+        .bind(compliance_decision.status.as_legacy_label())
+        .bind(compliance_decision.detail.as_str())
+        .bind(handoff_id)
+        .execute(&mut *tx)
+        .await?;
+
+        insert_handoff_event_row(
+            &mut tx,
+            handoff_id,
+            compliance_decision.event_type,
+            payload.pushed_by.as_deref(),
+            payload.source_module.as_deref(),
+            Some(&raw_payload),
+            Some(compliance_decision.detail.as_str()),
+        )
+        .await?;
+
+        if let Some(error_class) = compliance_decision.sync_error_class {
+            insert_sync_error_row(
+                &mut tx,
+                Some(handoff_id),
+                error_class,
+                compliance_decision.severity,
+                compliance_decision.title,
+                Some(compliance_decision.detail.as_str()),
+                payload.source_module.as_deref(),
+                payload.pushed_by.as_deref(),
+            )
+            .await?;
+        }
+
+        tx.commit().await?;
+
+        let handoff = find_handoff_by_id(pool, handoff_id)
+            .await?
+            .ok_or(sqlx::Error::RowNotFound)?;
+
+        return Ok(MaterializedHandoffResult {
+            handoff,
+            load_id: None,
+            load_number: None,
+            action_label: compliance_decision.event_type.into(),
+        });
+    }
+
+    if compliance_decision.used_override {
+        insert_handoff_event_row(
+            &mut tx,
+            handoff_id,
+            "executive_override",
+            payload
+                .executive_override_by
+                .as_deref()
+                .or(payload.pushed_by.as_deref()),
+            payload.source_module.as_deref(),
+            Some(&raw_payload),
+            Some(compliance_decision.detail.as_str()),
+        )
+        .await?;
     }
 
     let (load_id, load_number) = materialize_load_for_handoff(&mut tx, payload, handoff_id).await?;
@@ -1260,6 +1545,7 @@ pub async fn requeue_handoff(
             "handoff raw payload is missing or invalid".into(),
         ))?;
     let raw_payload = serde_json::to_value(&payload).unwrap_or(serde_json::Value::Null);
+    let compliance_decision = evaluate_handoff_compliance(&payload);
 
     sqlx::query(
         "UPDATE stloads_handoffs
@@ -1287,6 +1573,76 @@ pub async fn requeue_handoff(
         Some("retrying handoff publication"),
     )
     .await?;
+
+    if !compliance_decision.publishable {
+        sqlx::query(
+            "UPDATE stloads_handoffs
+             SET status = $1,
+                 last_push_result = $2,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $3",
+        )
+        .bind(compliance_decision.status.as_legacy_label())
+        .bind(compliance_decision.detail.as_str())
+        .bind(handoff_id)
+        .execute(&mut *tx)
+        .await?;
+
+        insert_handoff_event_row(
+            &mut tx,
+            handoff_id,
+            compliance_decision.event_type,
+            performed_by.or(payload.pushed_by.as_deref()),
+            source_module.or(payload.source_module.as_deref()),
+            Some(&raw_payload),
+            Some(compliance_decision.detail.as_str()),
+        )
+        .await?;
+
+        if let Some(error_class) = compliance_decision.sync_error_class {
+            insert_sync_error_row(
+                &mut tx,
+                Some(handoff_id),
+                error_class,
+                compliance_decision.severity,
+                compliance_decision.title,
+                Some(compliance_decision.detail.as_str()),
+                source_module.or(payload.source_module.as_deref()),
+                performed_by.or(payload.pushed_by.as_deref()),
+            )
+            .await?;
+        }
+
+        tx.commit().await?;
+
+        let handoff = find_handoff_by_id(pool, handoff_id)
+            .await?
+            .ok_or(sqlx::Error::RowNotFound)?;
+
+        return Ok(Some(MaterializedHandoffResult {
+            handoff,
+            load_id: existing_handoff.load_id,
+            load_number: None,
+            action_label: compliance_decision.event_type.into(),
+        }));
+    }
+
+    if compliance_decision.used_override {
+        insert_handoff_event_row(
+            &mut tx,
+            handoff_id,
+            "executive_override",
+            payload
+                .executive_override_by
+                .as_deref()
+                .or(performed_by)
+                .or(payload.pushed_by.as_deref()),
+            source_module.or(payload.source_module.as_deref()),
+            Some(&raw_payload),
+            Some(compliance_decision.detail.as_str()),
+        )
+        .await?;
+    }
 
     let (load_id, load_number) = match existing_handoff.load_id {
         Some(load_id) => {
@@ -1668,11 +2024,19 @@ pub async fn process_retryable_handoffs(
         .await
         {
             Ok(Some(result)) => {
-                summary.published += 1;
-                summary.messages.push(format!(
-                    "Published handoff #{} from retry worker.",
-                    result.handoff.id
-                ));
+                if result.handoff.status == HandoffStatus::Published.as_legacy_label() {
+                    summary.published += 1;
+                    summary.messages.push(format!(
+                        "Published handoff #{} from retry worker.",
+                        result.handoff.id
+                    ));
+                } else {
+                    summary.failed += 1;
+                    summary.messages.push(format!(
+                        "Retry handoff #{} stopped in status {}.",
+                        result.handoff.id, result.handoff.status
+                    ));
+                }
             }
             Ok(None) => {
                 summary.failed += 1;

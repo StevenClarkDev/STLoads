@@ -44,6 +44,14 @@ fn compliant_payload_with_missing_document_status() -> Value {
         "rate_currency": "USD",
         "bid_type": "Fixed",
         "compliance_passed": true,
+        "compliance_envelope": {
+            "schema_version": "compliance-envelope-v1",
+            "compliance_envelope_id": "ce-backend-1001",
+            "paperwork_packet_id": "packet-1001",
+            "customs": {
+                "customs_controlled": false
+            }
+        },
         "required_documents_status": {
             "bol": "generated",
             "freight_bill": "pending",

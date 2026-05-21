@@ -224,26 +224,33 @@ async fn push(
 
     match push_handoff(pool, &payload).await {
         Ok(result) => {
+            let published = result.handoff.status == HandoffStatus::Published.as_legacy_label();
             publish_tms_lifecycle_events(
                 &state,
                 &result,
                 actor_session.as_ref(),
                 true,
-                false,
-                true,
+                !published,
+                published,
                 format!(
-                    "Rust TMS push published handoff #{} for {}.",
-                    result.handoff.id, payload.tms_load_id
+                    "Rust TMS push moved handoff #{} for {} to {}.",
+                    result.handoff.id, payload.tms_load_id, result.handoff.status
                 ),
             );
 
             Ok(Json(ApiResponse::ok(TmsHandoffResponse {
-                success: true,
+                success: published,
                 handoff_id: Some(result.handoff.id),
                 load_id: result.load_id,
                 load_number: result.load_number,
-                status_label: "Published".into(),
-                message: "Handoff pushed and materialized through the Rust TMS route.".into(),
+                status_label: handoff_status_label(result.handoff.status.as_str()),
+                message: if published {
+                    "Handoff pushed and materialized through the Rust TMS route.".into()
+                } else {
+                    result.handoff.last_push_result.clone().unwrap_or_else(|| {
+                        "Handoff was stopped by the STLOADS compliance gate.".into()
+                    })
+                },
             })))
         }
         Err(error) => Ok(Json(ApiResponse::ok(TmsHandoffResponse {
@@ -370,26 +377,33 @@ async fn requeue(
     .await
     {
         Ok(Some(result)) => {
+            let published = result.handoff.status == HandoffStatus::Published.as_legacy_label();
             publish_tms_lifecycle_events(
                 &state,
                 &result,
                 actor_session.as_ref(),
                 true,
-                false,
-                true,
+                !published,
+                published,
                 format!(
-                    "Rust TMS requeue republished handoff #{}.",
-                    result.handoff.id
+                    "Rust TMS requeue moved handoff #{} to {}.",
+                    result.handoff.id, result.handoff.status
                 ),
             );
 
             Ok(Json(ApiResponse::ok(TmsHandoffResponse {
-                success: true,
+                success: published,
                 handoff_id: Some(result.handoff.id),
                 load_id: result.load_id,
                 load_number: result.load_number,
-                status_label: "Published".into(),
-                message: "Handoff requeued and republished through the Rust TMS route.".into(),
+                status_label: handoff_status_label(result.handoff.status.as_str()),
+                message: if published {
+                    "Handoff requeued and republished through the Rust TMS route.".into()
+                } else {
+                    result.handoff.last_push_result.clone().unwrap_or_else(|| {
+                        "Handoff was stopped by the STLOADS compliance gate.".into()
+                    })
+                },
             })))
         }
         Ok(None) => Ok(Json(ApiResponse::ok(TmsHandoffResponse {
@@ -914,8 +928,45 @@ fn validate_handoff_payload(payload: &TmsHandoffPayload) -> Option<String> {
     if !matches!(payload.bid_type.trim(), "Fixed" | "Open" | "fixed" | "open") {
         return Some("bid_type must be Fixed or Open.".into());
     }
+    if is_atmp_handoff(payload) && payload.compliance_envelope.is_none() {
+        return Some("compliance_envelope is required for ATMP-OS handoffs.".into());
+    }
 
     None
+}
+
+fn is_atmp_handoff(payload: &TmsHandoffPayload) -> bool {
+    payload
+        .payload_version
+        .as_deref()
+        .is_some_and(|version| version == "dispatch-stloads-v2")
+        || payload
+            .source_module
+            .as_deref()
+            .is_some_and(|module| module.to_ascii_lowercase().contains("atmp"))
+        || payload.external_refs.as_ref().is_some_and(|refs| {
+            refs.iter().any(|reference| {
+                reference
+                    .ref_source
+                    .as_deref()
+                    .is_some_and(|source| source.to_ascii_lowercase().contains("atmp"))
+            })
+        })
+}
+
+fn handoff_status_label(status: &str) -> String {
+    match status {
+        "published" => "Published",
+        "quarantined" => "Quarantined",
+        "blocked" => "Blocked",
+        "queued" => "Queued",
+        "push_failed" => "Push Failed",
+        "requeue_required" => "Requeue Required",
+        "withdrawn" => "Withdrawn",
+        "closed" => "Closed",
+        _ => "Handoff Updated",
+    }
+    .into()
 }
 
 fn publish_tms_lifecycle_events(

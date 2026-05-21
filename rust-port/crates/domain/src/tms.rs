@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 pub enum HandoffStatus {
     Queued,
     PushInProgress,
+    Quarantined,
+    Blocked,
     Published,
     PushFailed,
     RequeueRequired,
@@ -16,6 +18,8 @@ impl HandoffStatus {
         match self {
             Self::Queued => "queued",
             Self::PushInProgress => "push_in_progress",
+            Self::Quarantined => "quarantined",
+            Self::Blocked => "blocked",
             Self::Published => "published",
             Self::PushFailed => "push_failed",
             Self::RequeueRequired => "requeue_required",
@@ -28,6 +32,8 @@ impl HandoffStatus {
         match label {
             "queued" => Some(Self::Queued),
             "push_in_progress" => Some(Self::PushInProgress),
+            "quarantined" => Some(Self::Quarantined),
+            "blocked" => Some(Self::Blocked),
             "published" => Some(Self::Published),
             "push_failed" => Some(Self::PushFailed),
             "requeue_required" => Some(Self::RequeueRequired),
@@ -151,6 +157,16 @@ pub const HANDOFF_STATUS_DESCRIPTORS: &[HandoffStatusDescriptor] = &[
         status: HandoffStatus::PushInProgress,
         legacy_label: HandoffStatus::PushInProgress.as_legacy_label(),
         description: "Publish work is actively trying to create or update the local load.",
+    },
+    HandoffStatusDescriptor {
+        status: HandoffStatus::Quarantined,
+        legacy_label: HandoffStatus::Quarantined.as_legacy_label(),
+        description: "Compliance review blocked active publication until Dispatch sends a complete load file or an approved override.",
+    },
+    HandoffStatusDescriptor {
+        status: HandoffStatus::Blocked,
+        legacy_label: HandoffStatus::Blocked.as_legacy_label(),
+        description: "The handoff is blocked by missing required compliance data and cannot publish.",
     },
     HandoffStatusDescriptor {
         status: HandoffStatus::Published,
