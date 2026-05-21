@@ -324,6 +324,8 @@ pub fn LoadBoardPage() -> impl IntoView {
                 </section>
             })}
 
+            {move || render_command_band(screen.get(), ws_connected.get())}
+
             <section style="display:flex;gap:0.55rem;flex-wrap:wrap;padding:0.7rem;border:1px solid #d8dee8;border-radius:0.85rem;background:#ffffff;">
                 {move || screen.get().map(|value| {
                     value.tabs
@@ -437,7 +439,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                 </section>
             })}
 
-            <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,380px);gap:0.9rem;align-items:start;">
+            <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(340px,400px);gap:0.9rem;align-items:start;">
                 <div style="overflow:auto;border:1px solid #b7c2d0;border-radius:0.85rem;background:#ffffff;max-height:calc(100vh - 360px);min-height:470px;box-shadow:0 14px 32px rgba(15,23,42,0.08);">
                 <table style="width:100%;border-collapse:separate;border-spacing:0;min-width:1240px;font-size:0.84rem;">
                     <thead style="background:#f1f5f9;position:sticky;top:0;z-index:2;">
@@ -488,7 +490,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                     </tbody>
                 </table>
                 </div>
-                {move || render_detail_drawer(selected_row.get(), pending_leg_id, pending_posting_id, book_leg, submit_bid, can_self_book.get(), can_view_profile.get(), selected_row)}
+                {move || render_detail_drawer(selected_row.get(), screen.get(), pending_leg_id, pending_posting_id, book_leg, submit_bid, can_self_book.get(), can_view_profile.get(), selected_row)}
             </section>
 
             <section style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
@@ -570,6 +572,8 @@ fn render_row(
     let origin_short = compact_location(&origin_label);
     let destination_short = compact_location(&destination_label);
     let code_short = compact_code(&leg_code);
+    let mode_signal = mode_signal_label(&mode_label);
+    let mode_style = mode_chip_style(&mode_label);
     let amount_for_bid = amount_label.clone();
     let fit_label = recommended_score
         .map(|score| format!("{}", score))
@@ -598,7 +602,8 @@ fn render_row(
                 <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{destination_short}</span>
             </td>
             <td style=body_cell("white-space:nowrap;")>
-                <span style="display:inline-flex;align-items:center;padding:0.25rem 0.5rem;border-radius:0.5rem;border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-weight:800;font-size:0.78rem;">{mode_label}</span>
+                <span style=mode_style>{mode_label}</span>
+                <small style="display:block;color:#64748b;margin-top:0.2rem;">{mode_signal}</small>
             </td>
             <td style=body_cell("white-space:nowrap;")>{pickup_date_label}</td>
             <td style=body_cell("white-space:nowrap;")>{delivery_date_label}</td>
@@ -664,6 +669,7 @@ fn render_row(
 
 fn render_detail_drawer(
     row: Option<LoadBoardRow>,
+    screen: Option<LoadBoardScreen>,
     pending_leg_id: RwSignal<Option<u64>>,
     pending_posting_id: RwSignal<Option<u64>>,
     book_leg: impl Fn(u64) + Copy + 'static,
@@ -708,6 +714,8 @@ fn render_detail_drawer(
         let fit_label = recommended_score
             .map(|score| score.to_string())
             .unwrap_or_else(|| "-".into());
+        let mode_signal = mode_signal_label(&mode_label);
+        let mode_style = mode_chip_style(&mode_label);
         let summary_label = route_summary_label(
             &mode_label,
             &origin_label,
@@ -729,6 +737,10 @@ fn render_detail_drawer(
                     <div style="display:grid;gap:0.45rem;">
                         <span style=tone_style(&status_tone)>{status_label}</span>
                         <span style=tone_style(&board_tone)>{board_label}</span>
+                    </div>
+                    <div style="padding:0.75rem;border:1px solid #dbeafe;border-radius:0.75rem;background:linear-gradient(135deg,#eff6ff,#f8fafc);">
+                        <small style="display:block;color:#2563eb;font-weight:900;text-transform:uppercase;letter-spacing:0.06em;">{mode_signal}</small>
+                        <span style=mode_style>{mode_label.clone()}</span>
                     </div>
                     <p style="margin:0;color:#334155;line-height:1.45;">{summary_label}</p>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.65rem;">
@@ -802,16 +814,107 @@ fn render_detail_drawer(
                 </section>
             </aside>
         }.into_any()
-    }).unwrap_or_else(|| {
-        view! {
-            <aside style="position:sticky;top:0;border:1px dashed #b7c2d0;border-radius:0.85rem;background:#ffffff;min-height:320px;display:grid;place-items:center;padding:1rem;color:#64748b;text-align:center;">
-                <div>
-                    <strong style="display:block;color:#334155;">"Select a load"</strong>
-                    <span>"Open the full summary and actions here."</span>
+    }).unwrap_or_else(|| render_intelligence_panel(screen))
+}
+
+fn render_command_band(screen: Option<LoadBoardScreen>, ws_connected: bool) -> impl IntoView {
+    let rows = screen
+        .as_ref()
+        .map(|value| value.rows.as_slice())
+        .unwrap_or(&[]);
+    let lane_count = rows.len();
+    let active_modes = rows
+        .iter()
+        .map(|row| row.mode_label.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    let posted_count = rows
+        .iter()
+        .filter(|row| row.stloads_label.is_some())
+        .count();
+    let bid_ready_count = rows
+        .iter()
+        .filter(|row| row.posting_id.is_some() && row.booked_carrier_id.is_none())
+        .count();
+    let signal = if ws_connected { "Live" } else { "Standby" };
+    let signal_color = if ws_connected { "#0f766e" } else { "#b45309" };
+
+    view! {
+        <section style="display:grid;grid-template-columns:minmax(260px,1.4fr) repeat(4,minmax(130px,0.75fr));gap:0.75rem;align-items:stretch;">
+            <div style="position:relative;overflow:hidden;padding:1rem;border:1px solid #93c5fd;border-radius:0.9rem;background:linear-gradient(135deg,#07111f,#0f2f55 52%,#0f766e);color:white;box-shadow:0 18px 40px rgba(15,23,42,0.16);">
+                <div style="position:absolute;inset:auto -12% -35% 35%;height:130px;background:radial-gradient(circle,rgba(125,211,252,0.32),transparent 68%);"></div>
+                <small style="position:relative;display:block;font-weight:900;text-transform:uppercase;letter-spacing:0.08em;color:#bfdbfe;">"Command Marketplace"</small>
+                <strong style="position:relative;display:block;font-size:1.25rem;letter-spacing:0;">"Multimodal freight signal"</strong>
+                <span style="position:relative;display:block;color:#dbeafe;">"Board, bids, route intelligence, and dispatch readiness in one surface."</span>
+            </div>
+            {command_stat("Network", format!("{} loads", lane_count), "Visible now", "#2563eb")}
+            {command_stat("Modes", active_modes.to_string(), "Active", "#0f766e")}
+            {command_stat("STLoads", posted_count.to_string(), "Posted", "#7c3aed")}
+            {command_stat("Bids", bid_ready_count.to_string(), "Open", signal_color)}
+            <div style="display:grid;gap:0.25rem;padding:0.85rem 0.95rem;border:1px solid #d8dee8;border-radius:0.85rem;background:#ffffff;">
+                <small style="color:#64748b;font-weight:900;text-transform:uppercase;letter-spacing:0.06em;">"Feed"</small>
+                <strong style=format!("font-size:1.1rem;color:{};", signal_color)>{signal}</strong>
+                <small style="color:#64748b;">"Realtime board"</small>
+            </div>
+        </section>
+    }
+}
+
+fn render_intelligence_panel(screen: Option<LoadBoardScreen>) -> leptos::prelude::AnyView {
+    let rows = screen
+        .as_ref()
+        .map(|value| value.rows.as_slice())
+        .unwrap_or(&[]);
+    let first_mode = rows
+        .iter()
+        .map(|row| row.mode_label.as_str())
+        .find(|value| !value.trim().is_empty())
+        .unwrap_or("Multimodal");
+    let best_fit = rows
+        .iter()
+        .filter_map(|row| row.recommended_score)
+        .max()
+        .map(|score| score.to_string())
+        .unwrap_or_else(|| "-".into());
+    let open_bids = rows
+        .iter()
+        .filter(|row| row.posting_id.is_some() && row.booked_carrier_id.is_none())
+        .count();
+    let signal_label = mode_signal_label(first_mode);
+
+    view! {
+        <aside style="position:sticky;top:0;border:1px solid #b7c2d0;border-radius:0.85rem;background:#ffffff;box-shadow:0 14px 32px rgba(15,23,42,0.08);overflow:hidden;">
+            <header style="padding:1rem;border-bottom:1px solid #d8dee8;background:linear-gradient(135deg,#f8fafc,#eef6ff);">
+                <small style="display:block;color:#2563eb;font-weight:900;text-transform:uppercase;letter-spacing:0.07em;">"Intelligence"</small>
+                <strong style="display:block;font-size:1.05rem;color:#0f172a;">"Marketplace command view"</strong>
+            </header>
+            <section style="display:grid;gap:0.75rem;padding:1rem;">
+                {detail_cell("Primary signal", signal_label.into())}
+                {detail_cell("Best fit", best_fit)}
+                {detail_cell("Open bids", open_bids.to_string())}
+                <div style="padding:0.85rem;border:1px solid #dbeafe;border-radius:0.75rem;background:#eff6ff;color:#1e3a8a;">
+                    <strong style="display:block;">"Select a load"</strong>
+                    <span>"Open route, rate, bid, and posting actions without losing the board."</span>
                 </div>
-            </aside>
-        }.into_any()
-    })
+            </section>
+        </aside>
+    }.into_any()
+}
+
+fn command_stat(
+    label: &'static str,
+    value: String,
+    note: &'static str,
+    accent: &'static str,
+) -> impl IntoView {
+    view! {
+        <div style=format!("display:grid;gap:0.25rem;padding:0.85rem 0.95rem;border:1px solid #d8dee8;border-top:3px solid {};border-radius:0.85rem;background:#ffffff;box-shadow:0 10px 24px rgba(15,23,42,0.05);", accent)>
+            <small style="color:#64748b;font-weight:900;text-transform:uppercase;letter-spacing:0.06em;">{label}</small>
+            <strong style="font-size:1.15rem;color:#0f172a;">{value}</strong>
+            <small style="color:#64748b;">{note}</small>
+        </div>
+    }
 }
 
 fn parse_amount_label(value: &str) -> Option<f64> {
@@ -856,6 +959,36 @@ fn route_summary_label(
     format!("{mode} / {origin} -> {destination} / {pickup} to {delivery}")
 }
 
+fn mode_signal_label(mode: &str) -> &'static str {
+    match mode.trim().to_ascii_lowercase().as_str() {
+        "rail" => "Corridor",
+        "ocean" | "sea" => "Port",
+        "air" => "Priority",
+        "intermodal" | "multi" | "multimodal" => "Node",
+        _ => "Lane",
+    }
+}
+
+fn mode_chip_style(mode: &str) -> &'static str {
+    match mode.trim().to_ascii_lowercase().as_str() {
+        "rail" => {
+            "display:inline-flex;align-items:center;padding:0.25rem 0.55rem;border-radius:0.5rem;border:1px solid #7c3aed;background:#f5f3ff;color:#6d28d9;font-weight:900;font-size:0.78rem;"
+        }
+        "ocean" | "sea" => {
+            "display:inline-flex;align-items:center;padding:0.25rem 0.55rem;border-radius:0.5rem;border:1px solid #0891b2;background:#ecfeff;color:#0e7490;font-weight:900;font-size:0.78rem;"
+        }
+        "air" => {
+            "display:inline-flex;align-items:center;padding:0.25rem 0.55rem;border-radius:0.5rem;border:1px solid #ea580c;background:#fff7ed;color:#c2410c;font-weight:900;font-size:0.78rem;"
+        }
+        "intermodal" | "multi" | "multimodal" => {
+            "display:inline-flex;align-items:center;padding:0.25rem 0.55rem;border-radius:0.5rem;border:1px solid #0f766e;background:#ecfdf5;color:#0f766e;font-weight:900;font-size:0.78rem;"
+        }
+        _ => {
+            "display:inline-flex;align-items:center;padding:0.25rem 0.55rem;border-radius:0.5rem;border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-weight:900;font-size:0.78rem;"
+        }
+    }
+}
+
 fn header_cell() -> &'static str {
     "text-align:left;padding:0.7rem 0.75rem;border-right:1px solid #b7c2d0;border-bottom:1px solid #b7c2d0;text-transform:uppercase;font-size:0.72rem;letter-spacing:0.04em;color:#334155;white-space:nowrap;"
 }
@@ -892,6 +1025,14 @@ mod tests {
             summary,
             "Rail / Dallas, TX -> Chicago, IL / May 22 to May 24"
         );
+    }
+
+    #[test]
+    fn mode_signal_labels_multimodal_lanes() {
+        assert_eq!(mode_signal_label("Rail"), "Corridor");
+        assert_eq!(mode_signal_label("Ocean"), "Port");
+        assert_eq!(mode_signal_label("Intermodal"), "Node");
+        assert_eq!(mode_signal_label("Road"), "Lane");
     }
 }
 
