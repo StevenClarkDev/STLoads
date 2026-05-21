@@ -29,7 +29,8 @@ use shared::{
     ReviewLoadDocumentResponse, ReviewOnboardingRequest, ReviewOnboardingResponse,
     SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse, SelfProfileScreen,
     SimpleCatalogUpsertRequest, StloadsOperationsScreen, StloadsReconciliationScreen,
-    StripeWebhookRequest, StripeWebhookResponse, SubmitOfferRequest, SubmitOnboardingRequest,
+    StripeWebhookRequest, StripeWebhookResponse, SubmitLoadSummaryRequest,
+    SubmitLoadSummaryResponse, SubmitOfferRequest, SubmitOnboardingRequest,
     SubmitOnboardingResponse, TmsCloseRequest, TmsHandoffPayload, TmsHandoffResponse,
     TmsRequeueRequest, TmsStatusWebhookRequest, TmsWebhookResponse, TmsWithdrawRequest,
     UpdateSelfProfileRequest, UpdateSelfProfileResponse, UpsertKycDocumentRequest,
@@ -341,6 +342,14 @@ pub async fn add_dispatch_desk_follow_up(
 pub async fn fetch_load_profile_screen(load_id: u64) -> Result<LoadProfileScreen, String> {
     let path = format!("/dispatch/loads/{}", load_id);
     get_api(&path).await
+}
+
+pub async fn submit_load_summary(
+    load_id: u64,
+    payload: &SubmitLoadSummaryRequest,
+) -> Result<SubmitLoadSummaryResponse, String> {
+    let path = format!("/dispatch/loads/{}/submit", load_id);
+    post_api(&path, payload).await
 }
 
 pub async fn create_load_document(

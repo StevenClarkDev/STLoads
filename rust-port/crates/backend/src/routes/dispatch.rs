@@ -11,12 +11,13 @@ use chrono::{NaiveDate, NaiveDateTime};
 use db::{
     dispatch::{
         CreateLoadLegParams, CreateLoadParams, DocumentReviewDecision, LoadBoardSearchFilters,
-        UpsertLoadDocumentParams, append_dispatch_desk_follow_up, book_load_leg,
-        create_load_document as insert_load_document, create_load_with_legs, find_load_by_id,
-        find_load_document_by_id, find_load_document_scope, find_load_id_and_status_for_leg,
-        find_load_leg_by_id, find_load_leg_scope, list_load_board_saved_searches,
-        list_load_builder_legs_for_load, list_load_documents_for_load, list_load_history_for_load,
-        list_load_legs_for_load, list_load_profile_legs_for_load, review_load_document,
+        UpsertLoadDocumentParams, append_dispatch_desk_follow_up, append_load_profile_submission,
+        book_load_leg, create_load_document as insert_load_document, create_load_with_legs,
+        find_load_by_id, find_load_document_by_id, find_load_document_scope,
+        find_load_id_and_status_for_leg, find_load_leg_by_id, find_load_leg_scope,
+        list_load_board_saved_searches, list_load_builder_legs_for_load,
+        list_load_documents_for_load, list_load_history_for_load, list_load_legs_for_load,
+        list_load_profile_legs_for_load, review_load_document,
         update_load_document as persist_load_document_updates, update_load_with_legs,
         upsert_load_board_alert_rule, upsert_load_board_saved_search,
         verify_load_document_blockchain as persist_load_document_blockchain_verification,
@@ -43,9 +44,10 @@ use shared::{
     LoadBuilderLegDraft, LoadBuilderOption, LoadBuilderScreen, LoadDocumentRow, LoadHandoffSummary,
     LoadHistoryRow, LoadProfileField, LoadProfileLegRow, LoadProfileScreen, RealtimeEvent,
     RealtimeEventKind, RealtimeTopic, ReviewLoadDocumentRequest, ReviewLoadDocumentResponse,
-    SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse, UpsertLoadBoardAlertRequest,
-    UpsertLoadBoardAlertResponse, UpsertLoadDocumentRequest, UpsertLoadDocumentResponse,
-    VerifyLoadDocumentRequest, VerifyLoadDocumentResponse,
+    SaveLoadBoardSearchRequest, SaveLoadBoardSearchResponse, SubmitLoadSummaryRequest,
+    SubmitLoadSummaryResponse, UpsertLoadBoardAlertRequest, UpsertLoadBoardAlertResponse,
+    UpsertLoadDocumentRequest, UpsertLoadDocumentResponse, VerifyLoadDocumentRequest,
+    VerifyLoadDocumentResponse,
 };
 use std::collections::HashMap;
 use tracing::{info, warn};
@@ -225,6 +227,7 @@ pub fn router() -> Router<AppState> {
         .route("/loads/{load_id}/builder", get(edit_load_builder))
         .route("/loads/{load_id}/update", post(update_load))
         .route("/loads/{load_id}", get(load_profile))
+        .route("/loads/{load_id}/submit", post(submit_load_summary))
         .route(
             "/loads/{load_id}/documents",
             post(create_load_document_handler),
@@ -629,6 +632,120 @@ async fn load_profile(
     Json(ApiResponse::ok(
         build_load_profile_screen(&state, viewer.as_ref(), load_id).await,
     ))
+}
+
+async fn submit_load_summary(
+    State(state): State<AppState>,
+    Path(load_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<SubmitLoadSummaryRequest>,
+) -> Json<ApiResponse<SubmitLoadSummaryResponse>> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(SubmitLoadSummaryResponse {
+            success: false,
+            load_id,
+            status_label: "Unauthenticated".into(),
+            message: "Sign in before submitting the load summary.".into(),
+        }));
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(SubmitLoadSummaryResponse {
+            success: false,
+            load_id,
+            status_label: "Unavailable".into(),
+            message: format!(
+                "Load submission is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        }));
+    };
+
+    let Some(load) = find_load_by_id(pool, load_id).await.unwrap_or_default() else {
+        return Json(ApiResponse::ok(SubmitLoadSummaryResponse {
+            success: false,
+            load_id,
+            status_label: "Not Found".into(),
+            message: format!("Load #{} was not found.", load_id),
+        }));
+    };
+
+    if !can_manage_existing_load(&session, load.user_id) {
+        return Json(ApiResponse::ok(SubmitLoadSummaryResponse {
+            success: false,
+            load_id,
+            status_label: "Forbidden".into(),
+            message: "This account cannot submit the selected load.".into(),
+        }));
+    }
+
+    let load_label = load
+        .load_number
+        .clone()
+        .unwrap_or_else(|| format!("#{}", load.id));
+    let note = payload
+        .note
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            format!(
+                "{} submitted marketplace load {} from the detail summary.",
+                session.user.name, load_label
+            )
+        });
+
+    match append_load_profile_submission(pool, load.id, Some(session.user.id), Some(&note)).await {
+        Ok(Some(submitted_load)) => {
+            let status_label = profile_load_leg_status_label(submitted_load.status);
+            state.publish_realtime(
+                RoutedRealtimeEvent::new(RealtimeEvent {
+                    kind: RealtimeEventKind::LoadBoardListingUpdated,
+                    leg_id: None,
+                    conversation_id: None,
+                    offer_id: None,
+                    message_id: None,
+                    actor_user_id: Some(session.user.id.max(0) as u64),
+                    subject_user_id: submitted_load
+                        .user_id
+                        .and_then(|value| if value > 0 { Some(value as u64) } else { None }),
+                    presence_state: None,
+                    last_read_message_id: None,
+                    summary: format!(
+                        "{} submitted marketplace load {}.",
+                        session.user.name, load_label
+                    ),
+                })
+                .for_permission_keys(["manage_loads", "access_admin_portal"])
+                .for_tenant(session_tenant_id(&session)),
+            );
+
+            Json(ApiResponse::ok(SubmitLoadSummaryResponse {
+                success: true,
+                load_id: submitted_load.id,
+                status_label,
+                message: format!("Load {} summary submitted.", load_label),
+            }))
+        }
+        Ok(None) => Json(ApiResponse::ok(SubmitLoadSummaryResponse {
+            success: false,
+            load_id,
+            status_label: "Not Found".into(),
+            message: format!("Load #{} was not found.", load_id),
+        })),
+        Err(error) => Json(ApiResponse::ok(SubmitLoadSummaryResponse {
+            success: false,
+            load_id,
+            status_label: "Submit Failed".into(),
+            message: format!("Load summary submit failed: {}", error),
+        })),
+    }
 }
 
 async fn create_load(

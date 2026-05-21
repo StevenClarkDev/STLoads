@@ -1244,6 +1244,54 @@ pub async fn list_load_history_for_load(
     .await
 }
 
+pub async fn append_load_profile_submission(
+    pool: &DbPool,
+    load_id: i64,
+    actor_user_id: Option<i64>,
+    note: Option<&str>,
+) -> Result<Option<LoadRecord>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let Some(load) = sqlx::query_as::<_, LoadRecord>(
+        "SELECT id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id,
+                weight_unit, weight::double precision AS weight, special_instructions,
+                is_hazardous, is_temperature_controlled, status, leg_count, created_at, updated_at, deleted_at
+         FROM loads
+         WHERE id = $1 AND deleted_at IS NULL
+         LIMIT 1",
+    )
+    .bind(load_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    let note = note
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Load detail summary submitted from the marketplace profile.");
+
+    sqlx::query(
+        "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(load.id)
+    .bind(actor_user_id)
+    .bind(load.status)
+    .bind(note)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("UPDATE loads SET updated_at = CURRENT_TIMESTAMP WHERE id = $1")
+        .bind(load.id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(Some(load))
+}
+
 pub async fn list_load_board_legs_filtered(
     pool: &DbPool,
     tab_filter: Option<&str>,

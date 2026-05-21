@@ -87,6 +87,19 @@ pub struct CreateLoadResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubmitLoadSummaryRequest {
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubmitLoadSummaryResponse {
+    pub success: bool,
+    pub load_id: i64,
+    pub status_label: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpsertLoadDocumentRequest {
     pub document_name: String,
     pub document_type: String,

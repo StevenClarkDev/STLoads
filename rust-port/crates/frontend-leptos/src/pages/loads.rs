@@ -577,7 +577,9 @@ fn render_row(
     view! {
         <tr style=format!("vertical-align:middle;background:{};", row_background)>
             <td style=sticky_cell_style title=leg_code.clone()>
-                <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{code_short}</strong>
+                <A href=format!("/loads/{}", load_id) attr:style="display:block;color:#0f172a;text-decoration:none;">
+                    <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{code_short}</strong>
+                </A>
                 <small style="color:#64748b;">{format!("Leg {}", leg_id)}</small>
             </td>
             <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;max-width:190px;background:inherit;" title=origin_title>

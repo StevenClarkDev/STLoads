@@ -8,7 +8,8 @@ use crate::{
 use shared::{
     AdminReviewLoadRequest, EscrowFundRequest, EscrowHoldRequest, EscrowReleaseRequest,
     LoadDocumentRow, LoadHandoffSummary, LoadHistoryRow, LoadProfileLegRow, LoadProfileScreen,
-    ReviewLoadDocumentRequest, UpsertLoadDocumentRequest, VerifyLoadDocumentRequest,
+    ReviewLoadDocumentRequest, SubmitLoadSummaryRequest, UpsertLoadDocumentRequest,
+    VerifyLoadDocumentRequest,
 };
 
 fn tone_style(tone: &str) -> &'static str {
@@ -675,6 +676,8 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
     let admin_review_loading = RwSignal::new(false);
     let admin_finance_loading = RwSignal::new(false);
     let leg_finance_loading_id = RwSignal::new(None::<u64>);
+    let summary_note = RwSignal::new(String::new());
+    let is_submitting_summary = RwSignal::new(false);
     let can_manage_payments = Signal::derive(move || {
         session::has_permission(&auth, "access_admin_portal")
             || session::has_permission(&auth, "manage_payments")
@@ -984,6 +987,47 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
         });
     };
 
+    let submit_summary = move || {
+        let Some(current_screen) = screen.get() else {
+            action_message.set(Some(
+                "Load profile data is not ready yet, so the summary could not be submitted.".into(),
+            ));
+            return;
+        };
+
+        is_submitting_summary.set(true);
+        action_message.set(None);
+        let auth = auth.clone();
+        let note = summary_note.get();
+
+        spawn_local(async move {
+            match api::submit_load_summary(
+                current_screen.load_id,
+                &SubmitLoadSummaryRequest {
+                    note: (!note.trim().is_empty()).then_some(note),
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        summary_note.set(String::new());
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(&auth, "Your session expired; sign in again.");
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+
+            is_submitting_summary.set(false);
+        });
+    };
+
     let run_leg_finance_action = move |leg: LoadProfileLegRow| {
         let Some(action_key) = leg.finance_action_key.clone() else {
             action_message.set(Some(
@@ -1089,6 +1133,37 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                     let has_release_ready_leg = release_ready_leg_id.is_some();
                     view! {
                         <>
+                            {screen_value.can_manage_documents.then(|| view! {
+                                <form
+                                    style="display:grid;gap:0.75rem;padding:1rem;border:2px solid #94a3b8;border-radius:0.95rem;background:#ffffff;box-shadow:0 12px 28px rgba(15,23,42,0.07);"
+                                    on:submit=move |ev| {
+                                        ev.prevent_default();
+                                        submit_summary();
+                                    }
+                                >
+                                    <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+                                        <div style="display:grid;gap:0.2rem;">
+                                            <strong>"Load summary"</strong>
+                                            <small style="color:#64748b;">"Review the details below, then submit this load summary."</small>
+                                        </div>
+                                        <button
+                                            type="submit"
+                                            style="padding:0.7rem 1rem;border:none;border-radius:0.8rem;background:#0f172a;color:white;cursor:pointer;font-weight:800;"
+                                            disabled=move || is_submitting_summary.get()
+                                        >
+                                            {move || if is_submitting_summary.get() { "Submitting..." } else { "Submit load summary" }}
+                                        </button>
+                                    </div>
+                                    <textarea
+                                        rows="3"
+                                        prop:value=move || summary_note.get()
+                                        on:input=move |ev| summary_note.set(event_target_value(&ev))
+                                        placeholder="Optional note for the load history"
+                                        style="padding:0.75rem 0.85rem;border:1px solid #94a3b8;border-radius:0.75rem;resize:vertical;"
+                                    />
+                                </form>
+                            })}
+
                             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;align-items:start;">
                                 {screen_value.info_fields.into_iter().map(|field| view! {
                                     <div class="wrap-safe" style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fcfcfb;display:grid;gap:0.35rem;">
