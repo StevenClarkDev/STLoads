@@ -39,6 +39,7 @@ pub fn LoadBoardPage() -> impl IntoView {
     let action_message = RwSignal::new(None::<String>);
     let pending_leg_id = RwSignal::new(None::<u64>);
     let pending_posting_id = RwSignal::new(None::<u64>);
+    let selected_row = RwSignal::new(None::<LoadBoardRow>);
     let refresh_nonce = RwSignal::new(0_u64);
     let ws_connected = RwSignal::new(false);
     let ws_handle = RwSignal::new(None::<AbortHandle>);
@@ -323,7 +324,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                 </section>
             })}
 
-            <section style="display:flex;gap:0.55rem;flex-wrap:wrap;padding:0.7rem;border:1px solid #cbd5e1;border-radius:0.85rem;background:#ffffff;">
+            <section style="display:flex;gap:0.55rem;flex-wrap:wrap;padding:0.7rem;border:1px solid #d8dee8;border-radius:0.85rem;background:#ffffff;">
                 {move || screen.get().map(|value| {
                     value.tabs
                         .into_iter()
@@ -368,7 +369,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                 })}
             </section>
 
-            <details style="border:1px solid #cbd5e1;border-radius:0.85rem;background:#ffffff;box-shadow:0 10px 24px rgba(15,23,42,0.05);">
+            <details style="border:1px solid #d8dee8;border-radius:0.85rem;background:#ffffff;box-shadow:0 10px 24px rgba(15,23,42,0.05);">
                 <summary style="cursor:pointer;list-style:none;padding:0.85rem 1rem;font-weight:800;display:flex;justify-content:space-between;gap:1rem;border-bottom:1px solid #e2e8f0;">
                     <span>"Search"</span>
                     <span style="color:#64748b;font-weight:500;">"Filters / saved views"</span>
@@ -436,21 +437,22 @@ pub fn LoadBoardPage() -> impl IntoView {
                 </section>
             })}
 
-            <section style="overflow:auto;border:2px solid #94a3b8;border-radius:0.85rem;background:#ffffff;max-height:calc(100vh - 360px);min-height:420px;box-shadow:0 14px 32px rgba(15,23,42,0.08);">
-                <table style="width:100%;border-collapse:collapse;min-width:1180px;font-size:0.86rem;">
-                    <thead style="background:#e2e8f0;position:sticky;top:0;z-index:2;">
+            <section style="display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,380px);gap:0.9rem;align-items:start;">
+                <div style="overflow:auto;border:1px solid #b7c2d0;border-radius:0.85rem;background:#ffffff;max-height:calc(100vh - 360px);min-height:470px;box-shadow:0 14px 32px rgba(15,23,42,0.08);">
+                <table style="width:100%;border-collapse:separate;border-spacing:0;min-width:1240px;font-size:0.84rem;">
+                    <thead style="background:#f1f5f9;position:sticky;top:0;z-index:2;">
                         <tr>
-                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;position:sticky;left:0;background:#e2e8f0;z-index:3;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Load"</th>
-                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Origin"</th>
-                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Destination"</th>
-                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Mode"</th>
-                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Pickup"</th>
-                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Delivery"</th>
-                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Rate"</th>
-                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Status"</th>
-                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Board"</th>
-                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Fit"</th>
-                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Action"</th>
+                            <th style=header_cell_sticky()>"Load"</th>
+                            <th style=header_cell()>"Origin"</th>
+                            <th style=header_cell()>"Destination"</th>
+                            <th style=header_cell()>"Mode"</th>
+                            <th style=header_cell()>"Pickup"</th>
+                            <th style=header_cell()>"Delivery"</th>
+                            <th style=header_cell()>"Rate"</th>
+                            <th style=header_cell()>"Status"</th>
+                            <th style=header_cell()>"Board"</th>
+                            <th style=header_cell()>"Fit"</th>
+                            <th style=header_cell()>"Action"</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -471,7 +473,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                                             value.rows
                                                 .into_iter()
                                                 .enumerate()
-                                                .map(|(index, row)| render_row(index, row, pending_leg_id, pending_posting_id, book_leg, submit_bid, can_self_book.get(), can_view_profile.get()))
+                                                .map(|(index, row)| render_row(index, row, selected_row, pending_leg_id, pending_posting_id, book_leg, submit_bid, can_self_book.get(), can_view_profile.get()))
                                                 .collect_view()
                                                 .into_any()
                                         }
@@ -485,6 +487,8 @@ pub fn LoadBoardPage() -> impl IntoView {
                         }}
                     </tbody>
                 </table>
+                </div>
+                {move || render_detail_drawer(selected_row.get(), pending_leg_id, pending_posting_id, book_leg, submit_bid, can_self_book.get(), can_view_profile.get(), selected_row)}
             </section>
 
             <section style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
@@ -523,6 +527,7 @@ pub fn LoadBoardPage() -> impl IntoView {
 fn render_row(
     index: usize,
     row: LoadBoardRow,
+    selected_row: RwSignal<Option<LoadBoardRow>>,
     pending_leg_id: RwSignal<Option<u64>>,
     pending_posting_id: RwSignal<Option<u64>>,
     book_leg: impl Fn(u64) + Copy + 'static,
@@ -530,6 +535,7 @@ fn render_row(
     can_self_book: bool,
     can_view_profile: bool,
 ) -> impl IntoView {
+    let row_for_select = row.clone();
     let LoadBoardRow {
         load_id,
         leg_id,
@@ -570,38 +576,41 @@ fn render_row(
         .unwrap_or_else(|| "-".into());
     let row_background = if index % 2 == 0 { "#ffffff" } else { "#f8fafc" };
     let sticky_cell_style = format!(
-        "padding:0.7rem 0.75rem;border:1px solid #cbd5e1;position:sticky;left:0;background:{};z-index:1;min-width:220px;max-width:245px;box-shadow:6px 0 14px rgba(15,23,42,0.04);",
+        "padding:0.7rem 0.75rem;border-right:1px solid #d8dee8;border-bottom:1px solid #d8dee8;position:sticky;left:0;background:{};z-index:1;min-width:220px;max-width:245px;box-shadow:6px 0 14px rgba(15,23,42,0.04);",
         row_background
     );
 
     view! {
-        <tr style=format!("vertical-align:middle;background:{};", row_background)>
+        <tr
+            style=format!("vertical-align:middle;background:{};cursor:pointer;", row_background)
+            on:click=move |_| selected_row.set(Some(row_for_select.clone()))
+        >
             <td style=sticky_cell_style title=leg_code.clone()>
                 <A href=format!("/loads/{}", load_id) attr:style="display:block;color:#0f172a;text-decoration:none;">
                     <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{code_short}</strong>
                 </A>
                 <small style="color:#64748b;">{format!("Leg {}", leg_id)}</small>
             </td>
-            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;max-width:190px;background:inherit;" title=origin_title>
+            <td style=body_cell("max-width:190px;") title=origin_title>
                 <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{origin_short}</span>
             </td>
-            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;max-width:190px;background:inherit;" title=destination_title>
+            <td style=body_cell("max-width:190px;") title=destination_title>
                 <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{destination_short}</span>
             </td>
-            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;white-space:nowrap;background:inherit;">
+            <td style=body_cell("white-space:nowrap;")>
                 <span style="display:inline-flex;align-items:center;padding:0.25rem 0.5rem;border-radius:0.5rem;border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-weight:800;font-size:0.78rem;">{mode_label}</span>
             </td>
-            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;white-space:nowrap;background:inherit;">{pickup_date_label}</td>
-            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;white-space:nowrap;background:inherit;">{delivery_date_label}</td>
-            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;white-space:nowrap;background:#f8fafc;">
+            <td style=body_cell("white-space:nowrap;")>{pickup_date_label}</td>
+            <td style=body_cell("white-space:nowrap;")>{delivery_date_label}</td>
+            <td style="padding:0.7rem 0.75rem;border-right:1px solid #d8dee8;border-bottom:1px solid #d8dee8;white-space:nowrap;background:#f8fafc;">
                 <strong style="font-size:0.95rem;color:#0f172a;">{amount_label}</strong>
                 <small style="display:block;color:#64748b;">{payment_label}</small>
             </td>
-            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;background:inherit;">
+            <td style=body_cell("")>
                 <span style=tone_style(&status_tone)>{status_label}</span>
                 {carrier_label.map(|carrier| view! { <div><small>{carrier}</small></div> })}
             </td>
-            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;background:inherit;">
+            <td style=body_cell("")>
                 {stloads_label.clone().map(|label| {
                     let tone = stloads_tone.as_deref().unwrap_or("secondary");
                     view! {
@@ -613,11 +622,11 @@ fn render_row(
                 })}
                 {stloads_label.is_none().then(|| view! { <span>"Not posted"</span> })}
             </td>
-            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;white-space:nowrap;background:inherit;">
+            <td style=body_cell("white-space:nowrap;")>
                 <strong>{fit_label}</strong>
                 <small style="display:block;color:#64748b;">{bid_status_label}</small>
             </td>
-            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;display:grid;gap:0.35rem;min-width:155px;background:#f8fafc;">
+            <td style="padding:0.7rem 0.75rem;border-right:1px solid #d8dee8;border-bottom:1px solid #d8dee8;display:grid;gap:0.35rem;min-width:155px;background:#f8fafc;">
                 <small style="font-weight:700;color:#334155;">{primary_action_label}</small>
                 {can_view_profile.then(|| view! {
                     <A href=format!("/loads/{}", load_id) attr:style="color:#1d4ed8;text-decoration:none;">"View profile"</A>
@@ -653,6 +662,158 @@ fn render_row(
     }
 }
 
+fn render_detail_drawer(
+    row: Option<LoadBoardRow>,
+    pending_leg_id: RwSignal<Option<u64>>,
+    pending_posting_id: RwSignal<Option<u64>>,
+    book_leg: impl Fn(u64) + Copy + 'static,
+    submit_bid: impl Fn(u64, String) + Copy + 'static,
+    can_self_book: bool,
+    can_view_profile: bool,
+    selected_row: RwSignal<Option<LoadBoardRow>>,
+) -> impl IntoView {
+    row.map(|row| {
+        let LoadBoardRow {
+            load_id,
+            leg_id,
+            posting_id,
+            leg_code,
+            origin_label,
+            destination_label,
+            mode_label,
+            pickup_date_label,
+            delivery_date_label,
+            status_label,
+            status_tone,
+            stloads_label,
+            stloads_tone,
+            stloads_alert,
+            remarks_label,
+            carrier_label,
+            booked_carrier_id,
+            bid_status_label,
+            amount_label,
+            payment_label,
+            recommended_score,
+            primary_action_label,
+        } = row;
+
+        let is_booking = Signal::derive(move || pending_leg_id.get() == Some(leg_id));
+        let is_bidding = Signal::derive(move || pending_posting_id.get() == posting_id);
+        let show_book_button = can_self_book && booked_carrier_id.is_none();
+        let show_bid_button = can_self_book && booked_carrier_id.is_none() && posting_id.is_some();
+        let amount_for_bid = amount_label.clone();
+        let board_label = stloads_label.unwrap_or_else(|| "Not posted".into());
+        let board_tone = stloads_tone.unwrap_or_else(|| "secondary".into());
+        let fit_label = recommended_score
+            .map(|score| score.to_string())
+            .unwrap_or_else(|| "-".into());
+        let summary_label = route_summary_label(
+            &mode_label,
+            &origin_label,
+            &destination_label,
+            &pickup_date_label,
+            &delivery_date_label,
+        );
+
+        view! {
+            <aside style="position:sticky;top:0;border:1px solid #b7c2d0;border-radius:0.85rem;background:#ffffff;box-shadow:0 14px 32px rgba(15,23,42,0.08);overflow:hidden;">
+                <header style="display:flex;justify-content:space-between;gap:0.75rem;align-items:flex-start;padding:0.9rem 1rem;border-bottom:1px solid #d8dee8;background:#f8fafc;">
+                    <div style="display:grid;gap:0.2rem;">
+                        <small style="color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;">"Load summary"</small>
+                        <strong style="font-size:1rem;color:#0f172a;word-break:break-word;">{compact_code(&leg_code)}</strong>
+                    </div>
+                    <button type="button" style="border:1px solid #cbd5e1;background:white;border-radius:0.45rem;padding:0.3rem 0.5rem;cursor:pointer;" on:click=move |_| selected_row.set(None)>"Close"</button>
+                </header>
+                <section style="display:grid;gap:0.85rem;padding:1rem;">
+                    <div style="display:grid;gap:0.45rem;">
+                        <span style=tone_style(&status_tone)>{status_label}</span>
+                        <span style=tone_style(&board_tone)>{board_label}</span>
+                    </div>
+                    <p style="margin:0;color:#334155;line-height:1.45;">{summary_label}</p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.65rem;">
+                        {detail_cell("Mode", mode_label)}
+                        {detail_cell("Fit", fit_label)}
+                        {detail_cell("Pickup", pickup_date_label)}
+                        {detail_cell("Delivery", delivery_date_label)}
+                        {detail_cell("Rate", amount_label)}
+                        {detail_cell("Payment", payment_label)}
+                    </div>
+                    <div style="display:grid;gap:0.45rem;">
+                        <small style="color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;">"Origin"</small>
+                        <strong>{origin_label}</strong>
+                    </div>
+                    <div style="display:grid;gap:0.45rem;">
+                        <small style="color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;">"Destination"</small>
+                        <strong>{destination_label}</strong>
+                    </div>
+                    <div style="display:grid;gap:0.45rem;">
+                        <small style="color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;">"Bid status"</small>
+                        <strong>{bid_status_label}</strong>
+                    </div>
+                    {carrier_label.map(|carrier| view! {
+                        <div style="display:grid;gap:0.45rem;">
+                            <small style="color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;">"Carrier"</small>
+                            <strong>{carrier}</strong>
+                        </div>
+                    })}
+                    {remarks_label.map(|remarks| view! {
+                        <div style="padding:0.75rem;border:1px solid #e2e8f0;border-radius:0.65rem;background:#f8fafc;color:#334155;">
+                            {remarks}
+                        </div>
+                    })}
+                    {stloads_alert.map(|alert| view! {
+                        <div style="padding:0.75rem;border:1px solid #fde68a;border-radius:0.65rem;background:#fffbeb;color:#92400e;">
+                            {alert}
+                        </div>
+                    })}
+                    <div style="display:grid;gap:0.55rem;border-top:1px solid #e2e8f0;padding-top:0.9rem;">
+                        <small style="font-weight:800;color:#334155;">{primary_action_label}</small>
+                        {can_view_profile.then(|| view! {
+                            <A href=format!("/loads/{}", load_id) attr:style="display:block;text-align:center;padding:0.55rem 0.75rem;border-radius:0.55rem;background:#0f172a;color:white;text-decoration:none;font-weight:800;">"View full load"</A>
+                        })}
+                        {show_book_button.then(|| view! {
+                            <button
+                                type="button"
+                                style="padding:0.55rem 0.75rem;border-radius:0.55rem;border:1px solid #111827;background:#111827;color:white;cursor:pointer;font-weight:800;"
+                                disabled=move || is_booking.get()
+                                on:click=move |_| book_leg(leg_id)
+                            >
+                                {move || if is_booking.get() { "Booking..." } else { "Book load" }}
+                            </button>
+                        })}
+                        {show_bid_button.then(|| {
+                            let posting_id = posting_id.unwrap_or_default();
+                            view! {
+                                <button
+                                    type="button"
+                                    style="padding:0.55rem 0.75rem;border-radius:0.55rem;border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;cursor:pointer;font-weight:800;"
+                                    disabled=move || is_bidding.get()
+                                    on:click=move |_| submit_bid(posting_id, amount_for_bid.clone())
+                                >
+                                    {move || if is_bidding.get() { "Submitting..." } else { "Submit bid" }}
+                                </button>
+                            }
+                        })}
+                        {(!can_self_book && posting_id.is_some()).then(|| view! {
+                            <A href="/chat" attr:style="display:block;text-align:center;padding:0.55rem 0.75rem;border-radius:0.55rem;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;text-decoration:none;font-weight:800;">"Review bids"</A>
+                        })}
+                    </div>
+                </section>
+            </aside>
+        }.into_any()
+    }).unwrap_or_else(|| {
+        view! {
+            <aside style="position:sticky;top:0;border:1px dashed #b7c2d0;border-radius:0.85rem;background:#ffffff;min-height:320px;display:grid;place-items:center;padding:1rem;color:#64748b;text-align:center;">
+                <div>
+                    <strong style="display:block;color:#334155;">"Select a load"</strong>
+                    <span>"Open the full summary and actions here."</span>
+                </div>
+            </aside>
+        }.into_any()
+    })
+}
+
 fn parse_amount_label(value: &str) -> Option<f64> {
     let cleaned = value
         .chars()
@@ -683,6 +844,55 @@ fn compact_code(value: &str) -> String {
     }
 
     format!("{}...", trimmed.chars().take(22).collect::<String>())
+}
+
+fn route_summary_label(
+    mode: &str,
+    origin: &str,
+    destination: &str,
+    pickup: &str,
+    delivery: &str,
+) -> String {
+    format!("{mode} / {origin} -> {destination} / {pickup} to {delivery}")
+}
+
+fn header_cell() -> &'static str {
+    "text-align:left;padding:0.7rem 0.75rem;border-right:1px solid #b7c2d0;border-bottom:1px solid #b7c2d0;text-transform:uppercase;font-size:0.72rem;letter-spacing:0.04em;color:#334155;white-space:nowrap;"
+}
+
+fn header_cell_sticky() -> &'static str {
+    "text-align:left;padding:0.7rem 0.75rem;border-right:1px solid #b7c2d0;border-bottom:1px solid #b7c2d0;position:sticky;left:0;background:#f1f5f9;z-index:3;text-transform:uppercase;font-size:0.72rem;letter-spacing:0.04em;color:#334155;white-space:nowrap;"
+}
+
+fn body_cell(extra: &'static str) -> String {
+    format!(
+        "padding:0.7rem 0.75rem;border-right:1px solid #d8dee8;border-bottom:1px solid #d8dee8;background:inherit;{}",
+        extra
+    )
+}
+
+fn detail_cell(label: &'static str, value: String) -> impl IntoView {
+    view! {
+        <div style="display:grid;gap:0.25rem;padding:0.65rem;border:1px solid #e2e8f0;border-radius:0.6rem;background:#f8fafc;min-width:0;">
+            <small style="color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;">{label}</small>
+            <strong style="color:#0f172a;overflow:hidden;text-overflow:ellipsis;">{value}</strong>
+        </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn route_summary_keeps_mode_and_dates_visible() {
+        let summary = route_summary_label("Rail", "Dallas, TX", "Chicago, IL", "May 22", "May 24");
+
+        assert_eq!(
+            summary,
+            "Rail / Dallas, TX -> Chicago, IL / May 22 to May 24"
+        );
+    }
 }
 
 fn filter_input(
