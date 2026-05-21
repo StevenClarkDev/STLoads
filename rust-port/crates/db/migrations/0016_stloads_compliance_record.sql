@@ -1,4 +1,5 @@
 ALTER TABLE stloads_handoffs
+    ADD COLUMN IF NOT EXISTS compliance_envelope JSONB,
     ADD COLUMN IF NOT EXISTS paperwork_packet_id TEXT,
     ADD COLUMN IF NOT EXISTS document_packet_url TEXT,
     ADD COLUMN IF NOT EXISTS document_packet_hash TEXT,

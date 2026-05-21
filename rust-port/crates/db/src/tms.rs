@@ -16,6 +16,7 @@ use crate::DbPool;
 
 const STLOADS_COMPLIANCE_STORAGE_SQL: &[&str] = &[
     "ALTER TABLE stloads_handoffs
+        ADD COLUMN IF NOT EXISTS compliance_envelope JSONB,
         ADD COLUMN IF NOT EXISTS paperwork_packet_id TEXT,
         ADD COLUMN IF NOT EXISTS document_packet_url TEXT,
         ADD COLUMN IF NOT EXISTS document_packet_hash TEXT,
@@ -1418,9 +1419,12 @@ fn documents_ready(value: Option<&serde_json::Value>) -> bool {
     let Some(value) = value else {
         return false;
     };
-    let Some(object) = value.as_object() else {
+    let Some(mut object) = value.as_object() else {
         return false;
     };
+    if let Some(documents) = object.get("documents").and_then(|value| value.as_object()) {
+        object = documents;
+    }
 
     ["bol", "freight_bill"]
         .into_iter()
@@ -1428,8 +1432,16 @@ fn documents_ready(value: Option<&serde_json::Value>) -> bool {
 }
 
 fn document_status_ready(value: Option<&serde_json::Value>) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    if let Some(status) = value.as_str() {
+        return matches!(status, "generated" | "attached" | "clear" | "ready");
+    }
     value
-        .and_then(|value| value.as_str())
+        .as_object()
+        .and_then(|object| object.get("status"))
+        .and_then(|status| status.as_str())
         .is_some_and(|status| matches!(status, "generated" | "attached" | "clear" | "ready"))
 }
 
