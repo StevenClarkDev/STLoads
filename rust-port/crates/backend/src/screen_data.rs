@@ -51,6 +51,18 @@ const STATUS_ORDER: &[(&str, &str, &str, &str)] = &[
         "Currently publishing or republishing to STLOADS.",
     ),
     (
+        "quarantined",
+        "Quarantined",
+        "danger",
+        "Stopped by compliance before active board publication.",
+    ),
+    (
+        "blocked",
+        "Blocked",
+        "danger",
+        "Missing required compliance data and cannot publish.",
+    ),
+    (
         "published",
         "Published",
         "success",
@@ -866,25 +878,51 @@ async fn build_stloads_operations_screen(
 
     let handoff_rows = handoffs
         .into_iter()
-        .map(|row| HandoffRow {
-            handoff_id: row.id.max(0) as u64,
-            handoff_ref: format!("#{}", row.id),
-            tms_load_id: row.tms_load_id,
-            route_label: format_route(
-                row.pickup_city.as_deref(),
-                row.pickup_state.as_deref(),
-                row.dropoff_city.as_deref(),
-                row.dropoff_state.as_deref(),
-            ),
-            freight_mode: row.freight_mode.unwrap_or_else(|| "Unknown".into()),
-            equipment_type: row.equipment_type.unwrap_or_else(|| "Unknown".into()),
-            rate_label: format_currency(row.board_rate),
-            status_key: row.status.clone(),
-            status_label: title_case_legacy_label(&row.status),
-            status_tone: handoff_status_tone(&row.status).to_string(),
-            load_number: row.load_number,
-            retry_count: row.retry_count.max(0) as u64,
-            pushed_at_label: format_datetime(&row.created_at),
+        .map(|row| {
+            let (compliance_label, compliance_tone) =
+                compliance_badge(row.compliance_passed, &row.status);
+            HandoffRow {
+                handoff_id: row.id.max(0) as u64,
+                handoff_ref: format!("#{}", row.id),
+                tms_load_id: row.tms_load_id,
+                route_label: format_route(
+                    row.pickup_city.as_deref(),
+                    row.pickup_state.as_deref(),
+                    row.dropoff_city.as_deref(),
+                    row.dropoff_state.as_deref(),
+                ),
+                freight_mode: row.freight_mode.unwrap_or_else(|| "Unknown".into()),
+                equipment_type: row.equipment_type.unwrap_or_else(|| "Unknown".into()),
+                rate_label: format_currency(row.board_rate),
+                status_key: row.status.clone(),
+                status_label: title_case_legacy_label(&row.status),
+                status_tone: handoff_status_tone(&row.status).to_string(),
+                load_number: row.load_number,
+                retry_count: row.retry_count.max(0) as u64,
+                pushed_at_label: format_datetime(&row.created_at),
+                compliance_label,
+                compliance_tone,
+                packet_id: row.paperwork_packet_id,
+                bol_number: row.bol_number,
+                freight_bill_number: row.freight_bill_number,
+                document_status_label: document_status_label(
+                    row.required_documents_status.as_ref(),
+                ),
+                blocker_label: blocker_label(
+                    row.compliance_blockers.as_ref(),
+                    row.last_push_result.as_deref(),
+                ),
+                customs_status_label: customs_status_label(
+                    row.customs_movement_type.as_deref(),
+                    row.customs_readiness.as_deref(),
+                    row.ace_entry_number.as_deref(),
+                    row.isf_status.as_deref(),
+                    row.in_bond_status.as_deref(),
+                    row.aes_itn.as_deref(),
+                    row.pga_requirements.as_ref(),
+                ),
+                document_packet_url: row.document_packet_url,
+            }
         })
         .collect::<Vec<_>>();
 
@@ -1081,6 +1119,26 @@ async fn build_stloads_reconciliation_screen(
         .map(|row| row.count)
         .sum::<i64>()
         .max(0) as u64;
+    let compliance_quarantine = count_unresolved_sync_errors_by_class(pool, "compliance_not_passed")
+        .await?
+        .max(0) as u64;
+    let missing_documents = count_unresolved_sync_errors_by_class(pool, "missing_required_document")
+        .await?
+        .max(0) as u64;
+    let customs_gaps = [
+        "missing_customs_profile",
+        "missing_ACE_release",
+        "missing_ISF_status",
+        "missing_in_bond_closeout",
+        "missing_AES_ITN",
+        "missing_PGA_clearance",
+    ];
+    let mut customs_issue_count = 0_u64;
+    for error_class in customs_gaps {
+        customs_issue_count += count_unresolved_sync_errors_by_class(pool, error_class)
+            .await?
+            .max(0) as u64;
+    }
 
     let mismatch_cards = vec![
         MismatchCard {
@@ -1137,6 +1195,24 @@ async fn build_stloads_reconciliation_screen(
             tone: "danger".into(),
             note: "Callbacks requiring replay or operator review.".into(),
         },
+        MismatchCard {
+            label: "Compliance Holds".into(),
+            value: compliance_quarantine,
+            tone: "danger".into(),
+            note: "Handoffs quarantined before active publication.".into(),
+        },
+        MismatchCard {
+            label: "Document Gaps".into(),
+            value: missing_documents,
+            tone: "warning".into(),
+            note: "Packet, BOL, freight bill, or required document status gaps.".into(),
+        },
+        MismatchCard {
+            label: "Customs Gaps".into(),
+            value: customs_issue_count,
+            tone: "warning".into(),
+            note: "Customs, ISF, in-bond, AES/ITN, or PGA readiness gaps.".into(),
+        },
     ];
 
     let error_breakdown_rows = error_breakdown
@@ -1185,8 +1261,7 @@ async fn build_stloads_reconciliation_screen(
         logs: log_rows,
         callouts: vec![
             "Review unresolved marketplace sync issues and recovery activity.".into(),
-            "ATMP callback status is shown for queue, retry, delivered, and dead-letter states."
-                .into(),
+            "Compliance cards show quarantine, document, and customs readiness issues before they become board exposure.".into(),
         ],
         pagination: Pagination {
             page: 1,
@@ -2439,6 +2514,7 @@ fn handoff_status_tone(status: &str) -> &'static str {
     match status {
         "queued" => "warning",
         "push_in_progress" => "info",
+        "quarantined" | "blocked" => "danger",
         "published" => "success",
         "push_failed" => "danger",
         "requeue_required" => "primary",
@@ -2446,6 +2522,98 @@ fn handoff_status_tone(status: &str) -> &'static str {
         "closed" => "dark",
         _ => "secondary",
     }
+}
+
+fn compliance_badge(compliance_passed: bool, status: &str) -> (String, String) {
+    if matches!(status, "quarantined" | "blocked") {
+        ("Hold".into(), "danger".into())
+    } else if compliance_passed {
+        ("Clear".into(), "success".into())
+    } else {
+        ("Review".into(), "warning".into())
+    }
+}
+
+fn document_status_label(value: Option<&serde_json::Value>) -> String {
+    let Some(object) = value.and_then(|value| value.as_object()) else {
+        return "Docs not received".into();
+    };
+
+    let ready = object
+        .values()
+        .filter_map(|value| value.as_str())
+        .filter(|status| matches!(*status, "generated" | "attached" | "clear" | "ready"))
+        .count();
+    let total = object.len();
+    if total == 0 {
+        "Docs empty".into()
+    } else if ready == total {
+        format!("Docs clear ({}/{})", ready, total)
+    } else {
+        format!("Docs pending ({}/{})", ready, total)
+    }
+}
+
+fn blocker_label(blockers: Option<&serde_json::Value>, fallback: Option<&str>) -> Option<String> {
+    if let Some(array) = blockers.and_then(|value| value.as_array()) {
+        if !array.is_empty() {
+            return Some(format!("{} blocker(s)", array.len()));
+        }
+    }
+
+    fallback
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.chars().take(140).collect())
+}
+
+fn customs_status_label(
+    movement_type: Option<&str>,
+    readiness: Option<&str>,
+    ace_entry: Option<&str>,
+    isf_status: Option<&str>,
+    in_bond_status: Option<&str>,
+    aes_itn: Option<&str>,
+    pga_requirements: Option<&serde_json::Value>,
+) -> Option<String> {
+    let has_customs_signal = [
+        movement_type,
+        readiness,
+        ace_entry,
+        isf_status,
+        in_bond_status,
+        aes_itn,
+    ]
+    .into_iter()
+    .flatten()
+    .any(|value| !value.trim().is_empty())
+        || pga_requirements.is_some();
+
+    if !has_customs_signal {
+        return None;
+    }
+
+    Some(format!(
+        "{} / ACE {} / ISF {} / In-bond {} / AES {} / PGA {}",
+        readiness
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("pending"),
+        ace_entry
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("pending"),
+        isf_status
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("pending"),
+        in_bond_status
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("pending"),
+        aes_itn
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("pending"),
+        pga_requirements
+            .and_then(|value| value.as_array())
+            .map(|items| items.len().to_string())
+            .unwrap_or_else(|| "0".into())
+    ))
 }
 
 fn reconciliation_action_tone(action: &str) -> &'static str {
@@ -2456,6 +2624,8 @@ fn reconciliation_action_tone(action: &str) -> &'static str {
         "auto_archive" => "dark",
         "rate_update" => "primary",
         "mismatch_detected" => "danger",
+        "compliance_quarantined" => "danger",
+        "executive_override" => "warning",
         "force_sync" => "success",
         _ => "secondary",
     }

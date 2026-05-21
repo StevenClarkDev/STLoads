@@ -779,13 +779,14 @@ pub fn StloadsOperationsPage() -> impl IntoView {
                                     <div><strong>"Handoff records"</strong><p style="margin:0.35rem 0 0;">{move || screen.get().map(|value| format!("Showing {} handoffs", value.active_filter.unwrap_or_else(|| "all".into()))).unwrap_or_else(|| "Loading handoff filter...".into())}</p></div>
                                     <small>{move || screen.get().map(|value| format!("{} total tracked rows", value.pagination.total)).unwrap_or_else(|| "Loading rows...".into())}</small>
                                 </div>
-                                <table style="width:100%;border-collapse:collapse;min-width:980px;">
-                                    <thead style="background:#f8fafc;"><tr><th style="text-align:left;padding:0.9rem;">"Handoff"</th><th style="text-align:left;padding:0.9rem;">"TMS Load"</th><th style="text-align:left;padding:0.9rem;">"Route"</th><th style="text-align:left;padding:0.9rem;">"Mode"</th><th style="text-align:left;padding:0.9rem;">"Equipment"</th><th style="text-align:left;padding:0.9rem;">"Rate"</th><th style="text-align:left;padding:0.9rem;">"Status"</th><th style="text-align:left;padding:0.9rem;">"Load"</th><th style="text-align:left;padding:0.9rem;">"Retries"</th><th style="text-align:left;padding:0.9rem;">"Action"</th></tr></thead>
+                                <table style="width:100%;border-collapse:collapse;min-width:1320px;">
+                                    <thead style="background:#f8fafc;"><tr><th style="text-align:left;padding:0.9rem;">"Handoff"</th><th style="text-align:left;padding:0.9rem;">"TMS Load"</th><th style="text-align:left;padding:0.9rem;">"Route"</th><th style="text-align:left;padding:0.9rem;">"Mode"</th><th style="text-align:left;padding:0.9rem;">"Equipment"</th><th style="text-align:left;padding:0.9rem;">"Rate"</th><th style="text-align:left;padding:0.9rem;">"Status"</th><th style="text-align:left;padding:0.9rem;">"Compliance"</th><th style="text-align:left;padding:0.9rem;">"Packet"</th><th style="text-align:left;padding:0.9rem;">"Documents"</th><th style="text-align:left;padding:0.9rem;">"Customs"</th><th style="text-align:left;padding:0.9rem;">"Load"</th><th style="text-align:left;padding:0.9rem;">"Retries"</th><th style="text-align:left;padding:0.9rem;">"Action"</th></tr></thead>
                                     <tbody>
-                                        {move || if is_loading.get() && screen.get().is_none() { view! { <tr><td colspan="10" style="padding:1rem;">"Loading STLOADS handoffs from the Rust backend..."</td></tr> }.into_any() } else { screen.get().map(|value| value.handoffs.into_iter().map(|handoff| {
+                                        {move || if is_loading.get() && screen.get().is_none() { view! { <tr><td colspan="14" style="padding:1rem;">"Loading STLOADS handoffs from the Rust backend..."</td></tr> }.into_any() } else { screen.get().map(|value| value.handoffs.into_iter().map(|handoff| {
                                             let handoff_id = handoff.handoff_id;
                                             let tms_load_id = handoff.tms_load_id.clone();
                                             let status_key = handoff.status_key.clone();
+                                            let packet_link = handoff.document_packet_url.clone();
                                             view! {
                                                 <tr style="border-top:1px solid #f1f5f9;">
                                                     <td style="padding:0.9rem;">{handoff.handoff_ref}</td>
@@ -795,6 +796,10 @@ pub fn StloadsOperationsPage() -> impl IntoView {
                                                     <td style="padding:0.9rem;">{handoff.equipment_type}</td>
                                                     <td style="padding:0.9rem;">{handoff.rate_label}</td>
                                                     <td style="padding:0.9rem;"><span style=tone_style(&handoff.status_tone)>{handoff.status_label}</span><div><small>{status_key}</small></div></td>
+                                                    <td style="padding:0.9rem;"><span style=tone_style(&handoff.compliance_tone)>{handoff.compliance_label}</span>{handoff.blocker_label.map(|label| view! { <div><small>{label}</small></div> })}</td>
+                                                    <td style="padding:0.9rem;display:grid;gap:0.25rem;"><span>{handoff.packet_id.unwrap_or_else(|| "No packet".into())}</span><small>{format!("BOL {}", handoff.bol_number.unwrap_or_else(|| "missing".into()))}</small><small>{format!("FB {}", handoff.freight_bill_number.unwrap_or_else(|| "missing".into()))}</small>{packet_link.map(|href| view! { <a href=href target="_blank" rel="noreferrer" style="color:#1d4ed8;">"Packet PDF"</a> })}</td>
+                                                    <td style="padding:0.9rem;">{handoff.document_status_label}</td>
+                                                    <td style="padding:0.9rem;">{handoff.customs_status_label.unwrap_or_else(|| "Not customs-controlled".into())}</td>
                                                     <td style="padding:0.9rem;">{handoff.load_number.unwrap_or_else(|| "Pending local load".into())}</td>
                                                     <td style="padding:0.9rem;">{handoff.retry_count}</td>
                                                     <td style="padding:0.9rem;">
@@ -804,7 +809,7 @@ pub fn StloadsOperationsPage() -> impl IntoView {
                                                     </td>
                                                 </tr>
                                             }
-                                        }).collect_view().into_any()).unwrap_or_else(|| view! { <tr><td colspan="10" style="padding:1rem;">"No STLOADS handoff data is available yet."</td></tr> }.into_any()) }}
+                                        }).collect_view().into_any()).unwrap_or_else(|| view! { <tr><td colspan="14" style="padding:1rem;">"No STLOADS handoff data is available yet."</td></tr> }.into_any()) }}
                                     </tbody>
                                 </table>
                             </div>

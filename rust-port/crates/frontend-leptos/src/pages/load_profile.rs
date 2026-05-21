@@ -78,6 +78,25 @@ fn render_handoff(handoff: Option<LoadHandoffSummary>, admin_mode: bool) -> AnyV
                     <div><small style="color:#64748b;">"TMS status updated"</small><div>{handoff.tms_status_at_label.unwrap_or_else(|| "No upstream timestamp yet".into())}</div></div>
                     <div><small style="color:#64748b;">"Published"</small><div>{handoff.published_at_label.unwrap_or_else(|| "Not published yet".into())}</div></div>
                     <div><small style="color:#64748b;">"Pushed by"</small><div>{handoff.pushed_by_label.unwrap_or_else(|| "System".into())}</div></div>
+                    <div><small style="color:#64748b;">"Compliance"</small><div><span style=tone_style(&handoff.compliance_tone)>{handoff.compliance_label}</span></div></div>
+                    <div><small style="color:#64748b;">"Packet ID"</small><div>{handoff.packet_id.unwrap_or_else(|| "No packet received".into())}</div></div>
+                    <div><small style="color:#64748b;">"BOL"</small><div>{handoff.bol_number.unwrap_or_else(|| "Missing".into())}</div></div>
+                    <div><small style="color:#64748b;">"Freight bill"</small><div>{handoff.freight_bill_number.unwrap_or_else(|| "Missing".into())}</div></div>
+                    <div><small style="color:#64748b;">"Document readiness"</small><div>{handoff.document_status_label}</div></div>
+                    <div><small style="color:#64748b;">"Packet hash"</small><div>{handoff.document_packet_hash.unwrap_or_else(|| "No hash received".into())}</div></div>
+                </div>
+                <div style="display:flex;gap:0.55rem;flex-wrap:wrap;align-items:center;">
+                    {handoff.document_packet_url.clone().map(|href| view! {
+                        <a href=href target="_blank" rel="noreferrer" style="padding:0.45rem 0.7rem;border-radius:0.75rem;background:#eff6ff;color:#1d4ed8;text-decoration:none;">
+                            "Open Packet PDF"
+                        </a>
+                    })}
+                    {handoff.customs_status_label.clone().map(|label| view! {
+                        <span style=tone_style("info")>{label}</span>
+                    })}
+                    {handoff.blocker_label.clone().map(|label| view! {
+                        <span style=tone_style("danger")>{label}</span>
+                    })}
                 </div>
             </section>
         }.into_any()

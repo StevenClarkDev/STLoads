@@ -44,6 +44,15 @@ pub struct HandoffRow {
     pub load_number: Option<String>,
     pub retry_count: u64,
     pub pushed_at_label: String,
+    pub compliance_label: String,
+    pub compliance_tone: String,
+    pub packet_id: Option<String>,
+    pub bol_number: Option<String>,
+    pub freight_bill_number: Option<String>,
+    pub document_status_label: String,
+    pub blocker_label: Option<String>,
+    pub customs_status_label: Option<String>,
+    pub document_packet_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -448,6 +457,16 @@ pub struct LoadHandoffSummary {
     pub tms_status_at_label: Option<String>,
     pub published_at_label: Option<String>,
     pub pushed_by_label: Option<String>,
+    pub compliance_label: String,
+    pub compliance_tone: String,
+    pub packet_id: Option<String>,
+    pub bol_number: Option<String>,
+    pub freight_bill_number: Option<String>,
+    pub document_packet_hash: Option<String>,
+    pub document_packet_url: Option<String>,
+    pub document_status_label: String,
+    pub blocker_label: Option<String>,
+    pub customs_status_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -296,6 +296,22 @@ pub struct StloadsHandoffListRecord {
     pub dropoff_state: Option<String>,
     pub board_rate: Option<f64>,
     pub retry_count: i32,
+    pub compliance_passed: bool,
+    pub required_documents_status: Option<Value>,
+    pub paperwork_packet_id: Option<String>,
+    pub document_packet_url: Option<String>,
+    pub document_packet_hash: Option<String>,
+    pub bol_number: Option<String>,
+    pub freight_bill_number: Option<String>,
+    pub compliance_blockers: Option<Value>,
+    pub customs_movement_type: Option<String>,
+    pub customs_readiness: Option<String>,
+    pub ace_entry_number: Option<String>,
+    pub isf_status: Option<String>,
+    pub in_bond_status: Option<String>,
+    pub aes_itn: Option<String>,
+    pub pga_requirements: Option<Value>,
+    pub last_push_result: Option<String>,
     pub created_at: NaiveDateTime,
 }
 
@@ -407,7 +423,11 @@ pub async fn list_recent_handoffs_filtered(
         sqlx::query_as::<_, StloadsHandoffListRecord>(
             "SELECT h.id, h.tms_load_id, h.load_id, l.load_number, h.status, h.tms_status, h.freight_mode,
                     h.equipment_type, h.pickup_city, h.pickup_state, h.dropoff_city, h.dropoff_state,
-                    h.board_rate::double precision AS board_rate, h.retry_count, h.created_at
+                    h.board_rate::double precision AS board_rate, h.retry_count, h.compliance_passed,
+                    h.required_documents_status, h.paperwork_packet_id, h.document_packet_url,
+                    h.document_packet_hash, h.bol_number, h.freight_bill_number, h.compliance_blockers,
+                    h.customs_movement_type, h.customs_readiness, h.ace_entry_number, h.isf_status,
+                    h.in_bond_status, h.aes_itn, h.pga_requirements, h.last_push_result, h.created_at
              FROM stloads_handoffs h
              LEFT JOIN loads l ON l.id = h.load_id
              WHERE h.status = $1
@@ -422,7 +442,11 @@ pub async fn list_recent_handoffs_filtered(
         sqlx::query_as::<_, StloadsHandoffListRecord>(
             "SELECT h.id, h.tms_load_id, h.load_id, l.load_number, h.status, h.tms_status, h.freight_mode,
                     h.equipment_type, h.pickup_city, h.pickup_state, h.dropoff_city, h.dropoff_state,
-                    h.board_rate::double precision AS board_rate, h.retry_count, h.created_at
+                    h.board_rate::double precision AS board_rate, h.retry_count, h.compliance_passed,
+                    h.required_documents_status, h.paperwork_packet_id, h.document_packet_url,
+                    h.document_packet_hash, h.bol_number, h.freight_bill_number, h.compliance_blockers,
+                    h.customs_movement_type, h.customs_readiness, h.ace_entry_number, h.isf_status,
+                    h.in_bond_status, h.aes_itn, h.pga_requirements, h.last_push_result, h.created_at
              FROM stloads_handoffs h
              LEFT JOIN loads l ON l.id = h.load_id
              ORDER BY h.created_at DESC, h.id DESC

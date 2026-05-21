@@ -3316,20 +3316,47 @@ async fn build_load_profile_screen(
         })
         .collect::<Vec<_>>();
 
-    let stloads_handoff = handoff.map(|handoff| LoadHandoffSummary {
-        handoff_id: handoff.id.max(0) as u64,
-        status_label: profile_title_case(&handoff.status),
-        status_tone: profile_handoff_status_tone(&handoff.status).into(),
-        tms_load_id: handoff.tms_load_id,
-        board_rate_label: format!(
-            "{} {}",
-            handoff.rate_currency,
-            format_profile_currency(handoff.board_rate)
-        ),
-        tms_status_label: handoff.tms_status.as_deref().map(profile_title_case),
-        tms_status_at_label: handoff.tms_status_at.as_ref().map(format_profile_datetime),
-        published_at_label: handoff.published_at.as_ref().map(format_profile_datetime),
-        pushed_by_label: handoff.pushed_by.filter(|value| !value.trim().is_empty()),
+    let stloads_handoff = handoff.map(|handoff| {
+        let (compliance_label, compliance_tone) =
+            profile_compliance_badge(handoff.compliance_passed, &handoff.status);
+        LoadHandoffSummary {
+            handoff_id: handoff.id.max(0) as u64,
+            status_label: profile_title_case(&handoff.status),
+            status_tone: profile_handoff_status_tone(&handoff.status).into(),
+            tms_load_id: handoff.tms_load_id,
+            board_rate_label: format!(
+                "{} {}",
+                handoff.rate_currency,
+                format_profile_currency(handoff.board_rate)
+            ),
+            tms_status_label: handoff.tms_status.as_deref().map(profile_title_case),
+            tms_status_at_label: handoff.tms_status_at.as_ref().map(format_profile_datetime),
+            published_at_label: handoff.published_at.as_ref().map(format_profile_datetime),
+            pushed_by_label: handoff.pushed_by.filter(|value| !value.trim().is_empty()),
+            compliance_label,
+            compliance_tone,
+            packet_id: handoff.paperwork_packet_id,
+            bol_number: handoff.bol_number,
+            freight_bill_number: handoff.freight_bill_number,
+            document_packet_hash: handoff.document_packet_hash,
+            document_packet_url: handoff.document_packet_url,
+            document_status_label: profile_document_status_label(
+                handoff.required_documents_status.as_ref(),
+            ),
+            blocker_label: profile_blocker_label(
+                handoff.compliance_blockers.as_ref(),
+                handoff.last_push_result.as_deref(),
+            ),
+            customs_status_label: profile_customs_status_label(
+                handoff.customs_movement_type.as_deref(),
+                handoff.customs_readiness.as_deref(),
+                handoff.ace_entry_number.as_deref(),
+                handoff.isf_status.as_deref(),
+                handoff.in_bond_status.as_deref(),
+                handoff.aes_itn.as_deref(),
+                handoff.pga_requirements.as_ref(),
+            ),
+        }
     });
 
     let notes = vec![
@@ -3487,6 +3514,7 @@ fn profile_handoff_status_tone(status: &str) -> &'static str {
     match status {
         "queued" => "warning",
         "push_in_progress" => "info",
+        "quarantined" | "blocked" => "danger",
         "published" => "success",
         "push_failed" => "danger",
         "requeue_required" => "primary",
@@ -3494,6 +3522,96 @@ fn profile_handoff_status_tone(status: &str) -> &'static str {
         "closed" => "dark",
         _ => "secondary",
     }
+}
+
+fn profile_compliance_badge(compliance_passed: bool, status: &str) -> (String, String) {
+    if matches!(status, "quarantined" | "blocked") {
+        ("Hold".into(), "danger".into())
+    } else if compliance_passed {
+        ("Clear".into(), "success".into())
+    } else {
+        ("Review".into(), "warning".into())
+    }
+}
+
+fn profile_document_status_label(value: Option<&serde_json::Value>) -> String {
+    let Some(object) = value.and_then(|value| value.as_object()) else {
+        return "Docs not received".into();
+    };
+    let ready = object
+        .values()
+        .filter_map(|value| value.as_str())
+        .filter(|status| matches!(*status, "generated" | "attached" | "clear" | "ready"))
+        .count();
+    if object.is_empty() {
+        "Docs empty".into()
+    } else if ready == object.len() {
+        format!("Docs clear ({}/{})", ready, object.len())
+    } else {
+        format!("Docs pending ({}/{})", ready, object.len())
+    }
+}
+
+fn profile_blocker_label(
+    blockers: Option<&serde_json::Value>,
+    fallback: Option<&str>,
+) -> Option<String> {
+    if let Some(array) = blockers.and_then(|value| value.as_array()) {
+        if !array.is_empty() {
+            return Some(format!("{} blocker(s)", array.len()));
+        }
+    }
+    fallback
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.chars().take(140).collect())
+}
+
+fn profile_customs_status_label(
+    movement_type: Option<&str>,
+    readiness: Option<&str>,
+    ace_entry: Option<&str>,
+    isf_status: Option<&str>,
+    in_bond_status: Option<&str>,
+    aes_itn: Option<&str>,
+    pga_requirements: Option<&serde_json::Value>,
+) -> Option<String> {
+    let has_customs_signal = [
+        movement_type,
+        readiness,
+        ace_entry,
+        isf_status,
+        in_bond_status,
+        aes_itn,
+    ]
+    .into_iter()
+    .flatten()
+    .any(|value| !value.trim().is_empty())
+        || pga_requirements.is_some();
+    if !has_customs_signal {
+        return None;
+    }
+    Some(format!(
+        "{} / ACE {} / ISF {} / In-bond {} / AES {} / PGA {}",
+        readiness
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("pending"),
+        ace_entry
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("pending"),
+        isf_status
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("pending"),
+        in_bond_status
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("pending"),
+        aes_itn
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("pending"),
+        pga_requirements
+            .and_then(|value| value.as_array())
+            .map(|items| items.len().to_string())
+            .unwrap_or_else(|| "0".into())
+    ))
 }
 
 fn format_profile_date(value: Option<&chrono::NaiveDateTime>) -> String {
