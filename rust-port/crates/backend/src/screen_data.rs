@@ -319,11 +319,8 @@ async fn build_load_board_screen(
             load_board_tab_counts(pool).await?,
             load_board_metrics(pool).await?,
             list_load_board_legs_filtered(pool, Some(active_tab.as_str()), 20).await?,
-            "Admin Workspace".to_string(),
-            vec![
-                "Admin view includes all marketplace loads.".into(),
-                "Refresh the board when reconciling active marketplace work.".into(),
-            ],
+            "Admin".to_string(),
+            vec![],
         ),
         Some(UserRole::Carrier) => (
             load_board_tab_counts_for_carrier(pool, viewer.user.id).await?,
@@ -344,29 +341,28 @@ async fn build_load_board_screen(
                 )
                 .await?
             },
-            "Carrier Workspace".to_string(),
-            vec![
-                "This load board is scoped to open board inventory plus legs already booked by the authenticated carrier account.".into(),
-                "Carrier booking updates are sent to carrier sessions and direct stakeholders.".into(),
-            ],
+            "Carrier".to_string(),
+            vec![],
         ),
         Some(UserRole::Shipper) | Some(UserRole::Broker) | Some(UserRole::FreightForwarder) => (
             load_board_tab_counts_for_owner(pool, viewer.user.id).await?,
             load_board_metrics_for_owner(pool, viewer.user.id).await?,
-            list_load_board_legs_for_owner_filtered(pool, viewer.user.id, Some(active_tab.as_str()), 20)
-                .await?,
+            list_load_board_legs_for_owner_filtered(
+                pool,
+                viewer.user.id,
+                Some(active_tab.as_str()),
+                20,
+            )
+            .await?,
             viewer_role_workspace(viewer),
-            vec![
-                "This load board is scoped to loads owned by the authenticated account.".into(),
-                "Offer review and booking refreshes are now restricted to the matching load stakeholders.".into(),
-            ],
+            vec![],
         ),
         None => {
             return Ok(empty_load_board_screen(
                 state,
                 "Marketplace Loads",
-                "Secure Workspace",
-                vec!["This account does not have a marketplace role assigned.".into()],
+                "Secure",
+                vec![],
                 None,
                 active_tab,
             ));
@@ -392,17 +388,17 @@ async fn build_load_board_screen(
         LoadBoardMetric {
             label: "Open Board".into(),
             value: format!("{} legs", metrics.open_board_total.max(0)),
-            note: "Visible for booking or assignment within this authenticated scope.".into(),
+            note: "Visible".into(),
         },
         LoadBoardMetric {
-            label: "Recommended Matches".into(),
+            label: "Recommended".into(),
             value: format!("{} legs", metrics.recommended_total.max(0)),
-            note: "Still heuristic until carrier preferences and owner-specific filters are fully ported.".into(),
+            note: "Matched".into(),
         },
         LoadBoardMetric {
-            label: "Funding Watch".into(),
+            label: "Funding".into(),
             value: format!("{} legs", metrics.funding_watch_total.max(0)),
-            note: "Booked or executing legs that still need escrow follow-up in this authenticated scope.".into(),
+            note: "Watch".into(),
         },
     ];
 
@@ -2091,8 +2087,8 @@ fn viewer_role_workspace(viewer: &ResolvedSession) -> String {
         .session
         .user
         .as_ref()
-        .map(|user| format!("{} Workspace", user.role_label))
-        .unwrap_or_else(|| "Secure Workspace".into())
+        .map(|user| user.role_label.clone())
+        .unwrap_or_else(|| "Secure".into())
 }
 
 fn fallback_operations_screen(

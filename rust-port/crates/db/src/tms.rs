@@ -1512,7 +1512,9 @@ fn active_customs_value(value: Option<&Value>) -> bool {
         Value::Bool(flag) => *flag,
         Value::String(text) => active_customs_text(Some(text.as_str())),
         Value::Array(items) => items.iter().any(|item| active_customs_value(Some(item))),
-        Value::Object(fields) => fields.values().any(|field| active_customs_value(Some(field))),
+        Value::Object(fields) => fields
+            .values()
+            .any(|field| active_customs_value(Some(field))),
         Value::Number(_) => true,
     }
 }
