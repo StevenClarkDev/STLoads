@@ -300,8 +300,8 @@ pub fn LoadBoardPage() -> impl IntoView {
     };
 
     view! {
-        <article style="display:grid;gap:0.85rem;min-height:calc(100vh - 150px);">
-            <section style="display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap;">
+        <article style="display:grid;gap:0.95rem;min-height:calc(100vh - 150px);background:#eef2f7;padding:0.95rem;border-radius:0.95rem;">
+            <section style="display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap;padding:1rem;border:1px solid #cbd5e1;border-radius:0.85rem;background:#ffffff;box-shadow:0 10px 24px rgba(15,23,42,0.06);">
                 <div>
                     <small style="display:block;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">{move || screen.get().map(|value| value.role_label).unwrap_or_else(|| "Marketplace".into())}</small>
                     <h2 style="margin:0.25rem 0 0;">{move || screen.get().map(|value| value.title).unwrap_or_else(|| "Marketplace Loads".into())}</h2>
@@ -323,16 +323,16 @@ pub fn LoadBoardPage() -> impl IntoView {
                 </section>
             })}
 
-            <section style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+            <section style="display:flex;gap:0.55rem;flex-wrap:wrap;padding:0.7rem;border:1px solid #cbd5e1;border-radius:0.85rem;background:#ffffff;">
                 {move || screen.get().map(|value| {
                     value.tabs
                         .into_iter()
                         .map(|tab| {
                             let tab_key = tab.key.clone();
                             let style = if tab.is_active {
-                                "padding:0.5rem 0.85rem;border-radius:999px;background:#111827;color:white;border:none;cursor:pointer;"
+                                "padding:0.55rem 0.85rem;border-radius:0.65rem;background:#0f172a;color:white;border:1px solid #0f172a;cursor:pointer;font-weight:800;"
                             } else {
-                                "padding:0.5rem 0.85rem;border-radius:999px;background:#f4f4f5;color:#111827;border:none;cursor:pointer;"
+                                "padding:0.55rem 0.85rem;border-radius:0.65rem;background:#f8fafc;color:#111827;border:1px solid #cbd5e1;cursor:pointer;font-weight:700;"
                             };
                             view! {
                                 <button
@@ -351,15 +351,16 @@ pub fn LoadBoardPage() -> impl IntoView {
                 })}
             </section>
 
-            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.6rem;">
+            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0.75rem;">
                 {move || screen.get().map(|value| {
                     value.metrics
                         .into_iter()
                         .map(|metric| {
                             view! {
-                                <div style="padding:0.75rem 0.85rem;border:1px solid #e5e7eb;border-radius:0.6rem;background:#ffffff;">
-                                    <small style="display:block;color:#64748b;font-weight:700;text-transform:uppercase;">{metric.label}</small>
-                                    <strong style="font-size:1rem;">{metric.value}</strong>
+                                <div style="padding:0.85rem 0.95rem;border:1px solid #cbd5e1;border-left:4px solid #2563eb;border-radius:0.75rem;background:#ffffff;box-shadow:0 8px 18px rgba(15,23,42,0.04);">
+                                    <small style="display:block;color:#475569;font-weight:800;text-transform:uppercase;letter-spacing:0.04em;">{metric.label}</small>
+                                    <strong style="font-size:1.15rem;color:#0f172a;">{metric.value}</strong>
+                                    <small style="display:block;color:#64748b;">{metric.note}</small>
                                 </div>
                             }
                         })
@@ -367,13 +368,13 @@ pub fn LoadBoardPage() -> impl IntoView {
                 })}
             </section>
 
-            <details style="border:1px solid #dbe3ee;border-radius:0.65rem;background:#ffffff;">
-                <summary style="cursor:pointer;list-style:none;padding:0.75rem 0.9rem;font-weight:700;display:flex;justify-content:space-between;gap:1rem;">
+            <details style="border:1px solid #cbd5e1;border-radius:0.85rem;background:#ffffff;box-shadow:0 10px 24px rgba(15,23,42,0.05);">
+                <summary style="cursor:pointer;list-style:none;padding:0.85rem 1rem;font-weight:800;display:flex;justify-content:space-between;gap:1rem;border-bottom:1px solid #e2e8f0;">
                     <span>"Search"</span>
                     <span style="color:#64748b;font-weight:500;">"Filters / saved views"</span>
                 </summary>
-                <section style="display:grid;gap:0.75rem;padding:0 0.9rem 0.9rem;">
-                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.6rem;">
+                <section style="display:grid;gap:0.85rem;padding:1rem;background:#f8fafc;border-radius:0 0 0.85rem 0.85rem;">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.7rem;">
                         {filter_input("Origin", draft_filters, |state, value| state.origin = value)}
                         {filter_input("Destination", draft_filters, |state, value| state.destination = value)}
                         {filter_input("Mode", draft_filters, |state, value| state.mode = value)}
@@ -386,7 +387,7 @@ pub fn LoadBoardPage() -> impl IntoView {
                         {filter_input("Max weight", draft_filters, |state, value| state.max_weight = value)}
                         <label style="display:grid;gap:0.25rem;font-size:0.78rem;font-weight:700;color:#475569;text-transform:uppercase;">
                             "Sort"
-                            <select style="padding:0.5rem;border:1px solid #cbd5e1;border-radius:0.45rem;background:white;" on:change=move |ev| {
+                            <select style="padding:0.6rem;border:1px solid #94a3b8;border-radius:0.55rem;background:white;" on:change=move |ev| {
                                 let value = event_target_value(&ev);
                                 draft_filters.update(|state| state.sort = if value.is_empty() { None } else { Some(value) });
                             }>
@@ -435,21 +436,21 @@ pub fn LoadBoardPage() -> impl IntoView {
                 </section>
             })}
 
-            <section style="overflow:auto;border:1px solid #dbe3ee;border-radius:0.65rem;background:#ffffff;max-height:calc(100vh - 360px);min-height:420px;">
-                <table style="width:100%;border-collapse:separate;border-spacing:0;min-width:1120px;font-size:0.86rem;">
-                    <thead style="background:#f8fafc;position:sticky;top:0;z-index:2;">
+            <section style="overflow:auto;border:2px solid #94a3b8;border-radius:0.85rem;background:#ffffff;max-height:calc(100vh - 360px);min-height:420px;box-shadow:0 14px 32px rgba(15,23,42,0.08);">
+                <table style="width:100%;border-collapse:collapse;min-width:1180px;font-size:0.86rem;">
+                    <thead style="background:#e2e8f0;position:sticky;top:0;z-index:2;">
                         <tr>
-                            <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;position:sticky;left:0;background:#f8fafc;z-index:3;">"Load"</th>
-                            <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Origin"</th>
-                            <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Destination"</th>
-                            <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Mode"</th>
-                            <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Pickup"</th>
-                            <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Delivery"</th>
-                            <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Rate"</th>
-                            <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Status"</th>
-                            <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Board"</th>
-                            <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Fit"</th>
-                            <th style="text-align:left;padding:0.65rem 0.75rem;border-bottom:1px solid #dbe3ee;">"Action"</th>
+                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;position:sticky;left:0;background:#e2e8f0;z-index:3;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Load"</th>
+                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Origin"</th>
+                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Destination"</th>
+                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Mode"</th>
+                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Pickup"</th>
+                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Delivery"</th>
+                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Rate"</th>
+                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Status"</th>
+                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Board"</th>
+                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Fit"</th>
+                            <th style="text-align:left;padding:0.7rem 0.75rem;border:1px solid #94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.04em;">"Action"</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -569,7 +570,7 @@ fn render_row(
         .unwrap_or_else(|| "-".into());
     let row_background = if index % 2 == 0 { "#ffffff" } else { "#f8fafc" };
     let sticky_cell_style = format!(
-        "padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;position:sticky;left:0;background:{};z-index:1;min-width:210px;max-width:230px;",
+        "padding:0.7rem 0.75rem;border:1px solid #cbd5e1;position:sticky;left:0;background:{};z-index:1;min-width:220px;max-width:245px;box-shadow:6px 0 14px rgba(15,23,42,0.04);",
         row_background
     );
 
@@ -579,26 +580,26 @@ fn render_row(
                 <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{code_short}</strong>
                 <small style="color:#64748b;">{format!("Leg {}", leg_id)}</small>
             </td>
-            <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;max-width:180px;" title=origin_title>
+            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;max-width:190px;background:inherit;" title=origin_title>
                 <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{origin_short}</span>
             </td>
-            <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;max-width:180px;" title=destination_title>
+            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;max-width:190px;background:inherit;" title=destination_title>
                 <span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{destination_short}</span>
             </td>
-            <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;white-space:nowrap;">
-                <span style="display:inline-flex;align-items:center;padding:0.2rem 0.45rem;border-radius:999px;border:1px solid #cbd5e1;background:#f8fafc;color:#334155;font-weight:700;font-size:0.78rem;">{mode_label}</span>
+            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;white-space:nowrap;background:inherit;">
+                <span style="display:inline-flex;align-items:center;padding:0.25rem 0.5rem;border-radius:0.5rem;border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-weight:800;font-size:0.78rem;">{mode_label}</span>
             </td>
-            <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;white-space:nowrap;">{pickup_date_label}</td>
-            <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;white-space:nowrap;">{delivery_date_label}</td>
-            <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;white-space:nowrap;">
-                <strong>{amount_label}</strong>
+            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;white-space:nowrap;background:inherit;">{pickup_date_label}</td>
+            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;white-space:nowrap;background:inherit;">{delivery_date_label}</td>
+            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;white-space:nowrap;background:#f8fafc;">
+                <strong style="font-size:0.95rem;color:#0f172a;">{amount_label}</strong>
                 <small style="display:block;color:#64748b;">{payment_label}</small>
             </td>
-            <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;">
+            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;background:inherit;">
                 <span style=tone_style(&status_tone)>{status_label}</span>
                 {carrier_label.map(|carrier| view! { <div><small>{carrier}</small></div> })}
             </td>
-            <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;">
+            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;background:inherit;">
                 {stloads_label.clone().map(|label| {
                     let tone = stloads_tone.as_deref().unwrap_or("secondary");
                     view! {
@@ -610,11 +611,11 @@ fn render_row(
                 })}
                 {stloads_label.is_none().then(|| view! { <span>"Not posted"</span> })}
             </td>
-            <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;white-space:nowrap;">
+            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;white-space:nowrap;background:inherit;">
                 <strong>{fit_label}</strong>
                 <small style="display:block;color:#64748b;">{bid_status_label}</small>
             </td>
-            <td style="padding:0.65rem 0.75rem;border-bottom:1px solid #edf2f7;display:grid;gap:0.35rem;min-width:145px;">
+            <td style="padding:0.7rem 0.75rem;border:1px solid #cbd5e1;display:grid;gap:0.35rem;min-width:155px;background:#f8fafc;">
                 <small style="font-weight:700;color:#334155;">{primary_action_label}</small>
                 {can_view_profile.then(|| view! {
                     <A href=format!("/loads/{}", load_id) attr:style="color:#1d4ed8;text-decoration:none;">"View profile"</A>
@@ -688,10 +689,10 @@ fn filter_input(
     apply: fn(&mut LoadBoardFilterState, Option<String>),
 ) -> impl IntoView {
     view! {
-        <label style="display:grid;gap:0.35rem;font-size:0.85rem;">
+        <label style="display:grid;gap:0.35rem;font-size:0.78rem;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.04em;">
             {label}
             <input
-                style="padding:0.55rem;border:1px solid #d4d4d8;border-radius:0.65rem;"
+                style="padding:0.6rem;border:1px solid #94a3b8;border-radius:0.55rem;background:#ffffff;color:#0f172a;font-size:0.88rem;text-transform:none;letter-spacing:0;"
                 on:input=move |ev| {
                     let value = event_target_value(&ev);
                     draft_filters.update(|state| {
