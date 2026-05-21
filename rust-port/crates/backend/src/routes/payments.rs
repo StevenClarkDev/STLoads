@@ -1972,6 +1972,114 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn duplicate_failed_stripe_webhook_replays_without_duplicate_recovery_events() {
+        let Some(pool) = crate::test_support::prepare_pool().await.unwrap() else {
+            return;
+        };
+        let fixture = crate::test_support::insert_load_fixture(&pool, 7)
+            .await
+            .unwrap();
+        let mut state = crate::test_support::test_state(pool.clone());
+        state.config.stripe_webhook_shared_secret = Some("whsec_test".into());
+
+        apply_escrow_transition(
+            &pool,
+            EscrowTransitionParams {
+                leg_id: fixture.leg_id,
+                payer_user_id: fixture.owner_user.id,
+                payee_user_id: fixture.carrier_user.id,
+                amount: 187500,
+                platform_fee: 1875,
+                currency: "USD",
+                status: EscrowStatus::Unfunded,
+                transfer_group: Some("LEG_FAILED_DUPLICATE"),
+                payment_intent_id: Some("pi_failed_duplicate_p14"),
+                charge_id: None,
+                transfer_id: None,
+                actor_user_id: Some(fixture.owner_user.id),
+                note: Some("Seed escrow for failed webhook replay test."),
+            },
+        )
+        .await
+        .unwrap();
+
+        let payload = serde_json::json!({
+            "id": "evt_failed_duplicate_p14",
+            "type": "payment_intent.payment_failed",
+            "data": {
+                "object": {
+                    "id": "pi_failed_duplicate_p14",
+                    "amount": 187500,
+                    "currency": "usd",
+                    "latest_charge": "ch_failed_duplicate_p14",
+                    "transfer_group": "LEG_FAILED_DUPLICATE",
+                    "application_fee_amount": 1875,
+                    "metadata": { "leg_id": fixture.leg_id.to_string() }
+                }
+            }
+        })
+        .to_string();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-stripe-webhook-secret",
+            HeaderValue::from_static("whsec_test"),
+        );
+
+        let first = stripe_webhook(
+            State(state.clone()),
+            headers.clone(),
+            Bytes::from(payload.clone()),
+        )
+        .await
+        .unwrap()
+        .0
+        .data;
+        let second = stripe_webhook(State(state.clone()), headers, Bytes::from(payload))
+            .await
+            .unwrap()
+            .0
+            .data;
+
+        assert!(first.acknowledged);
+        assert!(second.acknowledged);
+        assert!(second.message.contains("Duplicate Stripe webhook"));
+
+        let escrow_status = sqlx::query_scalar::<_, String>(
+            "SELECT status FROM escrows WHERE payment_intent_id = 'pi_failed_duplicate_p14'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(escrow_status, "failed");
+
+        let failed_history_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM load_history WHERE load_id = $1 AND remarks LIKE '%Stripe webhook%'",
+        )
+        .bind(fixture.load_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(failed_history_count, 1);
+
+        let webhook_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM stripe_webhook_events WHERE event_id = 'evt_failed_duplicate_p14'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(webhook_count, 1);
+
+        let recovery_event_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM atmp_outbound_events WHERE event_type = 'payment_failed' AND payload->>'leg_id' = $1",
+        )
+        .bind(fixture.leg_id.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(recovery_event_count, 1);
+    }
+
+    #[tokio::test]
     async fn release_requires_clear_finance_workflows_before_settlement_ready() {
         let Some(pool) = crate::test_support::prepare_pool().await.unwrap() else {
             return;

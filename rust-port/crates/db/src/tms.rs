@@ -692,6 +692,7 @@ pub fn supported_atmp_outbound_event_types() -> &'static [&'static str] {
         "document_rejected",
         "escrow_funded",
         "payment_hold",
+        "payment_failed",
         "payment_released",
         "settlement_ready",
         "sync_error",

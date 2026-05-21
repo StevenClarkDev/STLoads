@@ -338,6 +338,21 @@ pub async fn apply_escrow_transition(
                 let _ =
                     ensure_settlement_ready_for_escrow(pool, escrow, params.actor_user_id).await?;
             }
+            EscrowStatus::Failed => {
+                enqueue_finance_event(
+                    pool,
+                    "payment_failed",
+                    params.leg_id,
+                    Some(escrow.id),
+                    params.actor_user_id,
+                    json!({
+                        "payment_intent_id": escrow.payment_intent_id,
+                        "charge_id": escrow.charge_id,
+                        "reason": params.note,
+                    }),
+                )
+                .await?;
+            }
             _ => {}
         }
     }

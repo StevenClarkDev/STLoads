@@ -3217,6 +3217,24 @@ mod tests {
         )
         .fetch_one(&pool)
         .await?;
+        let outbound_event_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO atmp_outbound_events (
+                tenant_id, event_id, event_type, payload, payload_hash, status,
+                attempt_count, last_error, created_at, updated_at
+             ) VALUES (
+                'tenant-p15', 'stloads-p15-dead-letter-replay', 'payment_failed',
+                $1, 'p15-dead-letter-hash', 'dead_letter', 4, 'callback failed',
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+             )
+             RETURNING id",
+        )
+        .bind(serde_json::json!({
+            "event_type": "payment_failed",
+            "handoff_id": handoff_id,
+            "leg_id": 15001,
+        }))
+        .fetch_one(&pool)
+        .await?;
         sqlx::query(
             "INSERT INTO personal_access_tokens (
                 tokenable_type, tokenable_id, name, token, abilities, created_at, updated_at
@@ -3242,7 +3260,7 @@ mod tests {
              )
              RETURNING id",
         )
-        .bind(serde_json::json!({"outbound_event_id": 999999}))
+        .bind(serde_json::json!({"outbound_event_id": outbound_event_id}))
         .fetch_one(&pool)
         .await?;
 
@@ -3286,6 +3304,25 @@ mod tests {
         .0
         .data;
         assert!(dead_letter_response.success);
+
+        let replayed_outbound_state = sqlx::query_as::<_, (String, i32, Option<String>)>(
+            "SELECT status, attempt_count, last_error FROM atmp_outbound_events WHERE id = $1",
+        )
+        .bind(outbound_event_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(replayed_outbound_state.0, "queued");
+        assert_eq!(replayed_outbound_state.1, 0);
+        assert!(replayed_outbound_state.2.is_none());
+
+        let resolved_dead_letter = sqlx::query_as::<_, (bool, Option<i64>)>(
+            "SELECT resolved, resolved_by FROM dead_letter_events WHERE id = $1",
+        )
+        .bind(dead_letter_id)
+        .fetch_one(&pool)
+        .await?;
+        assert!(resolved_dead_letter.0);
+        assert_eq!(resolved_dead_letter.1, Some(admin_user.id));
 
         let withdraw_response = force_withdraw_handoff_handler(
             State(state.clone()),

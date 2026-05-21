@@ -79,19 +79,6 @@ Primary areas:
 
 ## Critical Tasks
 
-### Task E5: Payments And Recovery Proof
-
-**Outcome:** Stripe payment recovery, replay, and admin reconciliation are proven against staging.
-
-- [ ] Verify Stripe webhook replay is idempotent.
-- [ ] Verify duplicate webhook events do not duplicate payment state.
-- [ ] Verify failed payment or transfer recovery path.
-- [ ] Verify admin reconciliation can replay failed events.
-- [ ] Verify admin reconciliation can dead-letter unrecoverable events.
-- [ ] Verify recovery actions write audit history.
-- [ ] Add or update automated tests for webhook replay, payment idempotency, and reconciliation recovery.
-- [ ] Run hosted Stripe smoke against staging credentials and record evidence.
-
 ### Task E7: Final IBM Staging Launch Gate
 
 **Outcome:** STLoads has one clean final evidence pass before being called market-ready.
