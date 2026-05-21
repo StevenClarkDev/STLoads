@@ -8,7 +8,7 @@ use db::{
     payments::{EscrowTransitionParams, apply_escrow_transition, find_escrow_for_leg},
     tms::{
         apply_status_webhook, find_handoff_by_id, process_retryable_handoffs, push_handoff,
-        run_reconciliation_scan,
+        reconcile_active_handoff_push, run_reconciliation_scan,
     },
 };
 use domain::payments::EscrowStatus;
@@ -860,6 +860,96 @@ async fn tms_publication_allows_executive_override_with_audit_event()
             .fetch_one(&pool)
             .await?;
     assert_eq!(sync_error_count, 0);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn tms_duplicate_push_accepts_same_compliant_packet_idempotently()
+-> Result<(), Box<dyn std::error::Error>> {
+    let Some(pool) = prepare_pool().await? else {
+        return Ok(());
+    };
+
+    let payload = sample_tms_payload("TMS-IDEMPOTENT-PACKET-1001");
+    let publish_result = push_handoff(&pool, &payload).await?;
+    assert_eq!(publish_result.handoff.status, "published");
+
+    let decision = reconcile_active_handoff_push(&pool, &publish_result.handoff, &payload).await?;
+
+    assert!(
+        decision.idempotent,
+        "re-pushing the same compliant packet should not create a duplicate active handoff"
+    );
+    assert_eq!(decision.mismatch_count, 0);
+
+    let sync_error_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM stloads_sync_errors WHERE handoff_id = $1")
+            .bind(publish_result.handoff.id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(sync_error_count, 0);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn tms_duplicate_push_records_packet_and_customs_mismatches()
+-> Result<(), Box<dyn std::error::Error>> {
+    let Some(pool) = prepare_pool().await? else {
+        return Ok(());
+    };
+
+    let payload = sample_tms_payload("TMS-MISMATCH-PACKET-1001");
+    let publish_result = push_handoff(&pool, &payload).await?;
+    assert_eq!(publish_result.handoff.status, "published");
+
+    let mut changed_payload = payload.clone();
+    changed_payload.paperwork_packet_id = Some("packet-changed".into());
+    changed_payload.bol_number = Some("BOL-CHANGED".into());
+    changed_payload.document_packet_hash = Some("sha256:changed".into());
+    changed_payload.compliance_passed = Some(false);
+    changed_payload.retention_metadata = None;
+    changed_payload.executive_override = Some(true);
+    changed_payload.executive_override_reason = None;
+    changed_payload.customs_movement_type = Some("import".into());
+    changed_payload.customs_readiness = None;
+    changed_payload.ace_entry_number = None;
+    changed_payload.isf_status = None;
+    changed_payload.in_bond_status = None;
+    changed_payload.aes_itn = None;
+    changed_payload.pga_requirements = None;
+
+    let decision =
+        reconcile_active_handoff_push(&pool, &publish_result.handoff, &changed_payload).await?;
+
+    assert!(!decision.idempotent);
+    assert!(decision.mismatch_count >= 1);
+
+    let classes: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT error_class FROM stloads_sync_errors WHERE handoff_id = $1 ORDER BY error_class",
+    )
+    .bind(publish_result.handoff.id)
+    .fetch_all(&pool)
+    .await?;
+    assert!(classes.contains(&"compliance_snapshot_mismatch".to_string()));
+    assert!(classes.contains(&"missing_ACE_release".to_string()));
+    assert!(classes.contains(&"missing_ISF_status".to_string()));
+    assert!(classes.contains(&"missing_in_bond_closeout".to_string()));
+    assert!(classes.contains(&"missing_AES_ITN".to_string()));
+    assert!(classes.contains(&"missing_PGA_clearance".to_string()));
+    assert!(classes.contains(&"retention_metadata_missing".to_string()));
+    assert!(classes.contains(&"override_without_reason".to_string()));
+
+    let reconcile_action: String = sqlx::query_scalar(
+        "SELECT action FROM stloads_reconciliation_log WHERE handoff_id = $1 ORDER BY id DESC LIMIT 1",
+    )
+    .bind(publish_result.handoff.id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(reconcile_action, "mismatch_detected");
 
     Ok(())
 }

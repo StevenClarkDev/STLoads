@@ -7,7 +7,8 @@ use axum::{
 use db::tms::{
     MaterializedHandoffResult, TmsWebhookMutationResult, apply_atmp_contract_event,
     apply_status_webhook, close_handoff, create_sync_error, find_active_handoff_by_tms_load,
-    find_handoff_by_id, push_handoff, queue_handoff, requeue_handoff, withdraw_handoff,
+    find_handoff_by_id, push_handoff, queue_handoff, reconcile_active_handoff_push,
+    requeue_handoff, withdraw_handoff,
 };
 use domain::atmp_contract::AtmpContractEnvelope;
 use domain::tms::{
@@ -199,6 +200,32 @@ async fn push(
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     {
+        let reconciliation = reconcile_active_handoff_push(pool, &existing_handoff, &payload)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        if reconciliation.idempotent {
+            return Ok(Json(ApiResponse::ok(TmsHandoffResponse {
+                success: true,
+                handoff_id: Some(existing_handoff.id),
+                load_id: existing_handoff.load_id,
+                load_number: None,
+                status_label: "Idempotent".into(),
+                message: reconciliation.message,
+            })));
+        }
+
+        if reconciliation.mismatch_count > 0 {
+            return Ok(Json(ApiResponse::ok(TmsHandoffResponse {
+                success: false,
+                handoff_id: Some(existing_handoff.id),
+                load_id: existing_handoff.load_id,
+                load_number: None,
+                status_label: "Reconciliation Mismatch".into(),
+                message: reconciliation.message,
+            })));
+        }
+
         let _ = create_sync_error(
             pool,
             Some(existing_handoff.id),

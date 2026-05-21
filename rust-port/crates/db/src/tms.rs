@@ -343,6 +343,13 @@ pub struct SyncErrorBreakdownRecord {
     pub count: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActiveHandoffPushDecision {
+    pub idempotent: bool,
+    pub mismatch_count: usize,
+    pub message: String,
+}
+
 pub async fn find_active_handoff_by_tms_load(
     pool: &DbPool,
     tms_load_id: &str,
@@ -1068,6 +1075,7 @@ pub struct TmsReconciliationScanSummary {
     pub cancelled_still_live: usize,
     pub delivered_still_open: usize,
     pub stale_handoffs: usize,
+    pub compliance_mismatches: usize,
 }
 
 pub async fn find_latest_handoff_for_load(
@@ -1222,6 +1230,77 @@ async fn insert_sync_error_row(
     Ok(())
 }
 
+async fn create_sync_error_once(
+    pool: &DbPool,
+    handoff_id: i64,
+    error_class: &'static str,
+    severity: &'static str,
+    title: &str,
+    detail: &str,
+    source_module: Option<&str>,
+    performed_by: Option<&str>,
+) -> Result<bool, sqlx::Error> {
+    let inserted = sqlx::query_scalar::<_, i64>(
+        r#"
+        WITH inserted AS (
+            INSERT INTO stloads_sync_errors (
+                handoff_id, error_class, severity, title, detail, source_module, performed_by,
+                resolved, created_at, updated_at
+            )
+            SELECT $1, $2, $3, $4, $5, $6, $7, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM stloads_sync_errors
+                WHERE handoff_id = $1
+                  AND error_class = $2
+                  AND resolved = FALSE
+            )
+            RETURNING id
+        )
+        SELECT COUNT(*) FROM inserted
+        "#,
+    )
+    .bind(handoff_id)
+    .bind(error_class)
+    .bind(severity)
+    .bind(title)
+    .bind(detail)
+    .bind(source_module)
+    .bind(performed_by)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(inserted > 0)
+}
+
+async fn insert_reconciliation_mismatch_log(
+    pool: &DbPool,
+    handoff: &StloadsHandoffRecord,
+    detail: &str,
+    triggered_by: &str,
+    payload: Option<&Value>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO stloads_reconciliation_log (
+            handoff_id, action, tms_status_from, tms_status_to, stloads_status_from,
+            stloads_status_to, detail, triggered_by, webhook_payload, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(handoff.id)
+    .bind(ReconciliationAction::MismatchDetected.as_legacy_label())
+    .bind(handoff.tms_status.as_deref())
+    .bind(handoff.tms_status.as_deref())
+    .bind(handoff.status.as_str())
+    .bind(handoff.status.as_str())
+    .bind(detail)
+    .bind(triggered_by)
+    .bind(payload)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 fn evaluate_handoff_compliance(payload: &shared::TmsHandoffPayload) -> HandoffComplianceDecision {
     let mut missing = Vec::new();
     let compliance_claimed = payload.compliance_passed.unwrap_or(false);
@@ -1369,6 +1448,415 @@ fn customs_controlled(payload: &shared::TmsHandoffPayload) -> bool {
         || present(payload.in_bond_status.as_deref())
         || present(payload.aes_itn.as_deref())
         || payload.pga_requirements.is_some()
+}
+
+fn handoff_customs_controlled(handoff: &StloadsHandoffRecord) -> bool {
+    handoff
+        .compliance_envelope
+        .as_ref()
+        .and_then(|envelope| envelope.pointer("/customs/customs_controlled"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+        || present(handoff.customs_movement_type.as_deref())
+        || present(handoff.customs_readiness.as_deref())
+        || handoff.customs_documents_status.is_some()
+        || present(handoff.ace_entry_number.as_deref())
+        || present(handoff.isf_status.as_deref())
+        || present(handoff.in_bond_status.as_deref())
+        || present(handoff.aes_itn.as_deref())
+        || handoff.pga_requirements.is_some()
+}
+
+fn normalized_optional(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_lowercase())
+}
+
+fn json_equivalent(left: Option<&Value>, right: Option<&Value>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => left == right,
+        _ => false,
+    }
+}
+
+fn bool_equivalent(left: bool, right: Option<bool>) -> bool {
+    left == right.unwrap_or(false)
+}
+
+#[derive(Debug, Clone)]
+struct SnapshotFinding {
+    error_class: &'static str,
+    severity: &'static str,
+    title: &'static str,
+    detail: String,
+}
+
+fn push_snapshot_findings(
+    existing: &StloadsHandoffRecord,
+    payload: &shared::TmsHandoffPayload,
+) -> Vec<SnapshotFinding> {
+    let mut findings = Vec::new();
+
+    if !present(payload.paperwork_packet_id.as_deref()) {
+        findings.push(SnapshotFinding {
+            error_class: "missing_dispatch_packet",
+            severity: "critical",
+            title: "Dispatch packet is missing from duplicate handoff.",
+            detail: "Dispatch re-pushed an active load without paperwork_packet_id.".into(),
+        });
+    }
+
+    for (label, left, right) in [
+        (
+            "paperwork_packet_id",
+            existing.paperwork_packet_id.as_deref(),
+            payload.paperwork_packet_id.as_deref(),
+        ),
+        (
+            "bol_number",
+            existing.bol_number.as_deref(),
+            payload.bol_number.as_deref(),
+        ),
+        (
+            "freight_bill_number",
+            existing.freight_bill_number.as_deref(),
+            payload.freight_bill_number.as_deref(),
+        ),
+        (
+            "document_packet_hash",
+            existing.document_packet_hash.as_deref(),
+            payload.document_packet_hash.as_deref(),
+        ),
+        (
+            "customs_movement_type",
+            existing.customs_movement_type.as_deref(),
+            payload.customs_movement_type.as_deref(),
+        ),
+        (
+            "ACE_entry_number",
+            existing.ace_entry_number.as_deref(),
+            payload.ace_entry_number.as_deref(),
+        ),
+        (
+            "ISF_status",
+            existing.isf_status.as_deref(),
+            payload.isf_status.as_deref(),
+        ),
+        (
+            "in_bond_status",
+            existing.in_bond_status.as_deref(),
+            payload.in_bond_status.as_deref(),
+        ),
+        (
+            "AES_ITN",
+            existing.aes_itn.as_deref(),
+            payload.aes_itn.as_deref(),
+        ),
+    ] {
+        if normalized_optional(left) != normalized_optional(right) {
+            findings.push(SnapshotFinding {
+                error_class: "compliance_snapshot_mismatch",
+                severity: "critical",
+                title: "Dispatch and STLOADS compliance snapshot mismatch.",
+                detail: format!("{label} differs between the active STLOADS handoff and the new Dispatch payload."),
+            });
+        }
+    }
+
+    if !bool_equivalent(existing.compliance_passed, payload.compliance_passed) {
+        findings.push(SnapshotFinding {
+            error_class: "compliance_snapshot_mismatch",
+            severity: "critical",
+            title: "Dispatch and STLOADS compliance status mismatch.",
+            detail: "compliance_passed differs between the active STLOADS handoff and the new Dispatch payload.".into(),
+        });
+    }
+
+    if !json_equivalent(
+        existing.required_documents_status.as_ref(),
+        payload.required_documents_status.as_ref(),
+    ) || !documents_ready(payload.required_documents_status.as_ref())
+    {
+        findings.push(SnapshotFinding {
+            error_class: "missing_required_document",
+            severity: "critical",
+            title: "Required document status is missing or out of sync.",
+            detail: "Dispatch and STLOADS do not agree on BOL/freight bill readiness, or the duplicate payload is not document-ready.".into(),
+        });
+    }
+
+    if existing.retention_metadata.is_none() || payload.retention_metadata.is_none() {
+        findings.push(SnapshotFinding {
+            error_class: "retention_metadata_missing",
+            severity: "warning",
+            title: "Retention metadata is missing.",
+            detail: "A compliance-controlled STLOADS handoff is missing retention metadata from Dispatch or STLOADS.".into(),
+        });
+    }
+
+    if payload.executive_override.unwrap_or(false)
+        && (!present(payload.executive_override_reason.as_deref())
+            || !present(payload.executive_override_by.as_deref())
+            || !present(payload.executive_override_at.as_deref()))
+    {
+        findings.push(SnapshotFinding {
+            error_class: "override_without_reason",
+            severity: "critical",
+            title: "Executive override metadata is incomplete.",
+            detail: "Dispatch sent an executive override without reason, approver, or timestamp."
+                .into(),
+        });
+    }
+
+    let customs_active = handoff_customs_controlled(existing) || customs_controlled(payload);
+    if customs_active {
+        if existing.compliance_envelope.is_none() || payload.compliance_envelope.is_none() {
+            findings.push(SnapshotFinding {
+                error_class: "missing_customs_profile",
+                severity: "critical",
+                title: "Customs profile is missing.",
+                detail: "A customs-controlled load does not have a complete compliance envelope on both sides.".into(),
+            });
+        }
+        if !present(payload.customs_readiness.as_deref())
+            || normalized_optional(existing.customs_readiness.as_deref())
+                != normalized_optional(payload.customs_readiness.as_deref())
+        {
+            findings.push(SnapshotFinding {
+                error_class: "missing_ACE_release",
+                severity: "critical",
+                title: "Customs release status is missing or mismatched.",
+                detail:
+                    "Customs readiness or ACE release state differs between Dispatch and STLOADS."
+                        .into(),
+            });
+        }
+        if !present(payload.isf_status.as_deref()) {
+            findings.push(SnapshotFinding {
+                error_class: "missing_ISF_status",
+                severity: "critical",
+                title: "ISF status is missing.",
+                detail: "Customs-controlled handoff is missing ISF status.".into(),
+            });
+        }
+        if !present(payload.in_bond_status.as_deref()) {
+            findings.push(SnapshotFinding {
+                error_class: "missing_in_bond_closeout",
+                severity: "critical",
+                title: "In-bond closeout is missing.",
+                detail: "Customs-controlled handoff is missing in-bond status or closeout state."
+                    .into(),
+            });
+        }
+        if !present(payload.aes_itn.as_deref()) {
+            findings.push(SnapshotFinding {
+                error_class: "missing_AES_ITN",
+                severity: "critical",
+                title: "AES/ITN status is missing.",
+                detail: "Export-controlled handoff is missing AES/ITN or exemption state.".into(),
+            });
+        }
+        if payload.pga_requirements.is_none()
+            || !json_equivalent(
+                existing.pga_requirements.as_ref(),
+                payload.pga_requirements.as_ref(),
+            )
+        {
+            findings.push(SnapshotFinding {
+                error_class: "missing_PGA_clearance",
+                severity: "critical",
+                title: "PGA clearance is missing or mismatched.",
+                detail: "PGA requirement state differs between Dispatch and STLOADS or is absent."
+                    .into(),
+            });
+        }
+    }
+
+    findings
+}
+
+fn handoff_snapshot_findings(handoff: &StloadsHandoffRecord) -> Vec<SnapshotFinding> {
+    let mut findings = Vec::new();
+
+    if !present(handoff.paperwork_packet_id.as_deref()) {
+        findings.push(SnapshotFinding {
+            error_class: "missing_dispatch_packet",
+            severity: "critical",
+            title: "Dispatch packet is missing.",
+            detail: "STLOADS cannot reconcile this load because paperwork_packet_id is missing."
+                .into(),
+        });
+    }
+    if !present(handoff.bol_number.as_deref())
+        || !present(handoff.freight_bill_number.as_deref())
+        || !present(handoff.document_packet_hash.as_deref())
+    {
+        findings.push(SnapshotFinding {
+            error_class: "compliance_snapshot_mismatch",
+            severity: "critical",
+            title: "Required packet identifiers are incomplete.",
+            detail: "BOL number, freight bill number, or document packet hash is missing from the STLOADS compliance snapshot.".into(),
+        });
+    }
+    if !handoff.compliance_passed {
+        findings.push(SnapshotFinding {
+            error_class: "compliance_snapshot_mismatch",
+            severity: "critical",
+            title: "Compliance status is not passed.",
+            detail: "STLOADS has a handoff that is not marked compliance-passed.".into(),
+        });
+    }
+    if !documents_ready(handoff.required_documents_status.as_ref()) {
+        findings.push(SnapshotFinding {
+            error_class: "missing_required_document",
+            severity: "critical",
+            title: "Required document status is incomplete.",
+            detail: "BOL and freight bill must be generated, attached, clear, or ready before publication remains healthy.".into(),
+        });
+    }
+    if handoff.retention_metadata.is_none() {
+        findings.push(SnapshotFinding {
+            error_class: "retention_metadata_missing",
+            severity: "warning",
+            title: "Retention metadata is missing.",
+            detail: "The STLOADS snapshot does not include required retention metadata.".into(),
+        });
+    }
+    if handoff.executive_override
+        && (!present(handoff.executive_override_reason.as_deref())
+            || !present(handoff.executive_override_by.as_deref())
+            || !present(handoff.executive_override_at.as_deref()))
+    {
+        findings.push(SnapshotFinding {
+            error_class: "override_without_reason",
+            severity: "critical",
+            title: "Executive override metadata is incomplete.",
+            detail: "An override exists without reason, approver, or timestamp.".into(),
+        });
+    }
+
+    if handoff_customs_controlled(handoff) {
+        if handoff.compliance_envelope.is_none() {
+            findings.push(SnapshotFinding {
+                error_class: "missing_customs_profile",
+                severity: "critical",
+                title: "Customs profile is missing.",
+                detail: "Customs-controlled handoff is missing its compliance envelope.".into(),
+            });
+        }
+        if !present(handoff.customs_readiness.as_deref())
+            || !present(handoff.ace_entry_number.as_deref())
+        {
+            findings.push(SnapshotFinding {
+                error_class: "missing_ACE_release",
+                severity: "critical",
+                title: "ACE release status is missing.",
+                detail: "Customs-controlled handoff is missing customs readiness or ACE entry/release number.".into(),
+            });
+        }
+        if !present(handoff.isf_status.as_deref()) {
+            findings.push(SnapshotFinding {
+                error_class: "missing_ISF_status",
+                severity: "critical",
+                title: "ISF status is missing.",
+                detail: "Customs-controlled handoff is missing ISF status.".into(),
+            });
+        }
+        if !present(handoff.in_bond_status.as_deref()) {
+            findings.push(SnapshotFinding {
+                error_class: "missing_in_bond_closeout",
+                severity: "critical",
+                title: "In-bond closeout is missing.",
+                detail: "Customs-controlled handoff is missing in-bond closeout status.".into(),
+            });
+        }
+        if !present(handoff.aes_itn.as_deref()) {
+            findings.push(SnapshotFinding {
+                error_class: "missing_AES_ITN",
+                severity: "critical",
+                title: "AES/ITN status is missing.",
+                detail: "Customs-controlled handoff is missing AES/ITN or export exemption state."
+                    .into(),
+            });
+        }
+        if handoff.pga_requirements.is_none() {
+            findings.push(SnapshotFinding {
+                error_class: "missing_PGA_clearance",
+                severity: "critical",
+                title: "PGA clearance is missing.",
+                detail: "Customs-controlled handoff is missing PGA requirement status.".into(),
+            });
+        }
+    }
+
+    findings
+}
+
+pub async fn reconcile_active_handoff_push(
+    pool: &DbPool,
+    existing: &StloadsHandoffRecord,
+    payload: &shared::TmsHandoffPayload,
+) -> Result<ActiveHandoffPushDecision, sqlx::Error> {
+    let raw_payload = serde_json::to_value(payload).unwrap_or(Value::Null);
+    let findings = push_snapshot_findings(existing, payload);
+    let compliance_decision = evaluate_handoff_compliance(payload);
+
+    if findings.is_empty() && compliance_decision.publishable {
+        return Ok(ActiveHandoffPushDecision {
+            idempotent: true,
+            mismatch_count: 0,
+            message: "Duplicate push accepted as idempotent because the active STLOADS handoff already has the same compliant packet.".into(),
+        });
+    }
+
+    let mut inserted_count = 0_usize;
+    for finding in &findings {
+        if create_sync_error_once(
+            pool,
+            existing.id,
+            finding.error_class,
+            finding.severity,
+            finding.title,
+            finding.detail.as_str(),
+            payload.source_module.as_deref(),
+            payload.pushed_by.as_deref(),
+        )
+        .await?
+        {
+            inserted_count += 1;
+        }
+    }
+
+    let detail = if findings.is_empty() {
+        "Duplicate active handoff rejected; payload did not qualify as the same compliant packet."
+            .to_string()
+    } else {
+        format!(
+            "Dispatch re-push disagreed with active STLOADS handoff on {} compliance field(s).",
+            findings.len()
+        )
+    };
+    insert_reconciliation_mismatch_log(
+        pool,
+        existing,
+        detail.as_str(),
+        payload
+            .pushed_by
+            .as_deref()
+            .or(payload.source_module.as_deref())
+            .unwrap_or("tms_push"),
+        Some(&raw_payload),
+    )
+    .await?;
+
+    Ok(ActiveHandoffPushDecision {
+        idempotent: false,
+        mismatch_count: findings.len().max(inserted_count),
+        message: detail,
+    })
 }
 
 pub async fn queue_handoff(
@@ -2144,6 +2632,7 @@ pub async fn run_reconciliation_scan(
 
     summary.delivered_still_open = flag_delivered_still_open(pool).await?;
     summary.stale_handoffs = flag_stale_handoffs(pool, stale_days).await?;
+    summary.compliance_mismatches = flag_compliance_snapshot_mismatches(pool).await?;
 
     Ok(summary)
 }
@@ -2262,6 +2751,78 @@ async fn flag_stale_handoffs(pool: &DbPool, stale_days: i64) -> Result<usize, sq
     }
 
     Ok(handoff_ids.len())
+}
+
+async fn flag_compliance_snapshot_mismatches(pool: &DbPool) -> Result<usize, sqlx::Error> {
+    let handoffs = sqlx::query_as::<_, StloadsHandoffRecord>(
+        "SELECT id, tms_load_id, tenant_id, external_handoff_id, load_id, status, tms_status,
+                tms_status_at, party_type, freight_mode, equipment_type, commodity_description,
+                weight::double precision AS weight, weight_unit, piece_count, temperature_data, container_data, securement_data,
+                is_hazardous, pickup_city, pickup_state, pickup_zip, pickup_country, pickup_address,
+                pickup_window_start, pickup_window_end, pickup_instructions, pickup_appointment_ref,
+                dropoff_city, dropoff_state, dropoff_zip, dropoff_country, dropoff_address,
+                dropoff_window_start, dropoff_window_end, dropoff_instructions, dropoff_appointment_ref,
+                board_rate::double precision AS board_rate, rate_currency, accessorial_flags, bid_type, quote_status, tender_posture,
+                compliance_passed, compliance_envelope, compliance_summary, required_documents_status,
+                paperwork_packet_id, document_packet_url, document_packet_hash, bol_number, freight_bill_number,
+                atmp_operating_role, carrier_authority_snapshot, insurance_snapshot, compliance_blockers,
+                retention_metadata, audit_event_ids, executive_override, executive_override_reason,
+                executive_override_by, executive_override_at, customs_movement_type, customs_readiness,
+                customs_documents_status, ace_entry_number, isf_status, in_bond_status, aes_itn,
+                pga_requirements, readiness, pushed_by,
+                push_reason, source_module, queued_at, published_at, withdrawn_at, closed_at,
+                retry_count, last_push_result, payload_version, last_webhook_at, raw_payload,
+                created_at, updated_at
+         FROM stloads_handoffs
+         WHERE status IN ('published', 'quarantined', 'blocked', 'requeue_required')",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut flagged = 0_usize;
+    for handoff in handoffs {
+        let findings = handoff_snapshot_findings(&handoff);
+        if findings.is_empty() {
+            continue;
+        }
+
+        let mut inserted_for_handoff = 0_usize;
+        for finding in &findings {
+            if create_sync_error_once(
+                pool,
+                handoff.id,
+                finding.error_class,
+                finding.severity,
+                finding.title,
+                finding.detail.as_str(),
+                Some("rust_scheduler"),
+                Some("rust_tms_reconciliation_worker"),
+            )
+            .await?
+            {
+                inserted_for_handoff += 1;
+            }
+        }
+
+        if inserted_for_handoff > 0 {
+            flagged += 1;
+            let detail = format!(
+                "Reconciliation scan found {} compliance snapshot issue(s) on handoff #{}.",
+                findings.len(),
+                handoff.id
+            );
+            insert_reconciliation_mismatch_log(
+                pool,
+                &handoff,
+                detail.as_str(),
+                "rust_tms_reconciliation_worker",
+                None,
+            )
+            .await?;
+        }
+    }
+
+    Ok(flagged)
 }
 
 async fn insert_handoff_row(

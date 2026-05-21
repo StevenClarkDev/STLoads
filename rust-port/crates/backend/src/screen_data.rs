@@ -1122,6 +1122,19 @@ async fn build_stloads_reconciliation_screen(
     let compliance_quarantine = count_unresolved_sync_errors_by_class(pool, "compliance_not_passed")
         .await?
         .max(0) as u64;
+    let snapshot_mismatches =
+        count_unresolved_sync_errors_by_class(pool, "compliance_snapshot_mismatch")
+            .await?
+            .max(0) as u64;
+    let missing_packets = count_unresolved_sync_errors_by_class(pool, "missing_dispatch_packet")
+        .await?
+        .max(0) as u64;
+    let retention_gaps = count_unresolved_sync_errors_by_class(pool, "retention_metadata_missing")
+        .await?
+        .max(0) as u64;
+    let override_gaps = count_unresolved_sync_errors_by_class(pool, "override_without_reason")
+        .await?
+        .max(0) as u64;
     let missing_documents = count_unresolved_sync_errors_by_class(pool, "missing_required_document")
         .await?
         .max(0) as u64;
@@ -1202,6 +1215,20 @@ async fn build_stloads_reconciliation_screen(
             note: "Handoffs quarantined before active publication.".into(),
         },
         MismatchCard {
+            label: "Snapshot Drift".into(),
+            value: snapshot_mismatches,
+            tone: "danger".into(),
+            note:
+                "Dispatch packet, BOL, freight bill, document hash, or compliance state mismatch."
+                    .into(),
+        },
+        MismatchCard {
+            label: "Missing Packets".into(),
+            value: missing_packets,
+            tone: "danger".into(),
+            note: "Active or blocked handoffs missing the Dispatch packet reference.".into(),
+        },
+        MismatchCard {
             label: "Document Gaps".into(),
             value: missing_documents,
             tone: "warning".into(),
@@ -1212,6 +1239,18 @@ async fn build_stloads_reconciliation_screen(
             value: customs_issue_count,
             tone: "warning".into(),
             note: "Customs, ISF, in-bond, AES/ITN, or PGA readiness gaps.".into(),
+        },
+        MismatchCard {
+            label: "Retention Gaps".into(),
+            value: retention_gaps,
+            tone: "warning".into(),
+            note: "Compliance records missing retention metadata.".into(),
+        },
+        MismatchCard {
+            label: "Override Gaps".into(),
+            value: override_gaps,
+            tone: "danger".into(),
+            note: "Overrides missing reason, approver, or timestamp.".into(),
         },
     ];
 
