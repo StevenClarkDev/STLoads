@@ -73,7 +73,7 @@ BEGIN
         )
         VALUES (
             1,
-            'stloads-default',
+            COALESCE((SELECT id FROM tenants ORDER BY id LIMIT 1), 'default'),
             'STLoads Default Organization',
             'platform_default',
             'STLoads Default Organization',
