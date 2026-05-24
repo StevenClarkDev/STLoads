@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS organizations (
 );
 
 ALTER TABLE organizations
+    ADD COLUMN IF NOT EXISTS name VARCHAR(255),
     ADD COLUMN IF NOT EXISTS slug VARCHAR(128),
     ADD COLUMN IF NOT EXISTS account_type VARCHAR(64) DEFAULT 'enterprise',
     ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'active',
@@ -23,6 +24,7 @@ ALTER TABLE organizations
 
 UPDATE organizations
 SET
+    name = COALESCE(NULLIF(name, ''), CONCAT('Organization ', id)),
     slug = COALESCE(NULLIF(slug, ''), CONCAT('organization-', id)),
     account_type = COALESCE(NULLIF(account_type, ''), 'enterprise'),
     status = COALESCE(NULLIF(status, ''), 'active'),
@@ -31,6 +33,7 @@ SET
     updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP);
 
 ALTER TABLE organizations
+    ALTER COLUMN name SET NOT NULL,
     ALTER COLUMN slug SET NOT NULL,
     ALTER COLUMN account_type SET NOT NULL,
     ALTER COLUMN account_type SET DEFAULT 'enterprise',
