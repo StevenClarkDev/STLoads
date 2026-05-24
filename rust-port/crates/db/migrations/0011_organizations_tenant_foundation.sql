@@ -49,9 +49,49 @@ ALTER TABLE organizations
 CREATE UNIQUE INDEX IF NOT EXISTS uq_organizations_slug ON organizations (slug);
 CREATE INDEX IF NOT EXISTS idx_organizations_status ON organizations (status);
 
-INSERT INTO organizations (id, name, slug, account_type, status, support_tier, created_at, updated_at)
-VALUES (1, 'STLoads Default Organization', 'stloads-default', 'platform_default', 'active', 'standard', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-ON CONFLICT (id) DO NOTHING;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'organizations'
+          AND column_name = 'tenant_id'
+    ) THEN
+        INSERT INTO organizations (
+            id,
+            tenant_id,
+            legal_name,
+            organization_type,
+            name,
+            slug,
+            account_type,
+            status,
+            support_tier,
+            metadata,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            1,
+            'stloads-default',
+            'STLoads Default Organization',
+            'platform_default',
+            'STLoads Default Organization',
+            'stloads-default',
+            'platform_default',
+            'active',
+            'standard',
+            '{}'::jsonb,
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+        )
+        ON CONFLICT (id) DO NOTHING;
+    ELSE
+        INSERT INTO organizations (id, name, slug, account_type, status, support_tier, created_at, updated_at)
+        VALUES (1, 'STLoads Default Organization', 'stloads-default', 'platform_default', 'active', 'standard', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (id) DO NOTHING;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS organization_roles (
     key VARCHAR(64) PRIMARY KEY,
