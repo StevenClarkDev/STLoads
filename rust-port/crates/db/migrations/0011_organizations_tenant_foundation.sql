@@ -12,6 +12,37 @@ CREATE TABLE IF NOT EXISTS organizations (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE organizations
+    ADD COLUMN IF NOT EXISTS slug VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS account_type VARCHAR(64) DEFAULT 'enterprise',
+    ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'active',
+    ADD COLUMN IF NOT EXISTS billing_email VARCHAR(255) NULL,
+    ADD COLUMN IF NOT EXISTS support_tier VARCHAR(64) DEFAULT 'standard',
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+UPDATE organizations
+SET
+    slug = COALESCE(NULLIF(slug, ''), CONCAT('organization-', id)),
+    account_type = COALESCE(NULLIF(account_type, ''), 'enterprise'),
+    status = COALESCE(NULLIF(status, ''), 'active'),
+    support_tier = COALESCE(NULLIF(support_tier, ''), 'standard'),
+    created_at = COALESCE(created_at, CURRENT_TIMESTAMP),
+    updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP);
+
+ALTER TABLE organizations
+    ALTER COLUMN slug SET NOT NULL,
+    ALTER COLUMN account_type SET NOT NULL,
+    ALTER COLUMN account_type SET DEFAULT 'enterprise',
+    ALTER COLUMN status SET NOT NULL,
+    ALTER COLUMN status SET DEFAULT 'active',
+    ALTER COLUMN support_tier SET NOT NULL,
+    ALTER COLUMN support_tier SET DEFAULT 'standard',
+    ALTER COLUMN created_at SET NOT NULL,
+    ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP,
+    ALTER COLUMN updated_at SET NOT NULL,
+    ALTER COLUMN updated_at SET DEFAULT CURRENT_TIMESTAMP;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_organizations_slug ON organizations (slug);
 CREATE INDEX IF NOT EXISTS idx_organizations_status ON organizations (status);
 
@@ -26,6 +57,25 @@ CREATE TABLE IF NOT EXISTS organization_roles (
     privileged BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE organization_roles
+    ADD COLUMN IF NOT EXISTS label VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS description TEXT NULL,
+    ADD COLUMN IF NOT EXISTS privileged BOOLEAN DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+UPDATE organization_roles
+SET
+    label = COALESCE(NULLIF(label, ''), key),
+    privileged = COALESCE(privileged, FALSE),
+    created_at = COALESCE(created_at, CURRENT_TIMESTAMP);
+
+ALTER TABLE organization_roles
+    ALTER COLUMN label SET NOT NULL,
+    ALTER COLUMN privileged SET NOT NULL,
+    ALTER COLUMN privileged SET DEFAULT FALSE,
+    ALTER COLUMN created_at SET NOT NULL,
+    ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP;
 
 INSERT INTO organization_roles (key, label, description, privileged)
 VALUES
