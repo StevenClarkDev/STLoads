@@ -668,11 +668,14 @@ pub fn api_href(path: &str) -> String {
         return format!("/api/stloads{}", normalized_path);
     }
 
-    let base = configured_api_base();
-    if base.is_empty() {
-        normalized_path
-    } else {
-        format!("{}{}", base, normalized_path)
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let base = configured_api_base();
+        if base.is_empty() {
+            normalized_path
+        } else {
+            format!("{}{}", base, normalized_path)
+        }
     }
 }
 

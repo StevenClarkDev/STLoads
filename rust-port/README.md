@@ -15,6 +15,8 @@ This workspace is the starting point for the Rust + Leptos copy of the current L
 - `docs/MASTER_PLAN.md`: migration phases and immediate checkpoints.
 - `docs/BACKEND_BLUEPRINT.md`: backend domain split and blocker inventory.
 - `docs/FRONTEND_BLUEPRINT.md`: page inventory and Leptos module plan.
+- `docs/ENTERPRISE_LOADBOARD_ROADMAP.md`: enterprise-readiness roadmap for the Rust platform.
+- `docs/ENTERPRISE_LOADBOARD_TASK_LIST.md`: production task tracker for following the roadmap to enterprise readiness.
 - `docs/CANONICAL_STATUS_MODEL.md`: Rust-side status model and legacy PHP code mapping.
 - `docs/SCHEMA_BASELINE.md`: draft SQL baseline inferred from Laravel write paths.
 - `docs/POSTGRES_PIVOT.md`: PostgreSQL migration checklist for the Rust port.

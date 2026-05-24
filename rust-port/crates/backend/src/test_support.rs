@@ -52,6 +52,7 @@ pub fn test_state(pool: DbPool) -> AppState {
         cors_allowed_origins: vec!["https://rust.test".into()],
         run_migrations: false,
         database_url: None,
+        database_schema: None,
         document_storage_backend: "local".into(),
         document_storage_root: temp_storage_root().display().to_string(),
         object_storage_bucket: None,

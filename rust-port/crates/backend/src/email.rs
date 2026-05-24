@@ -885,6 +885,7 @@ mod tests {
             cors_allowed_origins: vec!["https://portal.example.test".into()],
             run_migrations: false,
             database_url: None,
+            database_schema: None,
             document_storage_backend: "local".into(),
             document_storage_root: "./runtime/test-documents".into(),
             object_storage_bucket: None,

@@ -2,6 +2,9 @@
 
 This is the working blueprint for the Rust + Leptos copy of STLoads.
 
+For the current enterprise-readiness execution tracker, use `docs/ENTERPRISE_LOADBOARD_TASK_LIST.md`.
+For the higher-level roadmap behind that tracker, use `docs/ENTERPRISE_LOADBOARD_ROADMAP.md`.
+
 ## What Exists Now
 
 - The current production system remains the Laravel application at the repo root.
