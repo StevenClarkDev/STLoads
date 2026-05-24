@@ -32,6 +32,7 @@ RUN microdnf install -y ca-certificates tzdata shadow-utils \
 
 WORKDIR /app
 COPY --from=builder /app/target/release/backend /usr/local/bin/backend
+COPY --from=builder /app/target/release/run_migrations /usr/local/bin/run_migrations
 
 ENV APP_ENV=production \
     DEPLOYMENT_TARGET=ibm-code-engine \
