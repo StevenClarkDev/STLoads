@@ -23,7 +23,8 @@ A successful pass means:
 
 Before running this checklist, make sure all of these are true:
 - Code Engine app is deployed and healthy
-- `RUN_MIGRATIONS=true` has been used at least once successfully
+- `cargo run -p backend --bin run_migrations` has completed successfully against the target database
+- web runtime env keeps `RUN_MIGRATIONS=false`
 - IBM PostgreSQL is reachable from Code Engine
 - IBM Cloud Object Storage bucket exists and the app has valid credentials
 - smoke seed SQL has been applied to the staging database

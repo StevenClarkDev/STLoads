@@ -5,6 +5,8 @@ pub struct AuthSessionUser {
     pub id: u64,
     pub name: String,
     pub email: String,
+    pub organization_id: Option<u64>,
+    pub organization_role_key: Option<String>,
     pub role_key: String,
     pub role_label: String,
     pub account_status_label: String,
@@ -31,11 +33,41 @@ pub struct LoginResponse {
     pub token: Option<String>,
     pub session: AuthSessionState,
     pub message: String,
+    pub mfa_required: bool,
+    pub mfa_challenge_id: Option<String>,
+    pub mfa_expires_at: Option<String>,
+    pub next_step: Option<String>,
+    pub dev_mfa_code: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogoutResponse {
     pub success: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MfaVerifyRequest {
+    pub email: String,
+    pub challenge_id: String,
+    pub code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MfaVerifyResponse {
+    pub success: bool,
+    pub email: String,
+    pub token: Option<String>,
+    pub session: Option<AuthSessionState>,
+    pub recovery_codes: Vec<String>,
+    pub message: String,
+    pub next_step: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MfaRecoveryCodesResponse {
+    pub success: bool,
+    pub recovery_codes: Vec<String>,
     pub message: String,
 }
 
@@ -419,6 +451,23 @@ pub struct AdminUpdateUserProfileResponse {
 pub struct AdminDeleteUserResponse {
     pub success: bool,
     pub user_id: u64,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminBreakGlassRequest {
+    pub target_organization_id: u64,
+    pub reason: String,
+    pub ticket_ref: String,
+    pub duration_minutes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminBreakGlassResponse {
+    pub success: bool,
+    pub session_id: Option<String>,
+    pub target_organization_id: u64,
+    pub expires_at: Option<String>,
     pub message: String,
 }
 

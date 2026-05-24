@@ -13,7 +13,8 @@ use uuid::Uuid;
 
 use crate::{
     auth_session, config::RuntimeConfig, document_storage::DocumentStorageService,
-    email::EmailService, realtime_bus::RoutedRealtimeEvent, state::AppState, stripe::StripeService,
+    email::EmailService, rate_limit::RateLimiter, realtime_bus::RoutedRealtimeEvent,
+    state::AppState, stripe::StripeService,
 };
 
 pub struct LoadFixture {
@@ -93,6 +94,11 @@ pub fn test_state(pool: DbPool) -> AppState {
         mail_outbox_retry_interval_seconds: 30,
         mail_outbox_max_attempts: 8,
         portal_url: "https://portal.stloads.test".into(),
+        kill_switch_payments: false,
+        kill_switch_booking: false,
+        kill_switch_tms_pushes: false,
+        kill_switch_notifications: false,
+        kill_switch_document_uploads: false,
     };
     let (realtime_tx, _) = broadcast::channel::<RoutedRealtimeEvent>(32);
     let document_storage = DocumentStorageService::from_config(&config);
@@ -105,6 +111,7 @@ pub fn test_state(pool: DbPool) -> AppState {
         document_storage,
         email,
         stripe,
+        rate_limiter: RateLimiter::default(),
         realtime_tx,
     }
 }

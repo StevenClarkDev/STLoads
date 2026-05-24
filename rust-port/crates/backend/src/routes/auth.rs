@@ -13,10 +13,10 @@ use db::auth::{
     UpdateSelfProfileInput, UpsertUserOnboardingInput, change_self_password,
     consume_password_reset_otp, consume_password_reset_token, consume_registration_otp,
     count_users_grouped_by_role, create_kyc_document, create_registered_user, delete_kyc_document,
-    find_kyc_document_by_id, find_user_by_email, find_user_by_id, find_user_detail_by_user_id,
-    list_kyc_documents_by_user_id, refresh_user_otp, store_password_reset_token,
-    update_kyc_document, update_self_profile, upsert_user_onboarding_details,
-    verify_kyc_document_blockchain,
+    delete_personal_access_tokens_for_user, find_kyc_document_by_id, find_user_by_email,
+    find_user_by_id, find_user_detail_by_user_id, list_kyc_documents_by_user_id, refresh_user_otp,
+    store_password_reset_token, update_kyc_document, update_self_profile,
+    upsert_user_onboarding_details, verify_kyc_document_blockchain,
 };
 use domain::auth::{
     AccountStatus, AccountStatusDescriptor, AuthModuleContract, PermissionDescriptor,
@@ -24,20 +24,30 @@ use domain::auth::{
     auth_module_contract, permission_descriptors, role_descriptors, role_permission_contracts,
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use shared::{
     ApiResponse, AuthOnboardingDraft, AuthOnboardingScreen, AuthSessionState,
     ChangePasswordRequest, ChangePasswordResponse, DeleteKycDocumentResponse,
     ForgotPasswordRequest, ForgotPasswordResponse, KycDocumentItem, LoginRequest, LoginResponse,
-    LogoutResponse, OtpPurpose, PortalRoleCountsResponse, RealtimeEvent, RealtimeEventKind,
-    RegisterRequest, RegisterResponse, ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest,
-    ResetPasswordResponse, SelfProfileDraft, SelfProfileFact, SelfProfileScreen,
-    SubmitOnboardingRequest, SubmitOnboardingResponse, UpdateSelfProfileRequest,
-    UpdateSelfProfileResponse, UpsertKycDocumentRequest, UpsertKycDocumentResponse,
-    VerifyKycDocumentRequest, VerifyKycDocumentResponse, VerifyOtpRequest, VerifyOtpResponse,
+    LogoutResponse, MfaRecoveryCodesResponse, MfaVerifyRequest, MfaVerifyResponse, OtpPurpose,
+    PortalRoleCountsResponse, RealtimeEvent, RealtimeEventKind, RegisterRequest, RegisterResponse,
+    ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest, ResetPasswordResponse,
+    SelfProfileDraft, SelfProfileFact, SelfProfileScreen, SubmitOnboardingRequest,
+    SubmitOnboardingResponse, UpdateSelfProfileRequest, UpdateSelfProfileResponse,
+    UpsertKycDocumentRequest, UpsertKycDocumentResponse, VerifyKycDocumentRequest,
+    VerifyKycDocumentResponse, VerifyOtpRequest, VerifyOtpResponse,
 };
+use std::time::Duration as StdDuration;
+
 use tracing::{info, warn};
 
-use crate::{auth_session, email::MailOutcome, realtime_bus::RoutedRealtimeEvent, state::AppState};
+use crate::{
+    auth_session,
+    email::MailOutcome,
+    rate_limit::{LockoutPolicy, RateLimitPolicy, rate_limit_identity},
+    realtime_bus::RoutedRealtimeEvent,
+    state::AppState,
+};
 
 #[derive(Debug, Serialize)]
 struct AuthOverview {
@@ -56,6 +66,29 @@ fn log_auth_success(action: &str, email: &str, user_id: Option<i64>) {
     info!(action, email = %email, user_id, "auth flow succeeded");
 }
 
+fn auth_flow_policy(name: &'static str) -> RateLimitPolicy {
+    RateLimitPolicy::new(name, 10, StdDuration::from_secs(15 * 60))
+}
+
+fn upload_policy() -> RateLimitPolicy {
+    RateLimitPolicy::new("auth_upload", 30, StdDuration::from_secs(60 * 60))
+}
+
+fn auth_lockout_policy() -> LockoutPolicy {
+    LockoutPolicy::new(
+        5,
+        StdDuration::from_secs(15 * 60),
+        StdDuration::from_secs(15 * 60),
+    )
+}
+
+fn rate_limit_message(flow: &str, retry_after_seconds: u64) -> String {
+    format!(
+        "Too many {} attempts. Wait about {} seconds before trying again.",
+        flow, retry_after_seconds
+    )
+}
+
 pub fn router() -> Router<crate::state::AppState> {
     Router::new()
         .route("/", get(index))
@@ -68,6 +101,11 @@ pub fn router() -> Router<crate::state::AppState> {
         .route("/public-role-counts", get(public_role_counts))
         .route("/session", get(session))
         .route("/login", post(login))
+        .route("/mfa/verify", post(verify_mfa))
+        .route(
+            "/mfa/recovery-codes/regenerate",
+            post(regenerate_mfa_recovery_codes),
+        )
         .route("/logout", post(logout))
         .route("/register", post(register))
         .route("/verify-otp", post(verify_otp))
@@ -194,8 +232,47 @@ async fn session(
 
 async fn login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<LoginRequest>,
 ) -> Json<ApiResponse<LoginResponse>> {
+    let email = payload.email.trim().to_lowercase();
+    let rate_identity = rate_limit_identity(&headers, &email);
+    let rate_decision = state
+        .check_rate_limit(auth_flow_policy("login"), &rate_identity)
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(LoginResponse {
+            success: false,
+            token: None,
+            session: auth_session::unauthenticated_session_state(
+                "Login is temporarily rate limited.",
+            ),
+            message: rate_limit_message("login", rate_decision.retry_after_seconds),
+            mfa_required: false,
+            mfa_challenge_id: None,
+            mfa_expires_at: None,
+            next_step: None,
+            dev_mfa_code: None,
+        }));
+    }
+
+    let lockout = state.lockout_status(auth_lockout_policy(), &email).await;
+    if !lockout.allowed {
+        return Json(ApiResponse::ok(LoginResponse {
+            success: false,
+            token: None,
+            session: auth_session::unauthenticated_session_state(
+                "This account is temporarily locked.",
+            ),
+            message: rate_limit_message("login", lockout.retry_after_seconds),
+            mfa_required: false,
+            mfa_challenge_id: None,
+            mfa_expires_at: None,
+            next_step: None,
+            dev_mfa_code: None,
+        }));
+    }
+
     let Some(pool) = state.pool.as_ref() else {
         log_auth_failure(
             "login",
@@ -213,12 +290,19 @@ async fn login(
                 state.database_state(),
                 state.config.deployment_target
             ),
+            mfa_required: false,
+            mfa_challenge_id: None,
+            mfa_expires_at: None,
+            next_step: None,
+            dev_mfa_code: None,
         }));
     };
 
-    let email = payload.email.trim().to_lowercase();
     let Some(user) = find_user_by_email(pool, &email).await.unwrap_or(None) else {
         log_auth_failure("login", &email, "user not found");
+        state
+            .record_lockout_failure(auth_lockout_policy(), &email)
+            .await;
         return Json(ApiResponse::ok(LoginResponse {
             success: false,
             token: None,
@@ -226,6 +310,11 @@ async fn login(
                 "No matching user exists for this email address.",
             ),
             message: "Invalid email or password.".into(),
+            mfa_required: false,
+            mfa_challenge_id: None,
+            mfa_expires_at: None,
+            next_step: None,
+            dev_mfa_code: None,
         }));
     };
 
@@ -234,6 +323,9 @@ async fn login(
 
     if !password_matches {
         log_auth_failure("login", &email, "password verification failed");
+        state
+            .record_lockout_failure(auth_lockout_policy(), &email)
+            .await;
         return Json(ApiResponse::ok(LoginResponse {
             success: false,
             token: None,
@@ -241,18 +333,65 @@ async fn login(
                 "Password verification failed in the Rust auth layer.",
             ),
             message: "Invalid email or password.".into(),
+            mfa_required: false,
+            mfa_challenge_id: None,
+            mfa_expires_at: None,
+            next_step: None,
+            dev_mfa_code: None,
         }));
+    }
+
+    if privileged_user_requires_mfa(&user) {
+        match create_mfa_challenge(&state, &user).await {
+            Ok(challenge) => {
+                log_auth_success("login_password_mfa_required", &email, Some(user.id));
+                state.record_lockout_success(&email).await;
+                return Json(ApiResponse::ok(LoginResponse {
+                    success: false,
+                    token: None,
+                    session: auth_session::unauthenticated_session_state(
+                        "MFA is required before this privileged session can start.",
+                    ),
+                    message: challenge.message,
+                    mfa_required: true,
+                    mfa_challenge_id: Some(challenge.challenge_id),
+                    mfa_expires_at: Some(challenge.expires_at.to_rfc3339()),
+                    next_step: Some(format!("/auth/mfa?email={}", email)),
+                    dev_mfa_code: exposed_secret(&state, &challenge.code),
+                }));
+            }
+            Err(error) => {
+                log_auth_failure("login_password_mfa_required", &email, &error);
+                return Json(ApiResponse::ok(LoginResponse {
+                    success: false,
+                    token: None,
+                    session: auth_session::unauthenticated_session_state(&error),
+                    message: error,
+                    mfa_required: true,
+                    mfa_challenge_id: None,
+                    mfa_expires_at: None,
+                    next_step: Some("/auth/login".into()),
+                    dev_mfa_code: None,
+                }));
+            }
+        }
     }
 
     match auth_session::issue_session_token(&state, &user).await {
         Ok(token) => {
             log_auth_success("login", &email, Some(user.id));
+            state.record_lockout_success(&email).await;
             let session = auth_session::build_session_state(&state, &user).await;
             Json(ApiResponse::ok(LoginResponse {
                 success: true,
                 token: Some(token),
                 session,
                 message: login_message_for_status(user.account_status()),
+                mfa_required: false,
+                mfa_challenge_id: None,
+                mfa_expires_at: None,
+                next_step: None,
+                dev_mfa_code: None,
             }))
         }
         Err(error) => {
@@ -266,8 +405,205 @@ async fn login(
                 token: None,
                 session: auth_session::unauthenticated_session_state(&error),
                 message: format!("Login failed: {}", error),
+                mfa_required: false,
+                mfa_challenge_id: None,
+                mfa_expires_at: None,
+                next_step: None,
+                dev_mfa_code: None,
             }))
         }
+    }
+}
+
+async fn verify_mfa(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MfaVerifyRequest>,
+) -> Json<ApiResponse<MfaVerifyResponse>> {
+    let email = payload.email.trim().to_lowercase();
+    let rate_identity = rate_limit_identity(&headers, &format!("mfa:{email}"));
+    let rate_decision = state
+        .check_rate_limit(auth_flow_policy("verify_mfa"), &rate_identity)
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(MfaVerifyResponse {
+            success: false,
+            email,
+            token: None,
+            session: None,
+            recovery_codes: Vec::new(),
+            message: rate_limit_message("MFA verification", rate_decision.retry_after_seconds),
+            next_step: "/auth/mfa".into(),
+        }));
+    }
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(MfaVerifyResponse {
+            success: false,
+            email,
+            token: None,
+            session: None,
+            recovery_codes: Vec::new(),
+            message: "MFA verification is unavailable because the database is disabled.".into(),
+            next_step: "/auth/login".into(),
+        }));
+    };
+
+    let Some(user) = find_user_by_email(pool, &email).await.unwrap_or(None) else {
+        return Json(ApiResponse::ok(MfaVerifyResponse {
+            success: false,
+            email,
+            token: None,
+            session: None,
+            recovery_codes: Vec::new(),
+            message: "Invalid or expired MFA challenge.".into(),
+            next_step: "/auth/login".into(),
+        }));
+    };
+
+    let code = payload.code.trim();
+    let challenge_id = payload.challenge_id.trim();
+    let code_hash = mfa_hash(code);
+    let challenge_consumed = sqlx::query_scalar::<_, i64>(
+        "UPDATE mfa_challenges
+         SET consumed_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1::uuid
+           AND user_id = $2
+           AND email = $3
+           AND code_hash = $4
+           AND consumed_at IS NULL
+           AND expires_at > CURRENT_TIMESTAMP
+         RETURNING user_id",
+    )
+    .bind(challenge_id)
+    .bind(user.id)
+    .bind(&email)
+    .bind(&code_hash)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .is_some();
+
+    let recovery_consumed = if challenge_consumed {
+        false
+    } else {
+        consume_mfa_recovery_code(pool, user.id, code)
+            .await
+            .unwrap_or(false)
+    };
+
+    if !challenge_consumed && !recovery_consumed {
+        state
+            .record_lockout_failure(auth_lockout_policy(), format!("mfa:{email}"))
+            .await;
+        return Json(ApiResponse::ok(MfaVerifyResponse {
+            success: false,
+            email,
+            token: None,
+            session: None,
+            recovery_codes: Vec::new(),
+            message: "Invalid or expired MFA code.".into(),
+            next_step: "/auth/mfa".into(),
+        }));
+    }
+
+    match auth_session::issue_session_token_with_mfa(&state, &user, true).await {
+        Ok(token) => {
+            state
+                .record_lockout_success(format!("mfa:{}", user.email.to_ascii_lowercase()))
+                .await;
+            let mut session = auth_session::build_session_state(&state, &user).await;
+            if !session
+                .permissions
+                .iter()
+                .any(|permission| permission == "mfa_verified")
+            {
+                session.permissions.push("mfa_verified".into());
+            }
+            let recovery_codes = ensure_mfa_recovery_codes(pool, user.id)
+                .await
+                .unwrap_or_default();
+            let next_step = session
+                .user
+                .as_ref()
+                .map(|user| user.dashboard_href.clone())
+                .unwrap_or_else(|| "/".into());
+
+            Json(ApiResponse::ok(MfaVerifyResponse {
+                success: true,
+                email,
+                token: Some(token),
+                session: Some(session),
+                recovery_codes,
+                message: "MFA verified. Your privileged Rust session is live.".into(),
+                next_step,
+            }))
+        }
+        Err(error) => Json(ApiResponse::ok(MfaVerifyResponse {
+            success: false,
+            email,
+            token: None,
+            session: None,
+            recovery_codes: Vec::new(),
+            message: format!("MFA verified, but session issuance failed: {}", error),
+            next_step: "/auth/login".into(),
+        })),
+    }
+}
+
+async fn regenerate_mfa_recovery_codes(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Json<ApiResponse<MfaRecoveryCodesResponse>> {
+    let Some(resolved) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(MfaRecoveryCodesResponse {
+            success: false,
+            recovery_codes: Vec::new(),
+            message: "Sign in before regenerating MFA recovery codes.".into(),
+        }));
+    };
+
+    if !resolved
+        .session
+        .permissions
+        .iter()
+        .any(|permission| permission == "mfa_verified")
+    {
+        return Json(ApiResponse::ok(MfaRecoveryCodesResponse {
+            success: false,
+            recovery_codes: Vec::new(),
+            message: "MFA step-up is required before regenerating recovery codes.".into(),
+        }));
+    }
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(MfaRecoveryCodesResponse {
+            success: false,
+            recovery_codes: Vec::new(),
+            message: "MFA recovery code reset is unavailable because the database is disabled."
+                .into(),
+        }));
+    };
+
+    match regenerate_mfa_recovery_code_set(pool, resolved.user.id).await {
+        Ok(recovery_codes) => Json(ApiResponse::ok(MfaRecoveryCodesResponse {
+            success: true,
+            recovery_codes,
+            message:
+                "MFA recovery codes were regenerated. Store them securely; they are shown once."
+                    .into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(MfaRecoveryCodesResponse {
+            success: false,
+            recovery_codes: Vec::new(),
+            message: format!("MFA recovery code reset failed: {}", error),
+        })),
     }
 }
 
@@ -329,8 +665,28 @@ async fn logout(
 
 async fn register(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<RegisterRequest>,
 ) -> Json<ApiResponse<RegisterResponse>> {
+    let email = payload.email.trim().to_lowercase();
+    let rate_decision = state
+        .check_rate_limit(
+            auth_flow_policy("register"),
+            rate_limit_identity(&headers, &email),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(RegisterResponse {
+            success: false,
+            email,
+            role_key: payload.role_key,
+            next_step: "/auth/register".into(),
+            message: rate_limit_message("registration", rate_decision.retry_after_seconds),
+            otp_expires_at: None,
+            dev_otp: None,
+        }));
+    }
+
     let Some(pool) = state.pool.as_ref() else {
         log_auth_failure(
             "register",
@@ -350,7 +706,6 @@ async fn register(
         }));
     };
 
-    let email = payload.email.trim().to_lowercase();
     let name = payload.name.trim().to_string();
     let role = match parse_role_key(&payload.role_key) {
         Some(UserRole::Admin) | None => {
@@ -524,8 +879,46 @@ async fn register(
 
 async fn verify_otp(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<VerifyOtpRequest>,
 ) -> Json<ApiResponse<VerifyOtpResponse>> {
+    let email = payload.email.trim().to_lowercase();
+    let lockout_identity = format!("otp:{}:{}", payload.purpose.as_key(), email);
+    let rate_decision = state
+        .check_rate_limit(
+            auth_flow_policy("verify_otp"),
+            rate_limit_identity(&headers, &lockout_identity),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(VerifyOtpResponse {
+            success: false,
+            email,
+            purpose: payload.purpose,
+            next_step: "/auth/verify-otp".into(),
+            message: rate_limit_message("OTP verification", rate_decision.retry_after_seconds),
+            token: None,
+            session: None,
+            reset_token: None,
+        }));
+    }
+
+    let lockout = state
+        .lockout_status(auth_lockout_policy(), &lockout_identity)
+        .await;
+    if !lockout.allowed {
+        return Json(ApiResponse::ok(VerifyOtpResponse {
+            success: false,
+            email,
+            purpose: payload.purpose,
+            next_step: "/auth/verify-otp".into(),
+            message: rate_limit_message("OTP verification", lockout.retry_after_seconds),
+            token: None,
+            session: None,
+            reset_token: None,
+        }));
+    }
+
     let Some(pool) = state.pool.as_ref() else {
         log_auth_failure(
             "verify_otp",
@@ -546,10 +939,12 @@ async fn verify_otp(
         }));
     };
 
-    let email = payload.email.trim().to_lowercase();
     let otp = payload.otp.trim().to_string();
     if otp.len() != 6 || !otp.chars().all(|ch| ch.is_ascii_digit()) {
         log_auth_failure("verify_otp", &email, "invalid otp format");
+        state
+            .record_lockout_failure(auth_lockout_policy(), &lockout_identity)
+            .await;
         return Json(ApiResponse::ok(VerifyOtpResponse {
             success: false,
             email,
@@ -578,6 +973,7 @@ async fn verify_otp(
             Ok(Some(user)) => match auth_session::issue_session_token(&state, &user).await {
                 Ok(token) => {
                     log_auth_success("verify_registration_otp", &email, Some(user.id));
+                    state.record_lockout_success(&lockout_identity).await;
                     let session = auth_session::build_session_state(&state, &user).await;
                     Json(ApiResponse::ok(VerifyOtpResponse {
                         success: true,
@@ -614,6 +1010,9 @@ async fn verify_otp(
             },
             Ok(None) => {
                 log_auth_failure("verify_registration_otp", &email, "invalid or expired otp");
+                state
+                    .record_lockout_failure(auth_lockout_policy(), &lockout_identity)
+                    .await;
                 Json(ApiResponse::ok(VerifyOtpResponse {
                     success: false,
                     email,
@@ -653,6 +1052,7 @@ async fn verify_otp(
                 match store_password_reset_token(pool, &email, &reset_token).await {
                     Ok(_) => {
                         log_auth_success("verify_password_reset_otp", &email, None);
+                        state.record_lockout_success(&lockout_identity).await;
                         Json(ApiResponse::ok(VerifyOtpResponse {
                             success: true,
                             email,
@@ -693,6 +1093,9 @@ async fn verify_otp(
                     &email,
                     "invalid or expired otp",
                 );
+                state
+                    .record_lockout_failure(auth_lockout_policy(), &lockout_identity)
+                    .await;
                 Json(ApiResponse::ok(VerifyOtpResponse {
                     success: false,
                     email,
@@ -731,8 +1134,28 @@ async fn verify_otp(
 
 async fn resend_otp(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<ResendOtpRequest>,
 ) -> Json<ApiResponse<ResendOtpResponse>> {
+    let email = payload.email.trim().to_lowercase();
+    let rate_subject = format!("otp-resend:{}:{}", payload.purpose.as_key(), email);
+    let rate_decision = state
+        .check_rate_limit(
+            auth_flow_policy("resend_otp"),
+            rate_limit_identity(&headers, &rate_subject),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(ResendOtpResponse {
+            success: false,
+            email,
+            purpose: payload.purpose,
+            message: rate_limit_message("OTP resend", rate_decision.retry_after_seconds),
+            otp_expires_at: None,
+            dev_otp: None,
+        }));
+    }
+
     let Some(pool) = state.pool.as_ref() else {
         log_auth_failure(
             "resend_otp",
@@ -750,7 +1173,6 @@ async fn resend_otp(
         }));
     };
 
-    let email = payload.email.trim().to_lowercase();
     let Some(user) = find_user_by_email(pool, &email).await.unwrap_or(None) else {
         log_auth_failure("resend_otp", &email, "user not found");
         return Json(ApiResponse::ok(ResendOtpResponse {
@@ -846,8 +1268,30 @@ async fn resend_otp(
 
 async fn forgot_password(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<ForgotPasswordRequest>,
 ) -> Json<ApiResponse<ForgotPasswordResponse>> {
+    let email = payload.email.trim().to_lowercase();
+    let rate_decision = state
+        .check_rate_limit(
+            auth_flow_policy("forgot_password"),
+            rate_limit_identity(&headers, &email),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(ForgotPasswordResponse {
+            success: false,
+            email,
+            next_step: "/auth/forgot-password".into(),
+            message: rate_limit_message(
+                "password reset request",
+                rate_decision.retry_after_seconds,
+            ),
+            otp_expires_at: None,
+            dev_otp: None,
+        }));
+    }
+
     let Some(pool) = state.pool.as_ref() else {
         log_auth_failure(
             "forgot_password",
@@ -866,7 +1310,6 @@ async fn forgot_password(
         }));
     };
 
-    let email = payload.email.trim().to_lowercase();
     let Some(user) = find_user_by_email(pool, &email).await.unwrap_or(None) else {
         log_auth_failure("forgot_password", &email, "user not found");
         return Json(ApiResponse::ok(ForgotPasswordResponse {
@@ -970,8 +1413,25 @@ async fn forgot_password(
 
 async fn reset_password(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<ResetPasswordRequest>,
 ) -> Json<ApiResponse<ResetPasswordResponse>> {
+    let email = payload.email.trim().to_lowercase();
+    let rate_decision = state
+        .check_rate_limit(
+            auth_flow_policy("reset_password"),
+            rate_limit_identity(&headers, &email),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(ResetPasswordResponse {
+            success: false,
+            email,
+            next_step: "/auth/reset-password".into(),
+            message: rate_limit_message("password reset", rate_decision.retry_after_seconds),
+        }));
+    }
+
     let Some(pool) = state.pool.as_ref() else {
         log_auth_failure(
             "reset_password",
@@ -988,7 +1448,6 @@ async fn reset_password(
         }));
     };
 
-    let email = payload.email.trim().to_lowercase();
     if payload.password != payload.password_confirmation {
         log_auth_failure("reset_password", &email, "password confirmation mismatch");
         return Json(ApiResponse::ok(ResetPasswordResponse {
@@ -1039,6 +1498,9 @@ async fn reset_password(
         .await
     {
         Ok(true) => {
+            if let Ok(Some(user)) = find_user_by_email(pool, &email).await {
+                let _ = delete_personal_access_tokens_for_user(pool, user.id).await;
+            }
             log_auth_success("reset_password", &email, None);
             Json(ApiResponse::ok(ResetPasswordResponse {
                 success: true,
@@ -1696,6 +2158,144 @@ fn generate_otp() -> String {
     format!("{:06}", value)
 }
 
+struct MfaChallenge {
+    challenge_id: String,
+    code: String,
+    expires_at: chrono::DateTime<Utc>,
+    message: String,
+}
+
+fn privileged_user_requires_mfa(user: &db::auth::UserRecord) -> bool {
+    matches!(user.primary_role(), Some(UserRole::Admin))
+}
+
+fn mfa_hash(value: &str) -> String {
+    let digest = Sha256::digest(value.trim().as_bytes());
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+async fn create_mfa_challenge(
+    state: &AppState,
+    user: &db::auth::UserRecord,
+) -> Result<MfaChallenge, String> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Err("MFA is unavailable because the database is disabled.".into());
+    };
+
+    let challenge_id = uuid::Uuid::new_v4().to_string();
+    let code = generate_otp();
+    let code_hash = mfa_hash(&code);
+    let expires_at = Utc::now() + Duration::minutes(10);
+
+    sqlx::query(
+        "INSERT INTO mfa_challenges
+            (id, user_id, email, purpose, code_hash, expires_at, created_at, updated_at)
+         VALUES ($1::uuid, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(&challenge_id)
+    .bind(user.id)
+    .bind(user.email.to_ascii_lowercase())
+    .bind("privileged_login")
+    .bind(&code_hash)
+    .bind(expires_at.naive_utc())
+    .execute(pool)
+    .await
+    .map_err(|error| format!("MFA challenge creation failed: {}", error))?;
+
+    let mail_outcome = state
+        .email
+        .send_mfa_otp(&user.email, Some(&user.name), &code)
+        .await?;
+
+    Ok(MfaChallenge {
+        challenge_id,
+        code,
+        expires_at,
+        message: mail_outcome.append_to_message(
+            "MFA is required for this privileged account. Enter the emailed code to continue.",
+        ),
+    })
+}
+
+async fn consume_mfa_recovery_code(
+    pool: &db::DbPool,
+    user_id: i64,
+    code: &str,
+) -> Result<bool, sqlx::Error> {
+    let code_hash = mfa_hash(code);
+    sqlx::query_scalar::<_, i64>(
+        "UPDATE mfa_recovery_codes
+         SET used_at = CURRENT_TIMESTAMP
+         WHERE id = (
+            SELECT id
+            FROM mfa_recovery_codes
+            WHERE user_id = $1
+              AND code_hash = $2
+              AND used_at IS NULL
+            ORDER BY id
+            LIMIT 1
+         )
+         RETURNING user_id",
+    )
+    .bind(user_id)
+    .bind(code_hash)
+    .fetch_optional(pool)
+    .await
+    .map(|value| value.is_some())
+}
+
+async fn ensure_mfa_recovery_codes(
+    pool: &db::DbPool,
+    user_id: i64,
+) -> Result<Vec<String>, sqlx::Error> {
+    let unused_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM mfa_recovery_codes
+         WHERE user_id = $1
+           AND used_at IS NULL",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    if unused_count > 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut recovery_codes = Vec::new();
+    for _ in 0..8 {
+        let code = format!(
+            "{}-{}",
+            uuid::Uuid::new_v4().simple().to_string()[0..8].to_ascii_uppercase(),
+            uuid::Uuid::new_v4().simple().to_string()[0..8].to_ascii_uppercase()
+        );
+        let code_hash = mfa_hash(&code);
+        sqlx::query(
+            "INSERT INTO mfa_recovery_codes (user_id, code_hash, created_at)
+             VALUES ($1, $2, CURRENT_TIMESTAMP)",
+        )
+        .bind(user_id)
+        .bind(code_hash)
+        .execute(pool)
+        .await?;
+        recovery_codes.push(code);
+    }
+
+    Ok(recovery_codes)
+}
+
+async fn regenerate_mfa_recovery_code_set(
+    pool: &db::DbPool,
+    user_id: i64,
+) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query("DELETE FROM mfa_recovery_codes WHERE user_id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+
+    ensure_mfa_recovery_codes(pool, user_id).await
+}
+
 fn next_resend_count(
     last_otp_resend_at: Option<chrono::NaiveDateTime>,
     current_count: i32,
@@ -2087,6 +2687,16 @@ async fn upload_profile_kyc_document_handler(
             "Sign in before updating profile KYC documents.",
         );
     };
+
+    let rate_decision = state
+        .check_rate_limit(upload_policy(), format!("profile:{}", resolved.user.id))
+        .await;
+    if !rate_decision.allowed {
+        return text_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            &rate_limit_message("profile document upload", rate_decision.retry_after_seconds),
+        );
+    }
 
     let Some(pool) = state.pool.as_ref() else {
         return text_response(
@@ -2555,6 +3165,20 @@ async fn delete_profile_kyc_document_handler(
             message: "This signed-in profile cannot delete that KYC row.".into(),
         }));
     }
+    if resolved.user.primary_role() == Some(UserRole::Admin)
+        && !resolved
+            .session
+            .permissions
+            .iter()
+            .any(|permission| permission == "mfa_verified")
+    {
+        return Json(ApiResponse::ok(DeleteKycDocumentResponse {
+            success: false,
+            document_id: document_id.max(0) as u64,
+            message: "MFA step-up is required before an admin deletes profile KYC documents."
+                .into(),
+        }));
+    }
 
     match delete_kyc_document(
         pool,
@@ -2640,6 +3264,16 @@ async fn upload_kyc_document_handler(
             "Sign in before uploading a KYC document.",
         );
     };
+
+    let rate_decision = state
+        .check_rate_limit(upload_policy(), format!("onboarding:{}", resolved.user.id))
+        .await;
+    if !rate_decision.allowed {
+        return text_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            &rate_limit_message("KYC document upload", rate_decision.retry_after_seconds),
+        );
+    }
 
     if !resolved
         .user
@@ -2949,7 +3583,9 @@ fn text_response(status: StatusCode, message: &str) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{fetch_password_reset_token, prepare_pool, test_state};
+    use crate::test_support::{
+        fetch_password_reset_token, insert_user_with_role_status, prepare_pool, test_state,
+    };
     use serial_test::serial;
     use shared::{ForgotPasswordRequest, LoginRequest, RegisterRequest};
 
@@ -2965,6 +3601,7 @@ mod tests {
 
         let register_response = register(
             State(state.clone()),
+            HeaderMap::new(),
             Json(RegisterRequest {
                 name: "Route Auth".into(),
                 email: email.clone(),
@@ -2986,6 +3623,7 @@ mod tests {
 
         let verify_registration = verify_otp(
             State(state.clone()),
+            HeaderMap::new(),
             Json(VerifyOtpRequest {
                 email: email.clone(),
                 otp: registration_otp,
@@ -3001,6 +3639,7 @@ mod tests {
 
         let forgot_response = forgot_password(
             State(state.clone()),
+            HeaderMap::new(),
             Json(ForgotPasswordRequest {
                 email: email.clone(),
             }),
@@ -3016,6 +3655,7 @@ mod tests {
 
         let verify_reset = verify_otp(
             State(state.clone()),
+            HeaderMap::new(),
             Json(VerifyOtpRequest {
                 email: email.clone(),
                 otp: reset_otp,
@@ -3037,6 +3677,7 @@ mod tests {
 
         let reset_response = reset_password(
             State(state.clone()),
+            HeaderMap::new(),
             Json(ResetPasswordRequest {
                 email: email.clone(),
                 reset_token,
@@ -3051,6 +3692,7 @@ mod tests {
 
         let login_response = login(
             State(state),
+            HeaderMap::new(),
             Json(LoginRequest {
                 email,
                 password: "Password456!".into(),
@@ -3060,7 +3702,18 @@ mod tests {
         .0
         .data;
         assert!(login_response.success);
-        assert!(login_response.token.is_some());
+        let issued_token = login_response.token.clone().expect("login token");
+        let stored_token = sqlx::query_scalar::<_, String>(
+            "SELECT token
+             FROM personal_access_tokens
+             WHERE tokenable_type = 'App\\Models\\User'
+             ORDER BY id DESC
+             LIMIT 1",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert_ne!(stored_token, issued_token);
+        assert!(!stored_token.starts_with("stl_"));
         assert_eq!(
             login_response
                 .session
@@ -3069,6 +3722,73 @@ mod tests {
                 .map(|user| user.account_status_label.as_str()),
             Some("Email Verified")
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_login_requires_mfa_before_session_token()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let admin = insert_user_with_role_status(
+            &pool,
+            "MFA Admin",
+            "mfa-admin@example.com",
+            UserRole::Admin,
+            AccountStatus::Approved,
+        )
+        .await?;
+
+        let login_response = login(
+            State(state.clone()),
+            HeaderMap::new(),
+            Json(LoginRequest {
+                email: admin.email.clone(),
+                password: "Password123!".into(),
+            }),
+        )
+        .await
+        .0
+        .data;
+
+        assert!(!login_response.success);
+        assert!(login_response.token.is_none());
+        assert!(login_response.mfa_required);
+        let challenge_id = login_response
+            .mfa_challenge_id
+            .clone()
+            .expect("mfa challenge id");
+        let mfa_code = login_response.dev_mfa_code.clone().expect("dev mfa code");
+
+        let verify_response = verify_mfa(
+            State(state.clone()),
+            HeaderMap::new(),
+            Json(MfaVerifyRequest {
+                email: admin.email.clone(),
+                challenge_id,
+                code: mfa_code,
+            }),
+        )
+        .await
+        .0
+        .data;
+
+        assert!(verify_response.success);
+        assert!(verify_response.token.is_some());
+        assert!(
+            verify_response
+                .session
+                .as_ref()
+                .expect("session")
+                .permissions
+                .iter()
+                .any(|permission| permission == "mfa_verified")
+        );
+        assert_eq!(verify_response.recovery_codes.len(), 8);
 
         Ok(())
     }

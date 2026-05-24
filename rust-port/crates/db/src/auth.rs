@@ -8,6 +8,7 @@ use crate::DbPool;
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct UserRecord {
     pub id: i64,
+    pub organization_id: i64,
     pub name: String,
     pub email: String,
     pub password: String,
@@ -177,6 +178,8 @@ pub struct PersonalAccessTokenRecord {
     pub tokenable_id: i64,
     pub name: String,
     pub token: String,
+    pub token_prefix: Option<String>,
+    pub token_hash: Option<String>,
     pub abilities: Option<String>,
     pub last_used_at: Option<NaiveDateTime>,
     pub expires_at: Option<NaiveDateTime>,
@@ -357,7 +360,7 @@ pub async fn list_personal_access_tokens(
     user_id: i64,
 ) -> Result<Vec<PersonalAccessTokenRecord>, sqlx::Error> {
     sqlx::query_as::<_, PersonalAccessTokenRecord>(
-        "SELECT id, tokenable_type, tokenable_id, name, token, abilities, last_used_at, expires_at, created_at, updated_at
+        "SELECT id, tokenable_type, tokenable_id, name, token, token_prefix, token_hash, abilities, last_used_at, expires_at, created_at, updated_at
          FROM personal_access_tokens
          WHERE tokenable_type = $1 AND tokenable_id = $2
          ORDER BY id DESC",
@@ -378,17 +381,19 @@ pub async fn find_user_by_id(
         .await
 }
 
-pub async fn find_personal_access_token_exact(
+pub async fn find_personal_access_token_by_hash(
     pool: &DbPool,
-    token: &str,
+    token_prefix: &str,
+    token_hash: &str,
 ) -> Result<Option<PersonalAccessTokenRecord>, sqlx::Error> {
     sqlx::query_as::<_, PersonalAccessTokenRecord>(
-        "SELECT id, tokenable_type, tokenable_id, name, token, abilities, last_used_at, expires_at, created_at, updated_at
+        "SELECT id, tokenable_type, tokenable_id, name, token, token_prefix, token_hash, abilities, last_used_at, expires_at, created_at, updated_at
          FROM personal_access_tokens
-         WHERE token = $1 AND tokenable_type = $2
+         WHERE token_prefix = $1 AND token_hash = $2 AND tokenable_type = $3
          LIMIT 1",
     )
-    .bind(token)
+    .bind(token_prefix)
+    .bind(token_hash)
     .bind("App\\Models\\User")
     .fetch_optional(pool)
     .await
@@ -398,26 +403,29 @@ pub async fn insert_personal_access_token(
     pool: &DbPool,
     user_id: i64,
     name: &str,
-    token: &str,
+    token_prefix: &str,
+    token_hash: &str,
     abilities: Option<&str>,
     expires_at: Option<NaiveDateTime>,
 ) -> Result<PersonalAccessTokenRecord, sqlx::Error> {
     let token_id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO personal_access_tokens
-            (tokenable_type, tokenable_id, name, token, abilities, last_used_at, expires_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, NULL, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            (tokenable_type, tokenable_id, name, token, token_prefix, token_hash, abilities, last_used_at, expires_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id",
     )
     .bind("App\\Models\\User")
     .bind(user_id)
     .bind(name)
-    .bind(token)
+    .bind(token_hash)
+    .bind(token_prefix)
+    .bind(token_hash)
     .bind(abilities)
     .bind(expires_at)
     .fetch_one(pool)
     .await?;
     sqlx::query_as::<_, PersonalAccessTokenRecord>(
-        "SELECT id, tokenable_type, tokenable_id, name, token, abilities, last_used_at, expires_at, created_at, updated_at
+        "SELECT id, tokenable_type, tokenable_id, name, token, token_prefix, token_hash, abilities, last_used_at, expires_at, created_at, updated_at
          FROM personal_access_tokens
          WHERE id = $1
          LIMIT 1",
@@ -440,16 +448,34 @@ pub async fn touch_personal_access_token(pool: &DbPool, token_id: i64) -> Result
     Ok(())
 }
 
-pub async fn delete_personal_access_token_by_token(
+pub async fn delete_personal_access_token_by_hash(
     pool: &DbPool,
-    token: &str,
+    token_prefix: &str,
+    token_hash: &str,
 ) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(
         "DELETE FROM personal_access_tokens
-         WHERE token = $1 AND tokenable_type = $2",
+         WHERE token_prefix = $1 AND token_hash = $2 AND tokenable_type = $3",
     )
-    .bind(token)
+    .bind(token_prefix)
+    .bind(token_hash)
     .bind("App\\Models\\User")
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected())
+}
+
+pub async fn delete_personal_access_tokens_for_user(
+    pool: &DbPool,
+    user_id: i64,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        "DELETE FROM personal_access_tokens
+         WHERE tokenable_type = $1 AND tokenable_id = $2",
+    )
+    .bind("App\\Models\\User")
+    .bind(user_id)
     .execute(pool)
     .await?;
 
@@ -501,6 +527,8 @@ pub async fn create_registered_user(
     .bind(user_id)
     .execute(&mut *tx)
     .await?;
+
+    let _ = sync_default_membership_in_tx(&mut tx, user_id, input.role_id).await?;
 
     tx.commit().await?;
 
@@ -788,6 +816,7 @@ pub struct UpdateKycDocumentInput {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct PendingOnboardingUserRecord {
     pub user_id: i64,
+    pub organization_id: i64,
     pub name: String,
     pub email: String,
     pub role_id: Option<i16>,
@@ -801,6 +830,7 @@ pub struct PendingOnboardingUserRecord {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct AdminUserDirectoryRecord {
     pub user_id: i64,
+    pub organization_id: i64,
     pub name: String,
     pub email: String,
     pub role_id: Option<i16>,
@@ -823,6 +853,7 @@ pub struct AdminUserHistoryEntryRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateAdminUserInput {
+    pub organization_id: i64,
     pub name: String,
     pub email: String,
     pub password_hash: String,
@@ -1185,10 +1216,12 @@ async fn mark_user_profile_submission_for_review(
 
 pub async fn list_pending_onboarding_users(
     pool: &DbPool,
+    organization_id: Option<i64>,
 ) -> Result<Vec<PendingOnboardingUserRecord>, sqlx::Error> {
     sqlx::query_as::<_, PendingOnboardingUserRecord>(
         "SELECT
             u.id AS user_id,
+            u.organization_id,
             u.name,
             u.email,
             u.role_id,
@@ -1201,9 +1234,11 @@ pub async fn list_pending_onboarding_users(
          LEFT JOIN user_details ud ON ud.user_id = u.id
          LEFT JOIN kyc_documents kd ON kd.user_id = u.id
          WHERE u.status IN (3, 5)
-         GROUP BY u.id, u.name, u.email, u.role_id, u.status, ud.company_name, u.company_name, ud.company_address, u.company_address, u.kyc_pending_at, u.updated_at
+           AND ($1::bigint IS NULL OR u.organization_id = $1)
+         GROUP BY u.id, u.organization_id, u.name, u.email, u.role_id, u.status, ud.company_name, u.company_name, ud.company_address, u.company_address, u.kyc_pending_at, u.updated_at
          ORDER BY COALESCE(u.kyc_pending_at, u.updated_at) DESC, u.id DESC",
     )
+    .bind(organization_id)
     .fetch_all(pool)
     .await
 }
@@ -1251,10 +1286,14 @@ pub async fn review_onboarding_user(
     find_user_by_id(pool, updated_user_id).await
 }
 
-pub async fn list_admin_users(pool: &DbPool) -> Result<Vec<AdminUserDirectoryRecord>, sqlx::Error> {
+pub async fn list_admin_users(
+    pool: &DbPool,
+    organization_id: Option<i64>,
+) -> Result<Vec<AdminUserDirectoryRecord>, sqlx::Error> {
     sqlx::query_as::<_, AdminUserDirectoryRecord>(
         "SELECT
             u.id AS user_id,
+            u.organization_id,
             u.name,
             u.email,
             u.role_id,
@@ -1274,8 +1313,10 @@ pub async fn list_admin_users(pool: &DbPool) -> Result<Vec<AdminUserDirectoryRec
          FROM users u
          LEFT JOIN user_details ud ON ud.user_id = u.id
          LEFT JOIN kyc_documents kd ON kd.user_id = u.id
+         WHERE ($1::bigint IS NULL OR u.organization_id = $1)
          GROUP BY
             u.id,
+            u.organization_id,
             u.name,
             u.email,
             u.role_id,
@@ -1286,6 +1327,7 @@ pub async fn list_admin_users(pool: &DbPool) -> Result<Vec<AdminUserDirectoryRec
             u.created_at
          ORDER BY u.created_at DESC, u.id DESC",
     )
+    .bind(organization_id)
     .fetch_all(pool)
     .await
 }
@@ -1321,16 +1363,17 @@ pub async fn create_admin_user_account(
 
     let user_id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO users
-            (name, email, password, role_id, phone_no, address, email_verified_at, status, created_at, updated_at)
+            (organization_id, name, email, password, role_id, phone_no, address, email_verified_at, status, created_at, updated_at)
          VALUES (
-            $1, $2, $3, $4, $5, $6,
-            CASE WHEN $7 = 4 THEN NULL ELSE CURRENT_TIMESTAMP END,
-            $7,
+            $1, $2, $3, $4, $5, $6, $7,
+            CASE WHEN $8 = 4 THEN NULL ELSE CURRENT_TIMESTAMP END,
+            $8,
             CURRENT_TIMESTAMP,
             CURRENT_TIMESTAMP
          )
          RETURNING id",
     )
+    .bind(input.organization_id)
     .bind(&input.name)
     .bind(&input.email)
     .bind(&input.password_hash)
@@ -1352,6 +1395,8 @@ pub async fn create_admin_user_account(
     .execute(&mut *tx)
     .await?;
 
+    let _ = sync_default_membership_in_tx(&mut tx, user_id, input.role_id).await?;
+
     sqlx::query(
         "INSERT INTO user_history (user_id, admin_id, status, remarks, created_at, updated_at)
          VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
@@ -1367,6 +1412,36 @@ pub async fn create_admin_user_account(
     find_user_by_id(pool, user_id)
         .await?
         .ok_or(sqlx::Error::RowNotFound)
+}
+
+async fn sync_default_membership_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: i64,
+    role_id: i16,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        "INSERT INTO organization_memberships (organization_id, user_id, role_key, status, joined_at, created_at, updated_at)
+         SELECT
+            users.organization_id,
+            users.id,
+            CASE WHEN $2 = 1 THEN 'admin' ELSE 'member' END,
+            'active',
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+         FROM users
+         WHERE users.id = $1
+         ON CONFLICT (organization_id, user_id) DO UPDATE SET
+            role_key = EXCLUDED.role_key,
+            status = 'active',
+            updated_at = CURRENT_TIMESTAMP",
+    )
+    .bind(user_id)
+    .bind(role_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(result.rows_affected())
 }
 
 pub async fn update_admin_user_profile(

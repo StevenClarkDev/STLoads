@@ -4,6 +4,26 @@ This is the working blueprint for the Rust + Leptos copy of STLoads.
 
 For the current enterprise-readiness execution tracker, use `docs/ENTERPRISE_LOADBOARD_TASK_LIST.md`.
 For the higher-level roadmap behind that tracker, use `docs/ENTERPRISE_LOADBOARD_ROADMAP.md`.
+For the `P0`/`P1` execution board, use `docs/ENTERPRISE_WORK_BOARD.md`.
+For measurable alpha, beta, pilot, production, and enterprise-ready gates, use `docs/ENTERPRISE_READINESS_GATES.md`.
+For the recommended first-release operating model and pending approval items, use `docs/ENTERPRISE_OPERATING_MODEL.md`.
+For repeatable enterprise tenant onboarding, use `docs/ENTERPRISE_CUSTOMER_ONBOARDING.md`.
+For enterprise training, help-center, adoption, renewal, and support handoff, use `docs/ENTERPRISE_CUSTOMER_SUCCESS_AND_TRAINING.md`.
+For support tiers, SLA targets, maintenance windows, and escalation commitments, use `docs/ENTERPRISE_SLA_SUPPORT_TIERS.md`.
+For enterprise customer offboarding, data return, retention, and access shutdown, use `docs/ENTERPRISE_CUSTOMER_OFFBOARDING.md`.
+For enterprise support case management, SLA case workflow, reporting, and customer feedback, use `docs/ENTERPRISE_SUPPORT_CASE_MANAGEMENT.md`.
+For operator-controlled database migration steps, rollback, and failed-migration handling, use `docs/ENTERPRISE_MIGRATION_RUNBOOK.md`.
+For local, CI, staging, pilot, and production environment definitions, use `docs/ENTERPRISE_RELEASE_ENVIRONMENTS.md`.
+For backend, frontend, database, object-storage, and release rollback procedure, use `docs/ENTERPRISE_ROLLBACK_RUNBOOK.md`.
+For feature flags, emergency kill switches, and production change approval, use `docs/ENTERPRISE_FEATURE_FLAGS_AND_CHANGE_CONTROL.md`.
+For customer release notes, UAT, maintenance notices, known issues, and rollout feedback, use `docs/ENTERPRISE_RELEASE_COMMUNICATIONS.md`.
+For production data migration, reconciliation, freeze window, rollback point, and business validation, use `docs/ENTERPRISE_DATA_MIGRATION_CUTOVER_PLAN.md`.
+For browser bearer-auth, CSRF decision, cookie migration gate, CORS, and custom-domain session controls, use `docs/ENTERPRISE_BROWSER_SESSION_SECURITY.md`.
+For rate limiting, brute-force lockout, protected surfaces, and the distributed-store production gap, use `docs/ENTERPRISE_RATE_LIMITING_AND_LOCKOUT.md`.
+For privileged MFA, recovery codes, and step-up requirements for high-risk actions, use `docs/ENTERPRISE_MFA_AND_STEP_UP.md`.
+For organization tables, memberships, default-tenant migration, and tenant-scoped table ownership, use `docs/ENTERPRISE_ORGANIZATION_TENANT_MODEL.md`.
+For current tenant isolation enforcement, cross-tenant tests, and break-glass requirements, use `docs/ENTERPRISE_TENANT_ISOLATION.md`.
+For platform-role, organization-role, and route-guard permission mapping, use `docs/ENTERPRISE_PERMISSION_MATRIX.md`.
 
 ## What Exists Now
 

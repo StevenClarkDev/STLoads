@@ -16,10 +16,10 @@ use shared::{
     ExecutionLocationPingResponse, ForgotPasswordRequest, ForgotPasswordResponse, LoadBoardScreen,
     LoadBuilderScreen, LoadProfileScreen, LocationUpsertRequest, LoginRequest, LoginResponse,
     LogoutResponse, MasterDataDeleteRequest, MasterDataMutationResponse, MasterDataScreen,
-    OfferReviewRequest, OfferReviewResponse, PortalRoleCountsResponse, RealtimeTopic,
-    RegisterRequest, RegisterResponse, ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest,
-    ResetPasswordResponse, ResolveSyncErrorRequest, ResolveSyncErrorResponse,
-    ReviewOnboardingRequest, ReviewOnboardingResponse, SelfProfileScreen,
+    MfaVerifyRequest, MfaVerifyResponse, OfferReviewRequest, OfferReviewResponse,
+    PortalRoleCountsResponse, RealtimeTopic, RegisterRequest, RegisterResponse, ResendOtpRequest,
+    ResendOtpResponse, ResetPasswordRequest, ResetPasswordResponse, ResolveSyncErrorRequest,
+    ResolveSyncErrorResponse, ReviewOnboardingRequest, ReviewOnboardingResponse, SelfProfileScreen,
     SimpleCatalogUpsertRequest, StloadsOperationsScreen, StloadsReconciliationScreen,
     StripeWebhookRequest, StripeWebhookResponse, SubmitOnboardingRequest, SubmitOnboardingResponse,
     TmsCloseRequest, TmsHandoffPayload, TmsHandoffResponse, TmsRequeueRequest,
@@ -87,6 +87,16 @@ pub async fn logout() -> Result<LogoutResponse, String> {
     let response = post_api::<LogoutResponse, _>("/auth/logout", &serde_json::json!({})).await?;
     if response.success {
         clear_auth_token();
+    }
+    Ok(response)
+}
+
+pub async fn verify_mfa(payload: &MfaVerifyRequest) -> Result<MfaVerifyResponse, String> {
+    let response: MfaVerifyResponse = post_api("/auth/mfa/verify", payload).await?;
+    if response.success {
+        if let Some(token) = response.token.as_deref() {
+            store_auth_token(token);
+        }
     }
     Ok(response)
 }

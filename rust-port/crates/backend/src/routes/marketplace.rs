@@ -152,12 +152,18 @@ async fn review_offer_handler(
         .await
         .ok()
         .flatten();
+    let same_organization = load_scope
+        .as_ref()
+        .map(|scope| {
+            crate::auth_session::session_matches_organization(&session, scope.organization_id)
+        })
+        .unwrap_or(false);
     let is_load_owner = load_scope
         .as_ref()
         .and_then(|scope| scope.load_owner_user_id)
         == Some(session.user.id);
 
-    if !is_admin && !is_load_owner {
+    if !same_organization || (!is_admin && !is_load_owner) {
         return Json(ApiResponse::ok(OfferReviewResponse {
             success: false,
             offer_id,
@@ -307,6 +313,23 @@ async fn send_message_handler(
         }));
     };
 
+    let same_organization = find_load_leg_scope(pool, conversation.load_leg_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|scope| {
+            crate::auth_session::session_matches_organization(&session, scope.organization_id)
+        })
+        .unwrap_or(false);
+    if !same_organization {
+        return Json(ApiResponse::ok(ChatSendMessageResponse {
+            success: false,
+            conversation_id,
+            message_id: 0,
+            message: "This conversation belongs to another organization.".into(),
+        }));
+    }
+
     if session.user.id != conversation.shipper_id && session.user.id != conversation.carrier_id {
         return Json(ApiResponse::ok(ChatSendMessageResponse {
             success: false,
@@ -399,6 +422,23 @@ async fn mark_conversation_read_handler(
             message: "The requested conversation was not found.".into(),
         }));
     };
+
+    let same_organization = find_load_leg_scope(pool, conversation.load_leg_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|scope| {
+            crate::auth_session::session_matches_organization(&session, scope.organization_id)
+        })
+        .unwrap_or(false);
+    if !same_organization {
+        return Json(ApiResponse::ok(ConversationReadResponse {
+            success: false,
+            conversation_id,
+            last_read_message_id: None,
+            message: "This conversation belongs to another organization.".into(),
+        }));
+    }
 
     if session.user.id != conversation.shipper_id && session.user.id != conversation.carrier_id {
         return Json(ApiResponse::ok(ConversationReadResponse {

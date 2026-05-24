@@ -1,6 +1,10 @@
 # Migration Scoreboard
 
-Last updated: 2026-04-29
+Last updated: 2026-05-24
+
+> Migration/cutover history, not the enterprise-readiness tracker.
+>
+> This file records Laravel-to-Rust migration and production cutover history. Several feature rows remain `partial`, so this file must not be read as a claim that STLoads is enterprise-complete. Current enterprise execution lives in `docs/ENTERPRISE_LOADBOARD_TASK_LIST.md`, and `P0`/`P1` work is mirrored in `docs/ENTERPRISE_WORK_BOARD.md`.
 
 This file is the living migration tracker for the Laravel-to-Rust/Leptos port.
 It should be updated after every major implementation milestone so the repo itself shows what is done, what is partial, and what still blocks full PHP retirement.
@@ -17,10 +21,11 @@ It should be updated after every major implementation milestone so the repo itse
 - Backend/domain migration: `done`
 - Frontend/Leptos migration: `done`
 - IBM deployment readiness for backend: `done`
-- Full Laravel retirement readiness: `done`
+- Production cutover status: `done`
+- Enterprise readiness: tracked in `docs/ENTERPRISE_LOADBOARD_TASK_LIST.md`
 
 The Rust portal is now live on IBM Code Engine at `https://portal.stloads.com`.
-Remaining differences between PHP and Rust are now post-launch polish items, not cutover blockers.
+Remaining migration differences between PHP and Rust are post-launch migration items, not the same thing as enterprise-readiness completion.
 
 ## Feature Scoreboard
 

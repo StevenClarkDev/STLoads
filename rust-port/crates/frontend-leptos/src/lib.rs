@@ -19,9 +19,9 @@ use pages::{
     AccountLifecyclePage, AdminChangePasswordPage, AdminDashboardPage, AdminLoadsPage,
     AdminRolesPage, AdminUsersByRolePage, AdminUsersPage, ChatWorkspacePage, DashboardPage,
     DispatchDeskPage, EscrowOperationsPage, ExecutionLegPage, ForgotPasswordPage, LoadBoardPage,
-    LoadBuilderPage, LoadProfilePage, LoginPage, MasterDataPage, NotFoundPage, OnboardingPage,
-    OnboardingReviewPage, PortalLandingPage, ProfilePage, RegisterPage, ResetPasswordPage,
-    StloadsOperationsPage, StloadsReconciliationPage, VerifyOtpPage,
+    LoadBuilderPage, LoadProfilePage, LoginPage, MasterDataPage, MfaPage, NotFoundPage,
+    OnboardingPage, OnboardingReviewPage, PortalLandingPage, ProfilePage, RegisterPage,
+    ResetPasswordPage, StloadsOperationsPage, StloadsReconciliationPage, VerifyOtpPage,
 };
 use session::{AuthProvider, use_auth};
 
@@ -132,6 +132,14 @@ pub fn App() -> impl IntoView {
                         view=|| view! {
                             <AuthFrame>
                                 <VerifyOtpPage />
+                            </AuthFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("auth/mfa")
+                        view=|| view! {
+                            <AuthFrame>
+                                <MfaPage />
                             </AuthFrame>
                         }
                     />

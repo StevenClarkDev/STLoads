@@ -4,11 +4,15 @@ use db::{
         EnqueueEmailParams, claim_due_emails, count_pending_emails, enqueue_email,
         mark_email_delivered, mark_email_retry,
     },
+    marketplace::list_recent_conversation_workspace_records_for_user,
     master_data, migrate,
+    organizations::list_permission_keys_for_organization_role,
+    organizations::{DEFAULT_ORGANIZATION_ID, default_organization, primary_membership_for_user},
+    payments::find_escrow_for_leg_in_organization,
     payments::{EscrowTransitionParams, apply_escrow_transition, find_escrow_for_leg},
     tms::{
-        apply_status_webhook, find_handoff_by_id, process_retryable_handoffs, push_handoff,
-        run_reconciliation_scan,
+        apply_status_webhook, find_handoff_by_id, handoff_belongs_to_organization,
+        process_retryable_handoffs, push_handoff, run_reconciliation_scan,
     },
 };
 use domain::payments::EscrowStatus;
@@ -104,6 +108,302 @@ async fn insert_user(pool: &DbPool, name: &str, email: &str) -> Result<i64, sqlx
     .await?;
 
     Ok(user_id)
+}
+
+async fn insert_organization(pool: &DbPool, slug: &str) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        "INSERT INTO organizations (name, slug, account_type, status, support_tier, created_at, updated_at)
+         VALUES ($1, $2, 'customer', 'active', 'standard', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         ON CONFLICT (slug) DO UPDATE SET
+            name = EXCLUDED.name,
+            status = 'active',
+            updated_at = CURRENT_TIMESTAMP
+         RETURNING id",
+    )
+    .bind(format!("Tenant {}", slug))
+    .bind(slug)
+    .fetch_one(pool)
+    .await
+}
+
+async fn insert_user_in_organization(
+    pool: &DbPool,
+    organization_id: i64,
+    name: &str,
+    email: &str,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        "INSERT INTO users (organization_id, name, email, password, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id",
+    )
+    .bind(organization_id)
+    .bind(name)
+    .bind(email)
+    .bind("integration-test-password")
+    .fetch_one(pool)
+    .await
+}
+
+#[tokio::test]
+#[serial]
+async fn organization_foundation_assigns_default_membership()
+-> Result<(), Box<dyn std::error::Error>> {
+    let Some(pool) = prepare_pool().await? else {
+        return Ok(());
+    };
+
+    let organization = default_organization(&pool)
+        .await?
+        .expect("default organization should exist");
+    assert_eq!(organization.id, DEFAULT_ORGANIZATION_ID);
+    assert_eq!(organization.slug, "stloads-default");
+
+    let user_id = insert_user(&pool, "Tenant User", "tenant-user@example.com").await?;
+    let user_organization_id: i64 =
+        sqlx::query_scalar("SELECT organization_id FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(user_organization_id, DEFAULT_ORGANIZATION_ID);
+
+    let membership = primary_membership_for_user(&pool, user_id)
+        .await?
+        .expect("insert trigger should create a membership");
+    assert_eq!(membership.organization_id, DEFAULT_ORGANIZATION_ID);
+    assert_eq!(membership.role_key, "member");
+
+    let owner_permissions = list_permission_keys_for_organization_role(&pool, "owner").await?;
+    assert!(
+        owner_permissions
+            .iter()
+            .any(|value| value == "manage_users")
+    );
+    assert!(
+        owner_permissions
+            .iter()
+            .any(|value| value == "manage_tms_operations")
+    );
+    let integration_admin_permissions =
+        list_permission_keys_for_organization_role(&pool, "integration_admin").await?;
+    assert!(
+        integration_admin_permissions
+            .iter()
+            .any(|value| value == "manage_tms_operations")
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn tenant_scoped_queries_reject_cross_organization_records()
+-> Result<(), Box<dyn std::error::Error>> {
+    let Some(pool) = prepare_pool().await? else {
+        return Ok(());
+    };
+
+    let tenant_a = insert_organization(&pool, "tenant-isolation-a").await?;
+    let tenant_b = insert_organization(&pool, "tenant-isolation-b").await?;
+    let shipper_a =
+        insert_user_in_organization(&pool, tenant_a, "Tenant A Shipper", "tenant-a@example.com")
+            .await?;
+    let carrier_a = insert_user_in_organization(
+        &pool,
+        tenant_a,
+        "Tenant A Carrier",
+        "tenant-a-carrier@example.com",
+    )
+    .await?;
+    let shipper_b =
+        insert_user_in_organization(&pool, tenant_b, "Tenant B Shipper", "tenant-b@example.com")
+            .await?;
+    let carrier_b = insert_user_in_organization(
+        &pool,
+        tenant_b,
+        "Tenant B Carrier",
+        "tenant-b-carrier@example.com",
+    )
+    .await?;
+    let pickup_location_id = insert_location(&pool, "Tenant isolation pickup").await?;
+    let delivery_location_id = insert_location(&pool, "Tenant isolation delivery").await?;
+
+    async fn insert_scoped_load_leg(
+        pool: &DbPool,
+        organization_id: i64,
+        owner_user_id: i64,
+        carrier_user_id: i64,
+        load_number: &str,
+        pickup_location_id: i64,
+        delivery_location_id: i64,
+    ) -> Result<(i64, i64), sqlx::Error> {
+        let load_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO loads (
+                organization_id, load_number, title, user_id, weight_unit, weight, status, leg_count, created_at, updated_at
+             ) VALUES ($1, $2, $3, $4, 'lbs', 42000, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             RETURNING id",
+        )
+        .bind(organization_id)
+        .bind(load_number)
+        .bind(format!("{} scoped load", load_number))
+        .bind(owner_user_id)
+        .fetch_one(pool)
+        .await?;
+
+        let leg_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO load_legs (
+                load_id, leg_no, leg_code, pickup_location_id, delivery_location_id, bid_status,
+                price, status_id, booked_carrier_id, booked_amount, created_at, updated_at
+             ) VALUES ($1, 1, $2, $3, $4, 'Fixed', 1200, 4, $5, 1200, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             RETURNING id",
+        )
+        .bind(load_id)
+        .bind(format!("{}-1", load_number))
+        .bind(pickup_location_id)
+        .bind(delivery_location_id)
+        .bind(carrier_user_id)
+        .fetch_one(pool)
+        .await?;
+
+        Ok((load_id, leg_id))
+    }
+
+    let (_load_a, leg_a) = insert_scoped_load_leg(
+        &pool,
+        tenant_a,
+        shipper_a,
+        carrier_a,
+        "LD-TENANT-A",
+        pickup_location_id,
+        delivery_location_id,
+    )
+    .await?;
+    let (load_b, leg_b) = insert_scoped_load_leg(
+        &pool,
+        tenant_b,
+        shipper_b,
+        carrier_b,
+        "LD-TENANT-B",
+        pickup_location_id,
+        delivery_location_id,
+    )
+    .await?;
+
+    let document_b = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO load_documents (
+            organization_id, load_id, document_name, document_type, file_path, storage_provider, uploaded_by_user_id, created_at, updated_at
+         ) VALUES ($1, $2, 'BOL', 'bol', '/secure/tenant-b.pdf', 'local', $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id",
+    )
+    .bind(tenant_b)
+    .bind(load_b)
+    .bind(shipper_b)
+    .fetch_one(&pool)
+    .await?;
+
+    let conversation_a = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO conversations (organization_id, load_leg_id, shipper_id, carrier_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id",
+    )
+    .bind(tenant_a)
+    .bind(leg_a)
+    .bind(shipper_a)
+    .bind(carrier_a)
+    .fetch_one(&pool)
+    .await?;
+    let conversation_b = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO conversations (organization_id, load_leg_id, shipper_id, carrier_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id",
+    )
+    .bind(tenant_b)
+    .bind(leg_b)
+    .bind(shipper_b)
+    .bind(carrier_b)
+    .fetch_one(&pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO messages (conversation_id, user_id, body, created_at, updated_at)
+         VALUES ($1, $2, 'tenant A message', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                ($3, $4, 'tenant B message', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(conversation_a)
+    .bind(shipper_a)
+    .bind(conversation_b)
+    .bind(shipper_b)
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO escrows (
+            organization_id, leg_id, payer_user_id, payee_user_id, currency, amount, platform_fee, status, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, 'USD', 120000, 0, 'funded', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    )
+    .bind(tenant_b)
+    .bind(leg_b)
+    .bind(shipper_b)
+    .bind(carrier_b)
+    .execute(&pool)
+    .await?;
+
+    let handoff_b = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO stloads_handoffs (
+            organization_id, tms_load_id, tenant_id, load_id, status, queued_at, created_at, updated_at
+         ) VALUES ($1, 'TMS-TENANT-B', 'tenant-b', $2, 'queued', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id",
+    )
+    .bind(tenant_b)
+    .bind(load_b)
+    .fetch_one(&pool)
+    .await?;
+
+    let leg_scope_b = db::dispatch::find_load_leg_scope(&pool, leg_b)
+        .await?
+        .expect("tenant B leg scope should exist");
+    assert_eq!(leg_scope_b.organization_id, tenant_b);
+    assert_ne!(leg_scope_b.organization_id, tenant_a);
+
+    let document_scope_b = db::dispatch::find_load_document_scope(&pool, document_b)
+        .await?
+        .expect("tenant B document scope should exist");
+    assert_eq!(document_scope_b.organization_id, tenant_b);
+    assert_ne!(document_scope_b.organization_id, tenant_a);
+
+    assert!(
+        find_escrow_for_leg_in_organization(&pool, leg_b, tenant_a)
+            .await?
+            .is_none()
+    );
+    assert!(
+        find_escrow_for_leg_in_organization(&pool, leg_b, tenant_b)
+            .await?
+            .is_some()
+    );
+
+    let tenant_a_conversations = list_recent_conversation_workspace_records_for_user(
+        &pool,
+        shipper_a,
+        Some(domain::auth::UserRole::Admin),
+        Some(tenant_a),
+        25,
+    )
+    .await?;
+    assert!(
+        tenant_a_conversations
+            .iter()
+            .any(|row| row.id == conversation_a)
+    );
+    assert!(
+        !tenant_a_conversations
+            .iter()
+            .any(|row| row.id == conversation_b)
+    );
+
+    assert!(!handoff_belongs_to_organization(&pool, handoff_b, tenant_a).await?);
+    assert!(handoff_belongs_to_organization(&pool, handoff_b, tenant_b).await?);
+
+    Ok(())
 }
 
 async fn insert_location(pool: &DbPool, name: &str) -> Result<i64, sqlx::Error> {

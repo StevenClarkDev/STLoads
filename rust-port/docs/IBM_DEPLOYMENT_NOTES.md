@@ -14,6 +14,7 @@ These notes capture the deployment assumptions being baked into the Rust port fo
   - `DATABASE_URL`
   - `RUN_MIGRATIONS`
   - `PUBLIC_BASE_URL`
+  - `CORS_ALLOWED_ORIGINS`
   - `DOCUMENT_STORAGE_BACKEND`
   - `DOCUMENT_STORAGE_ROOT`
   - `OBJECT_STORAGE_BUCKET`
@@ -25,9 +26,20 @@ These notes capture the deployment assumptions being baked into the Rust port fo
   - `OBJECT_STORAGE_FORCE_PATH_STYLE`
   - `OBJECT_STORAGE_PREFIX`
   - GOOGLE_MAPS_API_KEY (browser-restricted Google Places key for load-builder autocomplete)
+  - `STRIPE_SECRET`
   - `STRIPE_WEBHOOK_SHARED_SECRET`
+  - `STRIPE_WEBHOOK_CONNECT_SECRET`
+  - `STRIPE_CONNECT_REFRESH_URL`
+  - `STRIPE_CONNECT_RETURN_URL`
   - `TMS_SHARED_SECRET`
-- `/health` reports deployment target, environment, public base URL, and database connectivity state.
+  - `MAIL_MAILER`
+  - `MAIL_HOST`
+  - `MAIL_FROM_ADDRESS`
+  - `MAIL_FAIL_OPEN`
+- `/health` remains available for compatibility and reports deployment target, environment, public base URL, and database connectivity state.
+- `/health/live` is the lightweight liveness endpoint for process-alive checks.
+- `/health/ready` is the dependency readiness endpoint. It returns HTTP 503 when database, object storage, mail, Stripe, TMS worker configuration, or production runtime config checks are not ready.
+- When `APP_ENV=production`, startup now fails before serving traffic if required database, CORS, object storage, Stripe, SMTP, TMS, or public URL settings are missing or placeholder values.
 
 ## Database Target
 
@@ -65,10 +77,13 @@ These notes capture the deployment assumptions being baked into the Rust port fo
 - Assume TLS terminates upstream.
   - The backend should remain reverse-proxy friendly and not require direct public TLS termination in-process.
 - Prefer environment configuration over machine-specific paths or hard-coded hostnames.
-- Treat database connectivity as optional during boot.
-  - If `DATABASE_URL` is missing or temporarily unavailable, the backend still starts and exposes health plus fallback screen data.
+- Treat database connectivity as mandatory in production.
+  - Development and staging smoke runs can still use fallback screen data.
+  - When `APP_ENV=production`, missing `DATABASE_URL` or a failed database connection aborts startup before the backend can serve fallback data.
 - Treat migrations as operator-controlled.
-  - `RUN_MIGRATIONS=true` is explicit so production startup stays predictable.
+  - The web runtime ignores `RUN_MIGRATIONS=true` and never mutates schema during startup.
+  - Run `cargo run -p backend --bin run_migrations` as an explicit deployment step before promoting web traffic.
+  - Use `docs/ENTERPRISE_MIGRATION_RUNBOOK.md` for rollback and failed-migration handling.
 - Treat test databases as disposable.
   - Integration tests should run against a dedicated PostgreSQL test database, never the production IBM database.
 
@@ -83,7 +98,7 @@ These notes capture the deployment assumptions being baked into the Rust port fo
 
 - Run a real staging smoke pass with IBM PostgreSQL plus IBM Cloud Object Storage so the new adapter is validated outside local development.
 - Add structured logging and request correlation suitable for IBM-hosted observability pipelines.
-- Add readiness/liveness split once more write-heavy production flows are online.
+- Wire IBM Code Engine liveness probes to `/health/live` and readiness probes to `/health/ready`.
 - Package the frontend as its own IBM-ready workload or fold it into a final SSR hosting strategy.
 - Pass a browser-restricted GOOGLE_MAPS_API_KEY at frontend build time so Google address autocomplete works on the Rust load builder.
 

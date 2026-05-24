@@ -4,10 +4,13 @@ use axum::{
     http::{HeaderMap, StatusCode},
     routing::{get, post},
 };
+use std::time::Duration as StdDuration;
+
 use db::tms::{
     MaterializedHandoffResult, TmsWebhookMutationResult, apply_status_webhook, close_handoff,
-    create_sync_error, find_active_handoff_by_tms_load, find_handoff_by_id, push_handoff,
-    queue_handoff, requeue_handoff, withdraw_handoff,
+    create_sync_error, find_active_handoff_by_tms_load, find_handoff_by_id,
+    handoff_belongs_to_organization, push_handoff, queue_handoff, requeue_handoff,
+    withdraw_handoff,
 };
 use domain::tms::{
     HandoffStatus, HandoffStatusDescriptor, ReconciliationActionDescriptor, TmsModuleContract,
@@ -23,8 +26,25 @@ use shared::{
 };
 
 use crate::{
-    auth_session, auth_session::ResolvedSession, realtime_bus::RoutedRealtimeEvent, state::AppState,
+    auth_session, auth_session::ResolvedSession, rate_limit::RateLimitPolicy,
+    rate_limit::client_fingerprint, realtime_bus::RoutedRealtimeEvent, state::AppState,
 };
+
+fn tms_webhook_policy(name: &'static str) -> RateLimitPolicy {
+    RateLimitPolicy::new(name, 120, StdDuration::from_secs(60))
+}
+
+fn rate_limit_response(retry_after_seconds: u64) -> TmsWebhookResponse {
+    TmsWebhookResponse {
+        success: false,
+        handoff_id: None,
+        action_label: "rate_limited".into(),
+        message: format!(
+            "Too many TMS webhook attempts. Wait about {} seconds before trying again.",
+            retry_after_seconds
+        ),
+    }
+}
 
 #[derive(Debug, Serialize)]
 struct TmsOverview {
@@ -112,6 +132,17 @@ async fn push(
     headers: HeaderMap,
     Json(payload): Json<TmsHandoffPayload>,
 ) -> Result<Json<ApiResponse<TmsHandoffResponse>>, StatusCode> {
+    if state.config.kill_switch_tms_pushes {
+        return Ok(Json(ApiResponse::ok(TmsHandoffResponse {
+            success: false,
+            handoff_id: None,
+            load_id: None,
+            load_number: None,
+            status_label: "Paused".into(),
+            message: "TMS pushes are temporarily disabled by an operational kill switch.".into(),
+        })));
+    }
+
     let actor_session = authorize_tms_lifecycle_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(unavailable_handoff_response(
@@ -280,6 +311,20 @@ async fn requeue(
         })));
     };
 
+    if !authorized_for_handoff_organization(pool, actor_session.as_ref(), existing_handoff.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        return Ok(Json(ApiResponse::ok(TmsHandoffResponse {
+            success: false,
+            handoff_id: Some(existing_handoff.id),
+            load_id: existing_handoff.load_id,
+            load_number: None,
+            status_label: "Forbidden".into(),
+            message: "This handoff belongs to another organization.".into(),
+        })));
+    }
+
     if !matches!(
         existing_handoff.status.as_str(),
         "push_failed" | "requeue_required"
@@ -372,6 +417,20 @@ async fn withdraw(
             message: "The requested handoff was not found.".into(),
         })));
     };
+
+    if !authorized_for_handoff_organization(pool, actor_session.as_ref(), existing_handoff.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        return Ok(Json(ApiResponse::ok(TmsHandoffResponse {
+            success: false,
+            handoff_id: Some(existing_handoff.id),
+            load_id: existing_handoff.load_id,
+            load_number: None,
+            status_label: "Forbidden".into(),
+            message: "This handoff belongs to another organization.".into(),
+        })));
+    }
 
     if existing_handoff.status != HandoffStatus::Published.as_legacy_label() {
         return Ok(Json(ApiResponse::ok(TmsHandoffResponse {
@@ -467,6 +526,20 @@ async fn close(
         })));
     };
 
+    if !authorized_for_handoff_organization(pool, actor_session.as_ref(), existing_handoff.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        return Ok(Json(ApiResponse::ok(TmsHandoffResponse {
+            success: false,
+            handoff_id: Some(existing_handoff.id),
+            load_id: existing_handoff.load_id,
+            load_number: None,
+            status_label: "Forbidden".into(),
+            message: "This handoff belongs to another organization.".into(),
+        })));
+    }
+
     if !matches!(existing_handoff.status.as_str(), "published" | "withdrawn") {
         return Ok(Json(ApiResponse::ok(TmsHandoffResponse {
             success: false,
@@ -540,6 +613,18 @@ async fn webhook_status(
     headers: HeaderMap,
     Json(payload): Json<TmsStatusWebhookRequest>,
 ) -> Result<Json<ApiResponse<TmsWebhookResponse>>, StatusCode> {
+    let rate_decision = state
+        .check_rate_limit(
+            tms_webhook_policy("tms_webhook_status"),
+            client_fingerprint(&headers),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Ok(Json(ApiResponse::ok(rate_limit_response(
+            rate_decision.retry_after_seconds,
+        ))));
+    }
+
     let actor_session = authorize_tms_webhook_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(TmsWebhookResponse {
@@ -584,6 +669,25 @@ async fn webhook_bulk_status(
     headers: HeaderMap,
     Json(payload): Json<TmsBulkStatusWebhookRequest>,
 ) -> Result<Json<ApiResponse<TmsBulkStatusWebhookResponse>>, StatusCode> {
+    let rate_decision = state
+        .check_rate_limit(
+            tms_webhook_policy("tms_webhook_bulk_status"),
+            client_fingerprint(&headers),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Ok(Json(ApiResponse::ok(TmsBulkStatusWebhookResponse {
+            processed: 0,
+            updated: 0,
+            missing: 0,
+            failed: payload.updates.len(),
+            messages: vec![format!(
+                "Too many bulk TMS webhook attempts. Wait about {} seconds before trying again.",
+                rate_decision.retry_after_seconds
+            )],
+        })));
+    }
+
     let actor_session = authorize_tms_webhook_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(TmsBulkStatusWebhookResponse {
@@ -667,6 +771,18 @@ async fn webhook_close(
     headers: HeaderMap,
     Json(payload): Json<LifecycleWebhookRequest>,
 ) -> Result<Json<ApiResponse<TmsWebhookResponse>>, StatusCode> {
+    let rate_decision = state
+        .check_rate_limit(
+            tms_webhook_policy("tms_webhook_close"),
+            client_fingerprint(&headers),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Ok(Json(ApiResponse::ok(rate_limit_response(
+            rate_decision.retry_after_seconds,
+        ))));
+    }
+
     let actor_session = authorize_tms_webhook_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(TmsWebhookResponse {
@@ -795,6 +911,21 @@ async fn authorize_tms_webhook_request(
     } else {
         Err(StatusCode::FORBIDDEN)
     }
+}
+
+async fn authorized_for_handoff_organization(
+    pool: &db::DbPool,
+    actor_session: Option<&ResolvedSession>,
+    handoff_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let Some(session) = actor_session else {
+        return Ok(true);
+    };
+    let Some(organization_id) = auth_session::session_organization_id(session) else {
+        return Ok(false);
+    };
+
+    handoff_belongs_to_organization(pool, handoff_id, organization_id).await
 }
 
 fn tms_shared_secret_matches(state: &AppState, headers: &HeaderMap) -> bool {

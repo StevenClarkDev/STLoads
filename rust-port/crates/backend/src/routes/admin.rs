@@ -5,14 +5,19 @@ use axum::{
     routing::{get, post},
 };
 use bcrypt::hash;
+use chrono::Utc;
 use db::{
+    audit::{
+        AuditEventInput, CreateBreakGlassSessionInput, create_break_glass_session,
+        has_active_break_glass_session, insert_audit_event,
+    },
     auth::{
         CreateAdminUserInput, UpdateAdminUserProfileInput, create_admin_user_account,
-        delete_admin_user_account, find_user_by_id, find_user_detail_by_user_id, list_admin_users,
-        list_kyc_documents_by_user_id, list_pending_onboarding_users,
-        list_permission_names_for_role, list_user_history_entries, list_user_ids_for_role,
-        replace_role_permissions, review_onboarding_user, update_admin_user_account,
-        update_admin_user_profile,
+        delete_admin_user_account, delete_personal_access_tokens_for_user, find_user_by_id,
+        find_user_detail_by_user_id, list_admin_users, list_kyc_documents_by_user_id,
+        list_pending_onboarding_users, list_permission_names_for_role, list_user_history_entries,
+        list_user_ids_for_role, replace_role_permissions, review_onboarding_user,
+        update_admin_user_account, update_admin_user_profile,
     },
     dispatch::{count_admin_load_legs_filtered, list_admin_load_legs_filtered, review_load_status},
     tms::resolve_sync_error,
@@ -22,10 +27,11 @@ use domain::auth::{
 };
 use serde::{Deserialize, Serialize};
 use shared::{
-    AdminCreateUserRequest, AdminCreateUserResponse, AdminDeleteUserResponse, AdminLoadListScreen,
-    AdminLoadRow, AdminLoadTab, AdminOnboardingReviewScreen, AdminOnboardingReviewUser,
-    AdminReviewLoadRequest, AdminReviewLoadResponse, AdminRolePermissionOption,
-    AdminRolePermissionRow, AdminRolePermissionScreen, AdminUpdateRolePermissionsRequest,
+    AdminBreakGlassRequest, AdminBreakGlassResponse, AdminCreateUserRequest,
+    AdminCreateUserResponse, AdminDeleteUserResponse, AdminLoadListScreen, AdminLoadRow,
+    AdminLoadTab, AdminOnboardingReviewScreen, AdminOnboardingReviewUser, AdminReviewLoadRequest,
+    AdminReviewLoadResponse, AdminRolePermissionOption, AdminRolePermissionRow,
+    AdminRolePermissionScreen, AdminUpdateRolePermissionsRequest,
     AdminUpdateRolePermissionsResponse, AdminUpdateUserProfileRequest,
     AdminUpdateUserProfileResponse, AdminUpdateUserRequest, AdminUpdateUserResponse,
     AdminUserDirectoryRoleOption, AdminUserDirectoryScreen, AdminUserDirectoryStatusOption,
@@ -39,6 +45,7 @@ use crate::{
     auth_session, auth_session::ResolvedSession, realtime_bus::RoutedRealtimeEvent, screen_data,
     state::AppState,
 };
+use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
 struct AdminOverview {
@@ -84,6 +91,7 @@ pub fn router() -> Router<AppState> {
             post(update_user_profile_handler),
         )
         .route("/users/{user_id}/delete", post(delete_user_handler))
+        .route("/break-glass", post(start_break_glass_handler))
         .route("/roles/permissions", get(role_permissions))
         .route(
             "/users/{user_id}/account",
@@ -105,7 +113,7 @@ async fn index(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<AdminOverview>>, StatusCode> {
-    let _session = require_any_permission(
+    let session = require_any_permission(
         &state,
         &headers,
         &[
@@ -125,7 +133,11 @@ async fn index(
     let mut admin_total = 0_usize;
 
     if let Some(pool) = state.pool.as_ref() {
-        for row in list_admin_users(pool).await.unwrap_or_default() {
+        let organization_id = auth_session::session_organization_id(&session);
+        for row in list_admin_users(pool, organization_id)
+            .await
+            .unwrap_or_default()
+        {
             match row.role_id.and_then(UserRole::from_legacy_id) {
                 Some(UserRole::Shipper) => shipper_total += 1,
                 Some(UserRole::Carrier) => carrier_total += 1,
@@ -174,7 +186,7 @@ async fn load_list(
     Query(query): Query<AdminLoadsQuery>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<AdminLoadListScreen>>, StatusCode> {
-    let _session =
+    let session =
         require_any_permission(&state, &headers, &["access_admin_portal", "manage_loads"]).await?;
 
     let active_tab = normalize_admin_load_tab(query.tab.as_deref());
@@ -200,29 +212,31 @@ async fn load_list(
         })));
     };
 
-    let all_count = count_admin_load_legs_filtered(pool, None)
+    let organization_id = auth_session::session_organization_id(&session);
+    let all_count = count_admin_load_legs_filtered(pool, None, organization_id)
         .await
         .unwrap_or_default()
         .max(0) as u64;
-    let pending_count = count_admin_load_legs_filtered(pool, Some(&[1]))
+    let pending_count = count_admin_load_legs_filtered(pool, Some(&[1]), organization_id)
         .await
         .unwrap_or_default()
         .max(0) as u64;
-    let approved_count = count_admin_load_legs_filtered(pool, Some(&[2, 3, 4, 5, 6, 8, 9]))
+    let approved_count =
+        count_admin_load_legs_filtered(pool, Some(&[2, 3, 4, 5, 6, 8, 9]), organization_id)
+            .await
+            .unwrap_or_default()
+            .max(0) as u64;
+    let release_count = count_admin_load_legs_filtered(pool, Some(&[10]), organization_id)
         .await
         .unwrap_or_default()
         .max(0) as u64;
-    let release_count = count_admin_load_legs_filtered(pool, Some(&[10]))
-        .await
-        .unwrap_or_default()
-        .max(0) as u64;
-    let completed_count = count_admin_load_legs_filtered(pool, Some(&[11]))
+    let completed_count = count_admin_load_legs_filtered(pool, Some(&[11]), organization_id)
         .await
         .unwrap_or_default()
         .max(0) as u64;
 
     let filter_statuses = admin_load_tab_statuses(&active_tab);
-    let rows = list_admin_load_legs_filtered(pool, filter_statuses, 30)
+    let rows = list_admin_load_legs_filtered(pool, filter_statuses, organization_id, 30)
         .await
         .unwrap_or_default()
         .into_iter()
@@ -399,7 +413,7 @@ async fn onboarding_reviews(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<AdminOnboardingReviewScreen>>, StatusCode> {
-    let _session =
+    let session =
         require_any_permission(&state, &headers, &["access_admin_portal", "manage_users"]).await?;
 
     let Some(pool) = state.pool.as_ref() else {
@@ -415,82 +429,89 @@ async fn onboarding_reviews(
         })));
     };
 
-    let users = list_pending_onboarding_users(pool)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|row| async move {
-            let documents = list_kyc_documents_by_user_id(pool, row.user_id)
-                .await
-                .unwrap_or_default()
-                .into_iter()
-                .map(|document| KycDocumentItem {
-                    blockchain_label: if document.document_type.eq_ignore_ascii_case("blockchain") {
-                        Some("Anchored to blockchain".into())
-                    } else {
-                        None
-                    },
-                    blockchain_tone: if document.document_type.eq_ignore_ascii_case("blockchain") {
-                        Some("success".into())
-                    } else {
-                        None
-                    },
-                    blockchain_hash_preview: document.hash.as_ref().map(|hash| {
-                        if hash.len() > 24 {
-                            format!("{}...", &hash[..24])
+    let users =
+        list_pending_onboarding_users(pool, auth_session::session_organization_id(&session))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|row| async move {
+                let documents = list_kyc_documents_by_user_id(pool, row.user_id)
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|document| KycDocumentItem {
+                        blockchain_label: if document
+                            .document_type
+                            .eq_ignore_ascii_case("blockchain")
+                        {
+                            Some("Anchored to blockchain".into())
                         } else {
-                            hash.clone()
-                        }
-                    }),
-                    blockchain_hash: document.hash.clone(),
-                    id: document.id.max(0) as u64,
-                    document_name: document.document_name,
-                    document_type: document.document_type,
-                    file_label: document
-                        .original_name
-                        .clone()
-                        .filter(|value| !value.trim().is_empty())
-                        .unwrap_or_else(|| "KYC file".into()),
-                    original_name: document.original_name,
-                    mime_type: document.mime_type,
-                    file_size_bytes: document
-                        .file_size
-                        .and_then(|value| if value >= 0 { Some(value as u64) } else { None }),
-                    uploaded_at_label: format_datetime(&document.created_at),
-                    download_path: Some(format!(
-                        "/auth/onboarding/documents/{}/file",
-                        document.id.max(0) as u64
-                    )),
-                    can_view_file: true,
-                    can_edit: false,
-                    can_verify_blockchain: false,
-                    can_delete: false,
-                })
-                .collect::<Vec<_>>();
+                            None
+                        },
+                        blockchain_tone: if document
+                            .document_type
+                            .eq_ignore_ascii_case("blockchain")
+                        {
+                            Some("success".into())
+                        } else {
+                            None
+                        },
+                        blockchain_hash_preview: document.hash.as_ref().map(|hash| {
+                            if hash.len() > 24 {
+                                format!("{}...", &hash[..24])
+                            } else {
+                                hash.clone()
+                            }
+                        }),
+                        blockchain_hash: document.hash.clone(),
+                        id: document.id.max(0) as u64,
+                        document_name: document.document_name,
+                        document_type: document.document_type,
+                        file_label: document
+                            .original_name
+                            .clone()
+                            .filter(|value| !value.trim().is_empty())
+                            .unwrap_or_else(|| "KYC file".into()),
+                        original_name: document.original_name,
+                        mime_type: document.mime_type,
+                        file_size_bytes: document
+                            .file_size
+                            .and_then(|value| if value >= 0 { Some(value as u64) } else { None }),
+                        uploaded_at_label: format_datetime(&document.created_at),
+                        download_path: Some(format!(
+                            "/auth/onboarding/documents/{}/file",
+                            document.id.max(0) as u64
+                        )),
+                        can_view_file: true,
+                        can_edit: false,
+                        can_verify_blockchain: false,
+                        can_delete: false,
+                    })
+                    .collect::<Vec<_>>();
 
-            AdminOnboardingReviewUser {
-                user_id: row.user_id.max(0) as u64,
-                name: row.name,
-                email: row.email,
-                role_label: row
-                    .role_id
-                    .and_then(UserRole::from_legacy_id)
-                    .map(|role| role.label().to_string())
-                    .unwrap_or_else(|| "Unknown".into()),
-                status_label: AccountStatus::from_legacy_code(row.status)
-                    .map(account_status_label)
-                    .unwrap_or_else(|| format!("Status {}", row.status)),
-                company_name: row.company_name,
-                company_address: row.company_address,
-                submitted_at_label: row
-                    .submitted_at
-                    .as_ref()
-                    .map(format_datetime)
-                    .unwrap_or_else(|| "Not submitted".into()),
-                document_count: row.document_count.max(0) as u64,
-                documents,
-            }
-        });
+                AdminOnboardingReviewUser {
+                    user_id: row.user_id.max(0) as u64,
+                    name: row.name,
+                    email: row.email,
+                    role_label: row
+                        .role_id
+                        .and_then(UserRole::from_legacy_id)
+                        .map(|role| role.label().to_string())
+                        .unwrap_or_else(|| "Unknown".into()),
+                    status_label: AccountStatus::from_legacy_code(row.status)
+                        .map(account_status_label)
+                        .unwrap_or_else(|| format!("Status {}", row.status)),
+                    company_name: row.company_name,
+                    company_address: row.company_address,
+                    submitted_at_label: row
+                        .submitted_at
+                        .as_ref()
+                        .map(format_datetime)
+                        .unwrap_or_else(|| "Not submitted".into()),
+                    document_count: row.document_count.max(0) as u64,
+                    documents,
+                }
+            });
 
     let mut review_users = Vec::new();
     for future in users {
@@ -512,7 +533,7 @@ async fn user_directory(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<AdminUserDirectoryScreen>>, StatusCode> {
-    let _session =
+    let session =
         require_any_permission(&state, &headers, &["access_admin_portal", "manage_users"]).await?;
 
     let Some(pool) = state.pool.as_ref() else {
@@ -530,7 +551,7 @@ async fn user_directory(
         })));
     };
 
-    let users = list_admin_users(pool)
+    let users = list_admin_users(pool, auth_session::session_organization_id(&session))
         .await
         .unwrap_or_default()
         .into_iter()
@@ -621,6 +642,18 @@ async fn user_profile(
     else {
         return Err(StatusCode::NOT_FOUND);
     };
+    if !ensure_admin_can_access_organization(
+        pool,
+        &_session,
+        user.organization_id,
+        "admin_user_profile_viewed",
+        "user",
+        Some(user.id.to_string()),
+    )
+    .await?
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     let details = find_user_detail_by_user_id(pool, user_id)
         .await
@@ -736,6 +769,7 @@ async fn create_user_handler(
 ) -> Result<Json<ApiResponse<AdminCreateUserResponse>>, StatusCode> {
     let session =
         require_any_permission(&state, &headers, &["access_admin_portal", "manage_users"]).await?;
+    require_mfa_step_up(&session)?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(AdminCreateUserResponse {
             success: false,
@@ -794,6 +828,8 @@ async fn create_user_handler(
         pool,
         session.user.id,
         &CreateAdminUserInput {
+            organization_id: auth_session::session_organization_id(&session)
+                .ok_or(StatusCode::FORBIDDEN)?,
             name: payload.name.trim().to_string(),
             email: payload.email.trim().to_ascii_lowercase(),
             password_hash,
@@ -853,6 +889,7 @@ async fn update_user_profile_handler(
 ) -> Result<Json<ApiResponse<AdminUpdateUserProfileResponse>>, StatusCode> {
     let session =
         require_any_permission(&state, &headers, &["access_admin_portal", "manage_users"]).await?;
+    require_mfa_step_up(&session)?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(AdminUpdateUserProfileResponse {
             success: false,
@@ -911,6 +948,29 @@ async fn update_user_profile_handler(
         }
         (None, None) => None,
     };
+
+    let Some(target_user) = find_user_by_id(pool, user_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Ok(Json(ApiResponse::ok(AdminUpdateUserProfileResponse {
+            success: false,
+            user_id: user_id.max(0) as u64,
+            message: "The selected user account was not found.".into(),
+        })));
+    };
+    if !ensure_admin_can_access_organization(
+        pool,
+        &session,
+        target_user.organization_id,
+        "admin_user_profile_updated",
+        "user",
+        Some(user_id.to_string()),
+    )
+    .await?
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     let updated = update_admin_user_profile(
         pool,
@@ -999,6 +1059,29 @@ async fn delete_user_handler(
         })));
     }
 
+    let Some(target_user) = find_user_by_id(pool, user_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Ok(Json(ApiResponse::ok(AdminDeleteUserResponse {
+            success: false,
+            user_id: user_id.max(0) as u64,
+            message: "The selected user account was not found.".into(),
+        })));
+    };
+    if !ensure_admin_can_access_organization(
+        pool,
+        &session,
+        target_user.organization_id,
+        "admin_user_deleted",
+        "user",
+        Some(user_id.to_string()),
+    )
+    .await?
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let deleted = delete_admin_user_account(pool, user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -1036,6 +1119,80 @@ async fn delete_user_handler(
         success: true,
         user_id: user_id.max(0) as u64,
         message: summary,
+    })))
+}
+
+async fn start_break_glass_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<AdminBreakGlassRequest>,
+) -> Result<Json<ApiResponse<AdminBreakGlassResponse>>, StatusCode> {
+    let session =
+        require_any_permission(&state, &headers, &["access_admin_portal", "manage_users"]).await?;
+    require_mfa_step_up(&session)?;
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(AdminBreakGlassResponse {
+            success: false,
+            session_id: None,
+            target_organization_id: payload.target_organization_id,
+            expires_at: None,
+            message: format!(
+                "Break-glass is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        })));
+    };
+
+    let target_organization_id =
+        i64::try_from(payload.target_organization_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let reason = payload.reason.trim();
+    let ticket_ref = payload.ticket_ref.trim();
+    if reason.len() < 12 || ticket_ref.len() < 3 {
+        return Ok(Json(ApiResponse::ok(AdminBreakGlassResponse {
+            success: false,
+            session_id: None,
+            target_organization_id: payload.target_organization_id,
+            expires_at: None,
+            message: "Break-glass requires a clear reason and ticket reference.".into(),
+        })));
+    }
+
+    let actor_organization_id = auth_session::session_organization_id(&session);
+    if actor_organization_id == Some(target_organization_id) {
+        return Ok(Json(ApiResponse::ok(AdminBreakGlassResponse {
+            success: false,
+            session_id: None,
+            target_organization_id: payload.target_organization_id,
+            expires_at: None,
+            message: "Break-glass is only for cross-organization access.".into(),
+        })));
+    }
+
+    let duration_minutes = payload.duration_minutes.unwrap_or(30).clamp(5, 60);
+    let expires_at = Utc::now().naive_utc() + chrono::Duration::minutes(duration_minutes as i64);
+    let session_id = format!("bg_{}", Uuid::new_v4().simple());
+    let break_glass = create_break_glass_session(
+        pool,
+        &CreateBreakGlassSessionInput {
+            id: &session_id,
+            actor_user_id: session.user.id,
+            actor_organization_id,
+            target_organization_id,
+            reason,
+            ticket_ref,
+            expires_at,
+        },
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(ApiResponse::ok(AdminBreakGlassResponse {
+        success: true,
+        session_id: Some(break_glass.id),
+        target_organization_id: payload.target_organization_id,
+        expires_at: Some(break_glass.expires_at.to_string()),
+        message: "Break-glass access started, time-boxed, and written to the audit ledger.".into(),
     })))
 }
 
@@ -1138,6 +1295,30 @@ async fn review_user_handler(
             })));
         }
     };
+
+    let Some(target_user) = find_user_by_id(pool, user_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Ok(Json(ApiResponse::ok(ReviewOnboardingResponse {
+            success: false,
+            user_id: user_id.max(0) as u64,
+            status_label: None,
+            message: "The selected onboarding account was not found.".into(),
+        })));
+    };
+    if !ensure_admin_can_access_organization(
+        pool,
+        &session,
+        target_user.organization_id,
+        "admin_onboarding_reviewed",
+        "user",
+        Some(user_id.to_string()),
+    )
+    .await?
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     let updated = review_onboarding_user(
         pool,
@@ -1246,6 +1427,31 @@ async fn update_user_account_handler(
         })));
     };
 
+    let Some(target_user) = find_user_by_id(pool, user_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Ok(Json(ApiResponse::ok(AdminUpdateUserResponse {
+            success: false,
+            user_id: user_id.max(0) as u64,
+            role_label: None,
+            status_label: None,
+            message: "The selected user account was not found.".into(),
+        })));
+    };
+    if !ensure_admin_can_access_organization(
+        pool,
+        &session,
+        target_user.organization_id,
+        "admin_user_account_updated",
+        "user",
+        Some(user_id.to_string()),
+    )
+    .await?
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let updated = update_admin_user_account(
         pool,
         user_id,
@@ -1269,6 +1475,7 @@ async fn update_user_account_handler(
 
     let updated_role = updated_user.primary_role();
     let updated_status = updated_user.account_status();
+    let _ = delete_personal_access_tokens_for_user(pool, updated_user.id).await;
     let mail_note = match updated_status {
         Some(
             AccountStatus::Approved | AccountStatus::Rejected | AccountStatus::RevisionRequested,
@@ -1344,6 +1551,7 @@ async fn update_role_permissions_handler(
 ) -> Result<Json<ApiResponse<AdminUpdateRolePermissionsResponse>>, StatusCode> {
     let session =
         require_any_permission(&state, &headers, &["access_admin_portal", "manage_roles"]).await?;
+    require_mfa_step_up(&session)?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(AdminUpdateRolePermissionsResponse {
             success: false,
@@ -1410,9 +1618,13 @@ async fn update_role_permissions_handler(
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let affected_user_ids = list_user_ids_for_role(pool, i64::from(role.legacy_id()))
+    let affected_user_ids_raw = list_user_ids_for_role(pool, i64::from(role.legacy_id()))
         .await
-        .unwrap_or_default()
+        .unwrap_or_default();
+    for affected_user_id in &affected_user_ids_raw {
+        let _ = delete_personal_access_tokens_for_user(pool, *affected_user_id).await;
+    }
+    let affected_user_ids = affected_user_ids_raw
         .into_iter()
         .map(|value| value.max(0) as u64)
         .collect::<Vec<_>>();
@@ -1622,6 +1834,66 @@ async fn require_any_permission(
 
     if allowed {
         Ok(session)
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
+async fn ensure_admin_can_access_organization(
+    pool: &db::DbPool,
+    session: &ResolvedSession,
+    target_organization_id: i64,
+    action: &'static str,
+    entity_type: &'static str,
+    entity_id: Option<String>,
+) -> Result<bool, StatusCode> {
+    let actor_organization_id = auth_session::session_organization_id(session);
+    if actor_organization_id == Some(target_organization_id) {
+        return Ok(true);
+    }
+
+    let has_break_glass =
+        has_active_break_glass_session(pool, session.user.id, target_organization_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !has_break_glass {
+        return Ok(false);
+    }
+
+    insert_audit_event(
+        pool,
+        &AuditEventInput {
+            actor_user_id: Some(session.user.id),
+            organization_id: actor_organization_id,
+            target_organization_id: Some(target_organization_id),
+            entity_type,
+            entity_id: entity_id.as_deref(),
+            action,
+            reason: Some("time-boxed break-glass access"),
+            ticket_ref: None,
+            request_id: None,
+            ip_address: None,
+            user_agent: None,
+            source: "rust-backend",
+            metadata: Some(serde_json::json!({
+                "actor_email": session.user.email,
+            })),
+        },
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(true)
+}
+
+fn require_mfa_step_up(session: &ResolvedSession) -> Result<(), StatusCode> {
+    if session
+        .session
+        .permissions
+        .iter()
+        .any(|permission| permission == "mfa_verified")
+    {
+        Ok(())
     } else {
         Err(StatusCode::FORBIDDEN)
     }
@@ -2171,6 +2443,7 @@ fn format_datetime(value: &chrono::NaiveDateTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auth_session;
     use crate::test_support::{
         auth_headers_for_user, insert_load_fixture, insert_user_with_role_status, prepare_pool,
         read_leg_status, test_state,
@@ -2269,6 +2542,94 @@ mod tests {
         assert_eq!(response.status_label, "Approved");
         assert!(response.message.contains("Email notification logged"));
         assert_eq!(read_leg_status(&pool, fixture.leg_id).await?, 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn break_glass_allows_audited_cross_org_user_profile()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let admin_user = insert_user_with_role_status(
+            &pool,
+            "Break Glass Admin",
+            "break-glass-admin@example.com",
+            UserRole::Admin,
+            AccountStatus::Approved,
+        )
+        .await?;
+        let target_user = insert_user_with_role_status(
+            &pool,
+            "Other Tenant Carrier",
+            "other-tenant-carrier@example.com",
+            UserRole::Carrier,
+            AccountStatus::Approved,
+        )
+        .await?;
+        let target_org_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO organizations (name, slug, account_type, status, support_tier, created_at, updated_at)
+             VALUES ('Other Tenant', 'other-tenant-break-glass', 'customer', 'active', 'enterprise', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await?;
+        sqlx::query("UPDATE users SET organization_id = $1 WHERE id = $2")
+            .bind(target_org_id)
+            .bind(target_user.id)
+            .execute(&pool)
+            .await?;
+
+        let normal_headers = auth_headers_for_user(&state, &admin_user).await?;
+        let forbidden =
+            user_profile(State(state.clone()), Path(target_user.id), normal_headers).await;
+        assert!(matches!(forbidden, Err(StatusCode::FORBIDDEN)));
+
+        let mfa_token =
+            auth_session::issue_session_token_with_mfa(&state, &admin_user, true).await?;
+        let mut mfa_headers = HeaderMap::new();
+        mfa_headers.insert(
+            axum::http::header::AUTHORIZATION,
+            axum::http::HeaderValue::from_str(&format!("Bearer {}", mfa_token))?,
+        );
+
+        let break_glass = start_break_glass_handler(
+            State(state.clone()),
+            mfa_headers.clone(),
+            Json(AdminBreakGlassRequest {
+                target_organization_id: target_org_id as u64,
+                reason: "Customer support incident requires profile inspection.".into(),
+                ticket_ref: "SUP-1001".into(),
+                duration_minutes: Some(15),
+            }),
+        )
+        .await
+        .map_err(|status| format!("break-glass request failed with status {status}"))?
+        .0
+        .data;
+        assert!(break_glass.success);
+        assert!(break_glass.session_id.is_some());
+
+        let allowed = user_profile(State(state), Path(target_user.id), mfa_headers)
+            .await
+            .map_err(|status| format!("profile request failed with status {status}"))?;
+        assert_eq!(allowed.0.data.user_id, target_user.id as u64);
+
+        let audit_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*)
+             FROM audit_events
+             WHERE actor_user_id = $1
+               AND target_organization_id = $2
+               AND action IN ('break_glass_started', 'admin_user_profile_viewed')",
+        )
+        .bind(admin_user.id)
+        .bind(target_org_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(audit_count, 2);
 
         Ok(())
     }

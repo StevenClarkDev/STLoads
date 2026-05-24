@@ -5,6 +5,7 @@ mod auth_session;
 mod config;
 mod document_storage;
 mod email;
+mod rate_limit;
 mod realtime_bus;
 mod routes;
 mod screen_data;

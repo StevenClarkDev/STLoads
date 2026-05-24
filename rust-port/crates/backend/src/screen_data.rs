@@ -498,9 +498,15 @@ async fn build_chat_workspace_screen(
 ) -> Result<ChatWorkspaceScreen, sqlx::Error> {
     let viewer_user_id = viewer.user.id;
     let viewer_role = viewer.user.primary_role();
-    let mut conversations =
-        list_recent_conversation_workspace_records_for_user(pool, viewer_user_id, viewer_role, 25)
-            .await?;
+    let viewer_organization_id = crate::auth_session::session_organization_id(viewer);
+    let mut conversations = list_recent_conversation_workspace_records_for_user(
+        pool,
+        viewer_user_id,
+        viewer_role,
+        viewer_organization_id,
+        25,
+    )
+    .await?;
 
     let active_conversation = match requested_conversation_id {
         Some(requested_id) => {
@@ -516,6 +522,7 @@ async fn build_chat_workspace_screen(
                     requested_id,
                     viewer_user_id,
                     viewer_role,
+                    viewer_organization_id,
                 )
                 .await?
             }

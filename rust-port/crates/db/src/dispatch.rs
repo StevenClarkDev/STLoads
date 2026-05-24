@@ -66,6 +66,7 @@ pub struct CommodityTypeRecord {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct LoadRecord {
     pub id: i64,
+    pub organization_id: i64,
     pub load_number: Option<String>,
     pub title: String,
     pub user_id: Option<i64>,
@@ -275,6 +276,7 @@ pub struct LoadBoardLegRecord {
 pub struct LoadLegScopeRecord {
     pub leg_id: i64,
     pub load_id: i64,
+    pub organization_id: i64,
     pub load_owner_user_id: Option<i64>,
     pub booked_carrier_id: Option<i64>,
 }
@@ -315,6 +317,7 @@ pub struct DispatchDeskLegRecord {
 pub struct AdminLoadLegRecord {
     pub leg_id: i64,
     pub load_id: i64,
+    pub organization_id: i64,
     pub leg_code: Option<String>,
     pub load_number: Option<String>,
     pub owner_name: Option<String>,
@@ -379,6 +382,7 @@ pub struct CreatedLoadRecord {
 pub struct LoadDocumentScopeRecord {
     pub document_id: i64,
     pub load_id: i64,
+    pub organization_id: i64,
     pub load_owner_user_id: Option<i64>,
     pub uploaded_by_user_id: Option<i64>,
 }
@@ -396,7 +400,7 @@ pub struct UpsertLoadDocumentParams {
 
 pub async fn list_recent_loads(pool: &DbPool, limit: i64) -> Result<Vec<LoadRecord>, sqlx::Error> {
     sqlx::query_as::<_, LoadRecord>(
-        "SELECT id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight::double precision AS weight,
+        "SELECT id, organization_id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight::double precision AS weight,
                 special_instructions, is_hazardous, is_temperature_controlled, status, leg_count, created_at, updated_at, deleted_at
          FROM loads
          WHERE deleted_at IS NULL
@@ -411,6 +415,7 @@ pub async fn list_recent_loads(pool: &DbPool, limit: i64) -> Result<Vec<LoadReco
 pub async fn list_admin_load_legs_filtered(
     pool: &DbPool,
     status_ids: Option<&[i16]>,
+    organization_id: Option<i64>,
     limit: i64,
 ) -> Result<Vec<AdminLoadLegRecord>, sqlx::Error> {
     sqlx::query_as::<_, AdminLoadLegRecord>(
@@ -418,6 +423,7 @@ pub async fn list_admin_load_legs_filtered(
         SELECT
             ll.id AS leg_id,
             ll.load_id,
+            l.organization_id,
             ll.leg_code,
             l.load_number,
             owner.name AS owner_name,
@@ -442,11 +448,13 @@ pub async fn list_admin_load_legs_filtered(
         LEFT JOIN escrows escrow ON escrow.leg_id = ll.id
         WHERE ll.deleted_at IS NULL
           AND ($1::smallint[] IS NULL OR ll.status_id = ANY($1))
+          AND ($2::bigint IS NULL OR l.organization_id = $2)
         ORDER BY ll.created_at DESC, ll.id DESC
-        LIMIT $2
+        LIMIT $3
         "#,
     )
     .bind(status_ids)
+    .bind(organization_id)
     .bind(limit)
     .fetch_all(pool)
     .await
@@ -455,6 +463,7 @@ pub async fn list_admin_load_legs_filtered(
 pub async fn count_admin_load_legs_filtered(
     pool: &DbPool,
     status_ids: Option<&[i16]>,
+    organization_id: Option<i64>,
 ) -> Result<i64, sqlx::Error> {
     let (total,): (i64,) = sqlx::query_as(
         r#"
@@ -463,9 +472,11 @@ pub async fn count_admin_load_legs_filtered(
         INNER JOIN loads l ON l.id = ll.load_id AND l.deleted_at IS NULL
         WHERE ll.deleted_at IS NULL
           AND ($1::smallint[] IS NULL OR ll.status_id = ANY($1))
+          AND ($2::bigint IS NULL OR l.organization_id = $2)
         "#,
     )
     .bind(status_ids)
+    .bind(organization_id)
     .fetch_one(pool)
     .await?;
 
@@ -477,7 +488,7 @@ pub async fn list_loads_for_user(
     user_id: i64,
 ) -> Result<Vec<LoadRecord>, sqlx::Error> {
     sqlx::query_as::<_, LoadRecord>(
-        "SELECT id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight::double precision AS weight,
+        "SELECT id, organization_id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight::double precision AS weight,
                 special_instructions, is_hazardous, is_temperature_controlled, status, leg_count, created_at, updated_at, deleted_at
          FROM loads
          WHERE deleted_at IS NULL AND user_id = $1
@@ -493,7 +504,7 @@ pub async fn find_load_by_id(
     load_id: i64,
 ) -> Result<Option<LoadRecord>, sqlx::Error> {
     sqlx::query_as::<_, LoadRecord>(
-        "SELECT id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight::double precision AS weight,
+        "SELECT id, organization_id, load_number, title, user_id, load_type_id, equipment_id, commodity_type_id, weight_unit, weight::double precision AS weight,
                 special_instructions, is_hazardous, is_temperature_controlled, status, leg_count, created_at, updated_at, deleted_at
          FROM loads
          WHERE deleted_at IS NULL AND id = $1
@@ -620,6 +631,7 @@ pub async fn find_load_document_scope(
         SELECT
             document.id AS document_id,
             document.load_id,
+            load.organization_id,
             load.user_id AS load_owner_user_id,
             document.uploaded_by_user_id
         FROM load_documents document
@@ -1144,6 +1156,7 @@ pub async fn find_load_leg_scope(
         SELECT
             ll.id AS leg_id,
             ll.load_id,
+            l.organization_id,
             l.user_id AS load_owner_user_id,
             ll.booked_carrier_id
         FROM load_legs ll

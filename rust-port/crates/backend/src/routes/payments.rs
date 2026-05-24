@@ -5,6 +5,8 @@ use axum::{
     http::{HeaderMap, StatusCode},
     routing::{get, post},
 };
+use std::time::Duration as StdDuration;
+
 use db::{
     auth::find_user_by_id,
     dispatch::{find_load_leg_by_id, find_load_leg_scope},
@@ -32,8 +34,24 @@ use shared::{
 use tracing::warn;
 
 use crate::{
-    auth_session, auth_session::ResolvedSession, realtime_bus::RoutedRealtimeEvent, state::AppState,
+    auth_session, auth_session::ResolvedSession, rate_limit::RateLimitPolicy,
+    rate_limit::client_fingerprint, realtime_bus::RoutedRealtimeEvent, state::AppState,
 };
+
+fn payments_policy(name: &'static str) -> RateLimitPolicy {
+    RateLimitPolicy::new(name, 30, StdDuration::from_secs(60 * 60))
+}
+
+fn webhook_policy(name: &'static str) -> RateLimitPolicy {
+    RateLimitPolicy::new(name, 120, StdDuration::from_secs(60))
+}
+
+fn rate_limit_message(flow: &str, retry_after_seconds: u64) -> String {
+    format!(
+        "Too many {} attempts. Wait about {} seconds before trying again.",
+        flow, retry_after_seconds
+    )
+}
 
 #[derive(Debug, Serialize)]
 struct PaymentsOverview {
@@ -134,6 +152,25 @@ async fn connect_onboarding_link(
         }));
     };
 
+    let rate_decision = state
+        .check_rate_limit(
+            payments_policy("stripe_connect_onboarding"),
+            format!("carrier:{}", session.user.id),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(StripeConnectLinkResponse {
+            success: false,
+            user_id: session.user.id,
+            account_id: session.user.stripe_connect_account_id.clone(),
+            onboarding_url: None,
+            message: rate_limit_message(
+                "Stripe Connect onboarding",
+                rate_decision.retry_after_seconds,
+            ),
+        }));
+    }
+
     if session.user.primary_role() != Some(UserRole::Carrier) {
         return Json(ApiResponse::ok(StripeConnectLinkResponse {
             success: false,
@@ -160,6 +197,25 @@ async fn admin_connect_onboarding_link(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .filter(|session| session.user.primary_role() == Some(UserRole::Admin))
         .ok_or(StatusCode::FORBIDDEN)?;
+
+    let rate_decision = state
+        .check_rate_limit(
+            payments_policy("admin_stripe_connect_onboarding"),
+            format!("admin-target:{user_id}"),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Ok(Json(ApiResponse::ok(StripeConnectLinkResponse {
+            success: false,
+            user_id,
+            account_id: None,
+            onboarding_url: None,
+            message: rate_limit_message(
+                "admin Stripe Connect onboarding",
+                rate_decision.retry_after_seconds,
+            ),
+        })));
+    }
 
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(StripeConnectLinkResponse {
@@ -230,11 +286,30 @@ async fn fund_leg_escrow(
         }));
     };
 
+    let rate_decision = state
+        .check_rate_limit(
+            payments_policy("escrow_fund"),
+            format!("{}:{}", session.user.id, leg_id),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(EscrowLifecycleResponse {
+            success: false,
+            leg_id,
+            escrow_id: None,
+            payment_intent_id: None,
+            client_secret: None,
+            transfer_id: None,
+            status_label: "Rate Limited".into(),
+            message: rate_limit_message("escrow funding", rate_decision.retry_after_seconds),
+        }));
+    }
+
     let Some(scope) = find_load_leg_scope(pool, leg_id).await.ok().flatten() else {
         return Json(ApiResponse::ok(missing_leg_response(leg_id)));
     };
 
-    if !can_manage_leg_payments(&session, scope.load_owner_user_id) {
+    if !can_manage_leg_payments(&session, scope.load_owner_user_id, scope.organization_id) {
         return Json(ApiResponse::ok(forbidden_payment_response(
             leg_id,
             "Only the load owner or an admin can fund escrow for this leg.",
@@ -487,11 +562,30 @@ async fn hold_leg_escrow(
         }));
     };
 
+    let rate_decision = state
+        .check_rate_limit(
+            payments_policy("escrow_hold"),
+            format!("{}:{}", session.user.id, leg_id),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(EscrowLifecycleResponse {
+            success: false,
+            leg_id,
+            escrow_id: None,
+            payment_intent_id: None,
+            client_secret: None,
+            transfer_id: None,
+            status_label: "Rate Limited".into(),
+            message: rate_limit_message("escrow hold", rate_decision.retry_after_seconds),
+        }));
+    }
+
     let Some(scope) = find_load_leg_scope(pool, leg_id).await.ok().flatten() else {
         return Json(ApiResponse::ok(missing_leg_response(leg_id)));
     };
 
-    if !can_manage_leg_payments(&session, scope.load_owner_user_id) {
+    if !can_manage_leg_payments(&session, scope.load_owner_user_id, scope.organization_id) {
         return Json(ApiResponse::ok(forbidden_payment_response(
             leg_id,
             "Only the load owner or an admin can place escrow on hold.",
@@ -597,6 +691,20 @@ async fn release_leg_escrow(
     headers: HeaderMap,
     Json(payload): Json<EscrowReleaseRequest>,
 ) -> Json<ApiResponse<EscrowLifecycleResponse>> {
+    if state.config.kill_switch_payments {
+        return Json(ApiResponse::ok(EscrowLifecycleResponse {
+            success: false,
+            leg_id,
+            escrow_id: None,
+            payment_intent_id: None,
+            client_secret: None,
+            transfer_id: None,
+            status_label: "Paused".into(),
+            message: "Payment release is temporarily disabled by an operational kill switch."
+                .into(),
+        }));
+    }
+
     let Some(pool) = state.pool.as_ref() else {
         return Json(ApiResponse::ok(unavailable_payment_response(
             &state, leg_id, "Release",
@@ -617,14 +725,44 @@ async fn release_leg_escrow(
         }));
     };
 
+    let rate_decision = state
+        .check_rate_limit(
+            payments_policy("escrow_release"),
+            format!("{}:{}", session.user.id, leg_id),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(EscrowLifecycleResponse {
+            success: false,
+            leg_id,
+            escrow_id: None,
+            payment_intent_id: None,
+            client_secret: None,
+            transfer_id: None,
+            status_label: "Rate Limited".into(),
+            message: rate_limit_message("escrow release", rate_decision.retry_after_seconds),
+        }));
+    }
+
     let Some(scope) = find_load_leg_scope(pool, leg_id).await.ok().flatten() else {
         return Json(ApiResponse::ok(missing_leg_response(leg_id)));
     };
 
-    if !can_manage_leg_payments(&session, scope.load_owner_user_id) {
+    if !can_manage_leg_payments(&session, scope.load_owner_user_id, scope.organization_id) {
         return Json(ApiResponse::ok(forbidden_payment_response(
             leg_id,
             "Only the load owner or an admin can release escrow for this leg.",
+        )));
+    }
+    if !session
+        .session
+        .permissions
+        .iter()
+        .any(|permission| permission == "mfa_verified")
+    {
+        return Json(ApiResponse::ok(forbidden_payment_response(
+            leg_id,
+            "MFA step-up is required before releasing escrow.",
         )));
     }
 
@@ -848,6 +986,20 @@ async fn stripe_webhook(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<ApiResponse<StripeWebhookResponse>>, StatusCode> {
+    let rate_decision = state
+        .check_rate_limit(
+            webhook_policy("stripe_webhook"),
+            client_fingerprint(&headers),
+        )
+        .await;
+    if !rate_decision.allowed {
+        warn!(
+            retry_after_seconds = rate_decision.retry_after_seconds,
+            "Stripe webhook rate limited"
+        );
+        return Err(StatusCode::TOO_MANY_REQUESTS);
+    }
+
     let actor_session = match authorize_payments_webhook(&state, &headers, &body).await {
         Ok(session) => session,
         Err(status) => {
@@ -1486,9 +1638,14 @@ async fn resolve_webhook_escrow_context(
     ))
 }
 
-fn can_manage_leg_payments(session: &ResolvedSession, load_owner_user_id: Option<i64>) -> bool {
-    session.user.primary_role() == Some(UserRole::Admin)
-        || load_owner_user_id == Some(session.user.id)
+fn can_manage_leg_payments(
+    session: &ResolvedSession,
+    load_owner_user_id: Option<i64>,
+    organization_id: i64,
+) -> bool {
+    crate::auth_session::session_matches_organization(session, organization_id)
+        && (session.user.primary_role() == Some(UserRole::Admin)
+            || load_owner_user_id == Some(session.user.id))
 }
 
 fn publish_payments_event(

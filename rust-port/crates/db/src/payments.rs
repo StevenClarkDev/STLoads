@@ -81,6 +81,25 @@ pub async fn find_escrow_for_leg(
     .await
 }
 
+pub async fn find_escrow_for_leg_in_organization(
+    pool: &DbPool,
+    leg_id: i64,
+    organization_id: i64,
+) -> Result<Option<EscrowRecord>, sqlx::Error> {
+    sqlx::query_as::<_, EscrowRecord>(
+        "SELECT id, leg_id, payer_user_id, payee_user_id, currency, amount, platform_fee, status,
+                transfer_group, payment_intent_id, charge_id, transfer_id, created_at, updated_at
+         FROM escrows
+         WHERE leg_id = $1 AND organization_id = $2
+         ORDER BY id DESC
+         LIMIT 1",
+    )
+    .bind(leg_id)
+    .bind(organization_id)
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn find_escrow_by_payment_intent_id(
     pool: &DbPool,
     payment_intent_id: &str,

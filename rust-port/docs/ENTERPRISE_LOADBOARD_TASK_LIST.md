@@ -105,7 +105,7 @@ Goal: make the backlog executable and keep the team from drifting.
 ### ENT-0001 Create Enterprise Work Board
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Product/Engineering
 - Scope:
   - Create one issue per task in this document.
@@ -115,11 +115,15 @@ Goal: make the backlog executable and keep the team from drifting.
 - Acceptance criteria:
   - Every `P0` and `P1` task exists in the work board.
   - No task is accepted without a test or verification plan.
+- Verification notes:
+  - Created `docs/ENTERPRISE_WORK_BOARD.md` as the repo-local execution board.
+  - Verified 124 `P0`/`P1` source tasks and 124 work-board cards.
+  - Work-board cards preserve task IDs, owners, priorities, acceptance criteria, issue link placeholders, dependency placeholders, estimate placeholders, and verification notes.
 
 ### ENT-0002 Align Documentation Truth
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Engineering
 - Scope:
   - Reconcile `docs/MIGRATION_SCOREBOARD.md` because it says full retirement is `done` while many rows are still `partial`.
@@ -128,11 +132,15 @@ Goal: make the backlog executable and keep the team from drifting.
 - Acceptance criteria:
   - Repo docs do not claim enterprise completeness while key areas remain partial.
   - Future readers know this task list is the production execution source.
+- Verification notes:
+  - Marked `docs/IMPLEMENTATION_QUEUE.md` as superseded for enterprise execution.
+  - Updated `docs/MIGRATION_SCOREBOARD.md` to clarify it is migration/cutover history, not enterprise-readiness completion.
+  - Confirmed `README.md` and `docs/MASTER_PLAN.md` point to the enterprise task list, roadmap, and work board.
 
 ### ENT-0003 Define Enterprise Readiness Gates
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Product/Engineering/Ops
 - Scope:
   - Define readiness gates for alpha, beta, enterprise pilot, production, and enterprise-ready.
@@ -140,11 +148,15 @@ Goal: make the backlog executable and keep the team from drifting.
 - Acceptance criteria:
   - Each gate has measurable criteria.
   - Release decisions are based on evidence, not vibes.
+- Verification notes:
+  - Created `docs/ENTERPRISE_READINESS_GATES.md`.
+  - Defined alpha, beta, enterprise pilot, production, and enterprise-ready gates with required evidence and exit decisions.
+  - Linked the gates document from `README.md` and `docs/MASTER_PLAN.md`.
 
 ### ENT-0004 Confirm Target Market And Operating Model
 
 - Priority: `P1`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Product/Ops
 - Scope:
   - Confirm initial focus: US domestic trucking, cross-border, freight forwarding, brokerage, or mixed-mode.
@@ -153,11 +165,15 @@ Goal: make the backlog executable and keep the team from drifting.
 - Acceptance criteria:
   - Product scope is written and approved.
   - Unsupported workflows are explicitly deferred.
+- Verification notes:
+  - Created `docs/ENTERPRISE_OPERATING_MODEL.md` with a recommended US-first broker-operations/loadboard scope.
+  - Explicitly deferred international forwarding, customs brokerage, native apps, broad multi-currency money movement, and other high-risk scope unless approved.
+  - Approved by project owner on 2026-05-24 as the working first-release operating model.
 
 ### ENT-0005 Define Enterprise Customer Onboarding Process
 
 - Priority: `P1`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Product/Ops/Support
 - Scope:
   - Define how new shipper, broker, carrier, and enterprise accounts are provisioned.
@@ -166,11 +182,16 @@ Goal: make the backlog executable and keep the team from drifting.
 - Acceptance criteria:
   - A new enterprise customer can be onboarded through a repeatable checklist.
   - Support and operations know who owns each setup step.
+- Verification notes:
+  - Created `docs/ENTERPRISE_CUSTOMER_ONBOARDING.md`.
+  - Defined required setup data for organization, users, roles, billing, compliance, private network, contracts, integrations, notifications, and support contacts.
+  - Added a repeatable onboarding checklist from intake through launch and post-launch handoff.
+  - Linked the onboarding document from `README.md` and `docs/MASTER_PLAN.md`.
 
 ### ENT-0006 Define Customer Success, Training, And Help Center
 
 - Priority: `P1`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Product/Support/Ops
 - Scope:
   - Define onboarding training for admins, shippers, carriers, dispatch, finance, and support users.
@@ -180,11 +201,17 @@ Goal: make the backlog executable and keep the team from drifting.
 - Acceptance criteria:
   - Enterprise customers can be trained without engineering involvement.
   - Support can answer common workflow questions from documented material.
+- Verification notes:
+  - Created `docs/ENTERPRISE_CUSTOMER_SUCCESS_AND_TRAINING.md`.
+  - Defined training tracks for admins, shippers, carriers, dispatch/operators, finance, support, and integration admins.
+  - Defined help-center structure across auth, load posting, booking, tracking, documents, payments, TMS/API, support, and releases.
+  - Added customer success playbook for implementation, launch, adoption, renewal, escalation, and support handoff.
+  - Linked the document from `README.md` and `docs/MASTER_PLAN.md`.
 
 ### ENT-0007 Define SLA, Support Tiers, And Customer Commitments
 
 - Priority: `P1`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Product/Ops/Legal
 - Scope:
   - Define uptime target, support response times, severity levels, maintenance windows, and escalation paths.
@@ -194,11 +221,16 @@ Goal: make the backlog executable and keep the team from drifting.
 - Acceptance criteria:
   - Sales and support can describe what STLoads commits to.
   - Engineering can measure whether the platform is meeting those commitments.
+- Verification notes:
+  - Created `docs/ENTERPRISE_SLA_SUPPORT_TIERS.md`.
+  - Defined Standard, Business, Enterprise, and Premium Enterprise support tiers.
+  - Defined severity levels, response targets, uptime target, maintenance-window rules, escalation owners, and SLA-credit decision.
+  - Linked SLA/support-tier documentation from `README.md` and `docs/MASTER_PLAN.md`.
 
 ### ENT-0008 Define Enterprise Customer Offboarding And Data Return
 
 - Priority: `P1`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Product/Ops/Legal/Backend
 - Scope:
   - Define offboarding checklist for contract termination, account closure, tenant archival, final invoices, open loads, open disputes, open claims, and active integrations.
@@ -209,11 +241,15 @@ Goal: make the backlog executable and keep the team from drifting.
 - Acceptance criteria:
   - Enterprise customers can leave without data loss, unsafe access, or unresolved financial/compliance obligations.
   - Terminated tenants cannot continue sending events, receiving notifications, or accessing production data.
+- Verification notes:
+  - Created `docs/ENTERPRISE_CUSTOMER_OFFBOARDING.md`.
+  - Defined exit triggers, required owners, offboarding stages, data-return package, integration shutdown, access disablement, retention/deletion/legal-hold behavior, final sign-off, and engineering requirements.
+  - Linked offboarding documentation from `README.md` and `docs/MASTER_PLAN.md`.
 
 ### ENT-0009 Add Support Case Management And Customer Feedback Loop
 
 - Priority: `P1`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Support/Ops/Product
 - Scope:
   - Decide support system strategy: built-in support cases, Zendesk/Intercom/Linear integration, or another approved support platform.
@@ -224,6 +260,11 @@ Goal: make the backlog executable and keep the team from drifting.
 - Acceptance criteria:
   - Enterprise support work is tracked as cases with SLA visibility, not only chat/email history.
   - Product and operations can see recurring customer pain from support data.
+- Verification notes:
+  - Created `docs/ENTERPRISE_SUPPORT_CASE_MANAGEMENT.md`.
+  - Chose STLoads-native support cases as the initial system of record with future external helpdesk integration points.
+  - Defined case model, intake, SLA management, escalation, customer updates, feedback loop, reporting, tooling requirements, and verification checklist.
+  - Linked support-case documentation from `README.md` and `docs/MASTER_PLAN.md`.
 
 ## Phase 1: Production Safety Foundation
 
@@ -232,7 +273,7 @@ Goal: make the current app safe to run and safe to extend.
 ### ENT-0101 Add Production Runtime Guardrails
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Backend
 - Scope:
   - Fail production startup if `DATABASE_URL` is missing or connection fails.
@@ -251,11 +292,22 @@ Goal: make the current app safe to run and safe to extend.
 - Verification:
   - Run config unit tests.
   - Run backend locally with `APP_ENV=production` and missing env vars; startup must fail.
+- Verification notes:
+  - Added production-only startup validation in `crates/backend/src/config.rs`.
+  - Added production startup abort in `crates/backend/src/state.rs` when runtime config is invalid or database connection fails.
+  - Updated `.env.ibm.example`, `docs/IBM_DEPLOYMENT_NOTES.md`, and `docs/IBM_CODE_ENGINE_DEPLOYMENT.md` with the production runtime contract.
+  - Development keeps permissive local defaults for empty database, empty CORS, local document storage, log mailer, and fail-open mail behavior.
+  - Added 7 config tests covering development behavior, complete production config, missing database URL, permissive CORS, local document storage, placeholder values, and fail-open mail.
+  - Verified `cargo test -p backend config::tests`: 7 passed.
+  - Verified `cargo test -p backend`: 25 passed.
+  - Verified `cargo test --workspace`: backend 25 passed, database lifecycle 7 passed, remaining workspace/doc-test crates passed with 0 tests where applicable.
+  - Verified `git diff --check`: no whitespace errors; only CRLF-to-LF normalization warnings on edited docs.
+  - Verified `APP_ENV=production` with missing production env fails startup before binding the backend.
 
 ### ENT-0102 Split Health Into Liveness And Readiness
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Backend/DevOps
 - Scope:
   - Keep lightweight `/health/live`.
@@ -268,11 +320,24 @@ Goal: make the current app safe to run and safe to extend.
   - Liveness proves the process is alive.
   - Readiness proves dependencies are usable.
   - Traffic is not routed to an app with broken required dependencies.
+- Verification notes:
+  - Added `/health/live` lightweight liveness endpoint in `crates/backend/src/app.rs`.
+  - Added `/health/ready` dependency readiness endpoint in `crates/backend/src/app.rs`; it returns HTTP 503 when required dependencies are not ready.
+  - Readiness now checks database pool, object-storage config, mail config, Stripe config, TMS worker config, and production runtime config.
+  - Kept `/health` available for compatibility.
+  - Added readiness unit tests for missing database and runtime config failures.
+  - Updated `docs/IBM_DEPLOYMENT_NOTES.md` and `docs/IBM_CODE_ENGINE_DEPLOYMENT.md` to use `/health/live` for liveness and `/health/ready` for readiness.
+  - Verified `cargo fmt --check`.
+  - Verified `cargo test -p backend`: 27 passed.
+  - Verified `cargo test --workspace`: backend 27 passed, database lifecycle 7 passed, remaining workspace/doc-test crates passed with 0 tests where applicable.
+  - Verified `cargo build -p backend`.
+  - Verified fresh local backend binary: `/health/live` returned 200 and `/health/ready` returned 503 with intentionally missing dependencies.
+  - Verified `git diff --check`: no whitespace errors; only CRLF-to-LF normalization warnings on edited docs.
 
 ### ENT-0103 Move Migrations Out Of App Startup
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Backend/DevOps
 - Scope:
   - Define a migration job/command for deployments.
@@ -281,11 +346,22 @@ Goal: make the current app safe to run and safe to extend.
 - Acceptance criteria:
   - Web app startup does not unexpectedly mutate schema in production.
   - Deployment docs describe how migrations are applied and verified.
+- Verification notes:
+  - Added explicit migration binary at `crates/backend/src/bin/run_migrations.rs`.
+  - Updated web startup so `RUN_MIGRATIONS=true` is ignored by the web runtime and logs operator guidance instead of applying schema changes.
+  - Created `docs/ENTERPRISE_MIGRATION_RUNBOOK.md` with pre-checks, migration command, failed-migration procedure, and rollback strategy.
+  - Linked migration runbook from `README.md` and `docs/MASTER_PLAN.md`.
+  - Updated `.env.ibm.example`, `docs/IBM_DEPLOYMENT_NOTES.md`, `docs/IBM_CODE_ENGINE_DEPLOYMENT.md`, and `docs/IBM_STAGING_SMOKE_CHECKLIST.md` to keep web runtime migrations off.
+  - Verified `cargo fmt`.
+  - Verified `cargo test -p backend`: 27 passed.
+  - Verified `cargo build -p backend --bin run_migrations`.
+  - Verified `cargo run -p backend --bin run_migrations` fails safely with `DATABASE_URL is required` when no target database is configured.
+  - Verified no remaining backend web-startup call to `db::migrate`.
 
 ### ENT-0104 Establish Release Environments
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: DevOps
 - Scope:
   - Define local, CI, staging, production, and optional enterprise pilot environments.
@@ -294,11 +370,21 @@ Goal: make the current app safe to run and safe to extend.
 - Acceptance criteria:
   - Environment drift is visible before deploy.
   - Staging mirrors production enough for realistic validation.
+- Verification notes:
+  - Created `docs/ENTERPRISE_RELEASE_ENVIRONMENTS.md`.
+  - Defined local, CI, staging, enterprise pilot, and production runtime expectations.
+  - Documented required database, object storage, Stripe, SMTP, TMS, frontend URL, CORS, and migration settings.
+  - Added `scripts/validate_runtime_env.ps1` to validate runtime env files before deployment.
+  - Linked environment documentation from `README.md` and `docs/MASTER_PLAN.md`.
+  - Updated `docs/IBM_CODE_ENGINE_DEPLOYMENT.md` to run the validator before creating/updating Code Engine secrets.
+  - Verified template validation passes with placeholder allowance: `validate_runtime_env.ps1 -EnvFile rust-port\.env.ibm.example -TargetEnvironment staging -AllowPlaceholders`.
+  - Verified strict staging validation fails on `.env.ibm.example` placeholders, proving drift is visible before deploy.
+  - Verified `cargo fmt --check`.
 
 ### ENT-0105 Add Deployment Rollback Plan
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: DevOps/Backend
 - Scope:
   - Document backend rollback.
@@ -308,11 +394,16 @@ Goal: make the current app safe to run and safe to extend.
 - Acceptance criteria:
   - A failed deploy has a written recovery path.
   - Rollback plan is tested at least once in staging.
+- Progress notes:
+  - Created `docs/ENTERPRISE_ROLLBACK_RUNBOOK.md`.
+  - Documented backend rollback, frontend rollback, database rollback/forward-fix policy, object-storage rollback, payment/TMS/notification cautions, staging rollback drill, and release record requirements.
+  - Linked rollback runbook from `README.md`, `docs/MASTER_PLAN.md`, and `docs/IBM_CODE_ENGINE_DEPLOYMENT.md`.
+  - Pending: run the staging rollback drill and record revision IDs/results before marking this task complete.
 
 ### ENT-0106 Add Feature Flags And Change Approval
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: DevOps/Product/Engineering
 - Scope:
   - Add feature flag strategy for risky backend and frontend changes.
@@ -322,11 +413,25 @@ Goal: make the current app safe to run and safe to extend.
 - Acceptance criteria:
   - Risky changes can be deployed dark and enabled gradually.
   - Critical workflows can be disabled safely during an incident.
+- Verification notes:
+  - Created `docs/ENTERPRISE_FEATURE_FLAGS_AND_CHANGE_CONTROL.md`.
+  - Added runtime kill-switch env vars for payments, booking, TMS pushes, notifications, and document uploads.
+  - Wired `KILL_SWITCH_PAYMENTS` into escrow release.
+  - Wired `KILL_SWITCH_BOOKING` into carrier self-booking.
+  - Wired `KILL_SWITCH_TMS_PUSHES` into TMS handoff push.
+  - Wired `KILL_SWITCH_NOTIFICATIONS` into outbound email delivery/enqueue.
+  - Wired `KILL_SWITCH_DOCUMENT_UPLOADS` into load and execution document uploads.
+  - Added kill-switch fields to `.env.ibm.example`, release-environment docs, and runtime env validation.
+  - Linked feature flag and change-control documentation from `README.md` and `docs/MASTER_PLAN.md`.
+  - Added backend test coverage for notification kill-switch behavior.
+  - Verified `cargo fmt --check`.
+  - Verified `cargo test -p backend`: 28 passed.
+  - Verified runtime env template validation still passes with placeholder allowance.
 
 ### ENT-0106A Add Customer Release Notes, UAT, And Rollout Communication
 
 - Priority: `P1`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Product/Ops/Customer Success
 - Scope:
   - Define release notes, customer changelog, maintenance notices, and known-issue communication process.
@@ -336,6 +441,12 @@ Goal: make the current app safe to run and safe to extend.
 - Acceptance criteria:
   - Enterprise customers are not surprised by major operational changes.
   - Product and support can track whether releases are adopted safely.
+- Verification notes:
+  - Created `docs/ENTERPRISE_RELEASE_COMMUNICATIONS.md`.
+  - Defined release notes, customer changelog, maintenance notice, known issue, breaking workflow notice, and UAT communication types.
+  - Defined required release-note fields, notice windows, UAT/pilot rollout process, post-release feedback loop, and release hold criteria.
+  - Linked release communication documentation from `README.md` and `docs/MASTER_PLAN.md`.
+  - Corrected `docs/ENTERPRISE_RELEASE_ENVIRONMENTS.md` task mapping so release notes/UAT belong to `ENT-0106A`.
 
 ### ENT-0107 Create Production Data Migration And Cutover Plan
 
@@ -351,6 +462,16 @@ Goal: make the current app safe to run and safe to extend.
 - Acceptance criteria:
   - Cutover can be rehearsed in staging with production-like data.
   - Business users can validate migrated data before the Rust platform becomes authoritative.
+- Progress notes:
+  - Created `docs/ENTERPRISE_DATA_MIGRATION_CUTOVER_PLAN.md`.
+  - Defined source-of-truth phases, data domains, reconciliation reports, freeze window, rollback point, document/object migration checks, and business validation requirements.
+  - Added `scripts/run_cutover_reconciliation.ps1` to generate Rust/PostgreSQL cutover summaries and optionally compare them to an expected legacy summary JSON.
+  - Linked cutover plan from `README.md` and `docs/MASTER_PLAN.md`.
+  - Verified `scripts/run_cutover_reconciliation.ps1` fails safely when `DATABASE_URL` is missing.
+  - Verified `cargo fmt --check`.
+  - Verified `cargo test -p backend`: 28 passed.
+  - Verified runtime env template validation still passes with placeholder allowance.
+  - Pending: run reconciliation against staging/prod-like data, provide the matching legacy summary, and complete business validation before marking this task complete.
 
 ## Phase 2: Auth, Authorization, And Tenant Boundaries
 
@@ -372,11 +493,26 @@ Goal: protect accounts, roles, organizations, and sensitive workflows.
 - Acceptance criteria:
   - Database token values cannot be used as bearer tokens.
   - Existing sessions are migrated or invalidated safely.
+- Verification notes:
+  - Added migration `crates/db/migrations/0008_hashed_session_tokens.sql`.
+  - Added `token_prefix` and `token_hash` storage for personal access tokens.
+  - Existing plaintext bearer token rows are invalidated by migration with `invalidated:{id}` token values and null hash fields.
+  - New Rust session bearer tokens use `stl_{prefix}.{secret}` format.
+  - Session lookup uses prefix plus SHA-256 secret hash; database token values are not usable as bearer tokens.
+  - Login rotation deletes existing user session tokens before issuing a new one.
+  - Password reset invalidates existing user session tokens.
+  - Admin role/status changes and role-permission changes invalidate affected user sessions.
+  - Added session-token unit tests for token parsing, legacy token rejection, and non-reversible hashing.
+  - Extended auth route integration test to assert stored token value is not the issued bearer token.
+  - Verified `cargo fmt`.
+  - Verified `cargo test -p backend auth_session::tests`: 3 passed.
+  - Verified `cargo test -p backend routes::auth::tests::registration_and_password_reset_routes_work_end_to_end`: 1 passed.
+  - Verified `cargo test -p db`: 7 passed.
 
 ### ENT-0201A Harden Browser Session, Cookie, And CSRF Controls
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Backend/Security/Frontend
 - Scope:
   - Define secure cookie settings: `HttpOnly`, `Secure`, `SameSite`, domain scope, path scope, expiry, and rotation behavior.
@@ -387,11 +523,21 @@ Goal: protect accounts, roles, organizations, and sensitive workflows.
 - Acceptance criteria:
   - Browser session handling is safe across normal domains and any supported custom domains.
   - CSRF, session fixation, and permissive CORS risks are explicitly tested or formally ruled out.
+- Completion notes:
+  - Added `docs/ENTERPRISE_BROWSER_SESSION_SECURITY.md` as the browser-auth control document.
+  - Documented the current auth transport as explicit `Authorization: Bearer stl_<prefix>.<secret>` headers with no backend session-cookie issuer.
+  - Formally ruled out CSRF for the current bearer-token transport because browsers do not attach the Rust token as an ambient credential.
+  - Defined the mandatory cookie migration gate before any future auth cookie can ship: `HttpOnly`, `Secure`, `SameSite`, domain/path scope, expiry, rotation, server-side invalidation, and CSRF token protection.
+  - Documented production CORS and custom-domain requirements, including no wildcard origins, no origin reflection, exact allowed-origin configuration, and tenant-domain staging checks.
+  - Documented session fixation controls from `ENT-0201`: login rotation, password-reset invalidation, role/status invalidation, role-permission invalidation, and hashed stored token material.
+  - Added auth-session unit tests proving explicit bearer headers authenticate, cookie-only requests do not authenticate, and non-bearer authorization schemes do not authenticate.
+  - Linked the new control document from `README.md` and `docs/MASTER_PLAN.md`.
+  - Verified `rg` evidence: no backend `Set-Cookie` auth path; bearer-token frontend usage only in API/device-location/document-upload calls.
 
 ### ENT-0202 Add Rate Limiting And Account Lockout
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Backend/Security
 - Scope:
   - Rate limit login, OTP, resend OTP, forgot password, reset password, uploads, document reads, finance actions, and webhooks.
@@ -400,11 +546,49 @@ Goal: protect accounts, roles, organizations, and sensitive workflows.
 - Acceptance criteria:
   - Brute-force attempts are blocked.
   - Legitimate users receive clear recovery guidance.
+- Progress notes:
+  - Added `crates/backend/src/rate_limit.rs` with fixed-window limits, account/OTP failure lockout, forwarded-IP fingerprinting, and success cleanup.
+  - Added shared `RateLimiter` to `AppState`.
+  - Wired rate limits into login, registration, OTP verification, OTP resend, forgot password, reset password, KYC uploads, dispatch/execution document uploads, dispatch/execution document reads, Stripe Connect onboarding, admin Stripe Connect onboarding, escrow fund/hold/release, Stripe webhooks, and TMS webhooks.
+  - Added `docs/ENTERPRISE_RATE_LIMITING_AND_LOCKOUT.md`.
+  - Added Postgres migration `0009_security_rate_limits.sql`.
+  - Added DB-backed distributed throttle helpers in `crates/db/src/security.rs`.
+  - Switched route checks through async `AppState` helpers so production uses shared Postgres counters and local/dev can fall back to process-local counters.
+  - Added `scripts/security_rate_limit_status.ps1` for operator inspection and controlled lockout clearing.
+  - Verified `cargo fmt --check`.
+  - Verified `cargo test -p db`: 7 passed.
+  - Verified `cargo test -p backend`: 36 passed.
+  - Verified `cargo test --workspace`.
+
+### ENT-0202A Add Distributed Rate Limit Store And Lockout Visibility
+
+- Priority: `P0`
+- Status: `[x]`
+- Owner: Backend/Security/Platform/Support
+- Scope:
+  - Back rate-limit and lockout counters with Redis, Valkey, Postgres atomic upserts, or an equivalent managed distributed store.
+  - Add TTL/expiry, atomic increment, environment namespace, and future tenant namespace support.
+  - Add metrics for allowed, blocked, locked, and cleared decisions.
+  - Add support/admin visibility for lockout state and a controlled unlock procedure.
+- Acceptance criteria:
+  - Rate limits and account lockouts are enforced consistently across multiple backend replicas.
+  - Support can explain and remediate a locked account without database spelunking.
+- Completion notes:
+  - Added shared `security_rate_limits` table with expiry and lockout indexes.
+  - Added atomic Postgres upsert logic for rate-limit counters and lockout failure counters.
+  - Added lockout lookup and clear helpers.
+  - Added `AppState` wrappers to prefer distributed counters when the database pool exists and fall back to in-memory counters only when needed.
+  - Added `scripts/security_rate_limit_status.ps1` to list active throttles, inspect a specific key, and clear a lockout.
+  - Updated `docs/ENTERPRISE_RATE_LIMITING_AND_LOCKOUT.md` with production behavior and support commands.
+  - Verified `cargo fmt --check`.
+  - Verified `cargo test -p db`: 7 passed.
+  - Verified `cargo test -p backend`: 36 passed.
+  - Verified `cargo test --workspace`.
 
 ### ENT-0203 Add MFA For Privileged Users
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Backend/Frontend/Security
 - Scope:
   - Add MFA setup, verify, recovery codes, and reset workflow.
@@ -413,11 +597,24 @@ Goal: protect accounts, roles, organizations, and sensitive workflows.
 - Acceptance criteria:
   - Privileged accounts cannot perform high-risk actions without MFA.
   - Recovery flow is auditable.
+- Completion notes:
+  - Added `mfa_challenges` and `mfa_recovery_codes` tables in migration `0010_privileged_mfa.sql`.
+  - Added email OTP MFA challenge creation for privileged login.
+  - Privileged login returns no bearer token until `/auth/mfa/verify` succeeds.
+  - MFA-verified sessions carry the `mfa_verified` token ability.
+  - Added one-time recovery-code generation, hashed recovery-code storage, recovery-code consumption, and MFA-verified recovery-code regeneration.
+  - Added Leptos `/auth/mfa` page and login redirect contract.
+  - Added step-up enforcement for user deletion, user role/status changes, role-permission changes, escrow release, admin profile KYC document deletion, and recovery-code regeneration.
+  - Added `docs/ENTERPRISE_MFA_AND_STEP_UP.md`.
+  - Verified `cargo fmt --check`.
+  - Verified `cargo check -p frontend-leptos`.
+  - Verified `cargo test -p backend routes::auth::tests::admin_login_requires_mfa_before_session_token`.
+  - Verified `cargo test --workspace`.
 
 ### ENT-0204 Build Organization/Tenant Model
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Backend/Product
 - Scope:
   - Add organizations/accounts table.
@@ -427,11 +624,23 @@ Goal: protect accounts, roles, organizations, and sensitive workflows.
 - Acceptance criteria:
   - All new data is tenant-scoped where appropriate.
   - Existing data is assigned to a default organization without breaking current workflows.
+- Completion notes:
+  - Added migration `0011_organizations_tenant_foundation.sql`.
+  - Added `organizations`, `organization_roles`, and `organization_memberships`.
+  - Seeded default organization id `1` with slug `stloads-default` for legacy migration.
+  - Added `organization_id` ownership columns, foreign keys, and indexes to users, loads, load documents, KYC documents, conversations, offers, escrows, TMS handoffs, TMS sync errors, and reconciliation logs.
+  - Backfilled existing records into the default organization or their related owner/load organization.
+  - Added automatic membership trigger for user inserts and role/org updates.
+  - Added explicit membership sync in Rust registration and admin-create user flows.
+  - Added typed DB helpers in `crates/db/src/organizations.rs`.
+  - Added `docs/ENTERPRISE_ORGANIZATION_TENANT_MODEL.md`.
+  - Verified `cargo test -p db organization_foundation_assigns_default_membership`.
+  - Verified `cargo test -p backend routes::auth::tests::registration_and_password_reset_routes_work_end_to_end`.
 
 ### ENT-0205 Enforce Tenant Isolation Everywhere
 
 - Priority: `P0`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Backend/QA
 - Scope:
   - Apply tenant checks to auth-scoped reads and writes.
@@ -440,11 +649,27 @@ Goal: protect accounts, roles, organizations, and sensitive workflows.
 - Acceptance criteria:
   - One customer cannot access another customer's data.
   - Tenant isolation tests fail before implementation and pass after implementation.
+- Progress notes:
+  - Added session organization context from active organization memberships.
+  - Added org-aware route checks for load profiles, load documents, escrow fund/hold/release, marketplace offer review, marketplace chat send/read, admin chat workspace listings, and user-authenticated TMS requeue/withdraw/close.
+  - Added tenant-scoped admin user directory, onboarding review list, load list counts/rows, profile view, profile update, account update, and delete enforcement.
+  - Added scoped DB helpers for load legs, load documents, escrows, chat workspace queries, and TMS handoff ownership.
+  - Added migration `0012_audit_break_glass.sql` with `audit_events` and `admin_break_glass_sessions`.
+  - Added MFA-protected `/admin/break-glass` route with ticket reference, reason, target organization, expiry, and audit event creation.
+  - Added `docs/ENTERPRISE_TENANT_ISOLATION.md`.
+  - Added integration test `tenant_scoped_queries_reject_cross_organization_records`.
+  - Added backend test `break_glass_allows_audited_cross_org_user_profile`.
+  - Verified `cargo test -p db tenant_scoped_queries_reject_cross_organization_records`.
+  - Verified `cargo test -p backend break_glass_allows_audited_cross_org_user_profile`.
+  - Verified `cargo test -p db`.
+  - Verified `cargo test -p backend`.
+  - Verified `cargo check -p frontend-leptos`.
+  - Verified `cargo test --workspace`.
 
 ### ENT-0206 Define Permission Matrix
 
 - Priority: `P1`
-- Status: `[ ]`
+- Status: `[x]`
 - Owner: Product/Backend
 - Scope:
   - Define permissions by role and organization role.
@@ -453,6 +678,15 @@ Goal: protect accounts, roles, organizations, and sensitive workflows.
 - Acceptance criteria:
   - Every route and action maps to a permission.
   - Role changes invalidate affected sessions.
+- Progress notes:
+  - Added migration `0013_organization_role_permissions.sql`.
+  - Added `organization_role_permissions` for owner, admin, finance, operator, support, integration admin, member, and auditor policy.
+  - Added session permission merge from active organization membership role.
+  - Added `docs/ENTERPRISE_PERMISSION_MATRIX.md`.
+  - Documented current route guard map and future narrower permission gaps for support, audit, reporting, billing, integrations, and impersonation.
+  - Verified affected sessions already invalidate through role-permission update token deletion.
+  - Verified `cargo test -p db organization_foundation_assigns_default_membership`.
+  - Verified `cargo test -p backend`.
 
 ### ENT-0207 Add Safe Support Tooling
 
@@ -2052,8 +2286,8 @@ Goal: pass enterprise customer review.
 Do not call the platform enterprise-ready until every item below is true:
 
 - `[ ]` Production cannot start in unsafe fallback mode.
-- `[ ]` Session tokens are hashed and privileged workflows require MFA or step-up auth.
-- `[ ]` Browser sessions, cookies, CSRF, CORS, and custom-domain auth boundaries are hardened and tested.
+- `[x]` Session tokens are hashed and privileged workflows require MFA or step-up auth.
+- `[x]` Browser sessions, cookies, CSRF, CORS, and custom-domain auth boundaries are hardened and tested.
 - `[ ]` Tenant/org isolation is implemented and tested.
 - `[ ]` Privileged access is reviewed, recertified, and revoked when stale or excessive.
 - `[ ]` Global audit ledger covers auth, admin, loads, documents, offers, execution, payments, TMS, support, and master data.

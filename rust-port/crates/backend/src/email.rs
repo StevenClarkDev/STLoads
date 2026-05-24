@@ -40,6 +40,7 @@ struct EmailConfig {
     outbox_retry_interval_seconds: u64,
     outbox_max_attempts: i32,
     portal_url: String,
+    notifications_enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -117,6 +118,7 @@ impl EmailService {
                 outbox_retry_interval_seconds: config.mail_outbox_retry_interval_seconds,
                 outbox_max_attempts: config.mail_outbox_max_attempts,
                 portal_url: config.portal_url.clone(),
+                notifications_enabled: !config.kill_switch_notifications,
             },
             pool,
         }
@@ -198,6 +200,23 @@ impl EmailService {
             "password_reset_otp",
         )
         .await
+    }
+
+    pub async fn send_mfa_otp(
+        &self,
+        to_email: &str,
+        to_name: Option<&str>,
+        otp: &str,
+    ) -> Result<MailOutcome, String> {
+        let body = otp_template(
+            "Privileged Login Code",
+            "Use the code below to complete MFA for your privileged STLoads session.",
+            otp,
+            &self.config.portal_url,
+        );
+
+        self.send_html(to_email, to_name, "Your STLoads MFA Code", &body, "mfa_otp")
+            .await
     }
 
     pub async fn send_account_review_status(
@@ -323,6 +342,14 @@ impl EmailService {
         let to_email = to_email.trim();
         if to_email.is_empty() {
             return Err("Email recipient is empty.".into());
+        }
+
+        if !self.config.notifications_enabled {
+            warn!(
+                template_name,
+                to_email, "email notification skipped because KILL_SWITCH_NOTIFICATIONS is enabled"
+            );
+            return Ok(MailOutcome::Skipped);
         }
 
         if let Some(pool) = self.pool.as_ref().filter(|_| self.config.outbox_enabled) {
@@ -835,6 +862,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn notification_kill_switch_skips_delivery() {
+        let mut config = test_config("smtp", false);
+        config.kill_switch_notifications = true;
+        let service = EmailService::from_config(&config);
+
+        let outcome = service
+            .send_registration_otp("driver@example.test", Some("Test Driver"), "123456")
+            .await
+            .expect("kill switch should skip cleanly");
+
+        assert!(matches!(outcome, MailOutcome::Skipped));
+    }
+
+    #[tokio::test]
     async fn smtp_mailer_without_host_fails_when_fail_open_is_disabled() {
         let service = EmailService::from_config(&test_config("smtp", false));
 
@@ -930,6 +971,11 @@ mod tests {
             mail_outbox_retry_interval_seconds: 30,
             mail_outbox_max_attempts: 8,
             portal_url: "https://portal.example.test".into(),
+            kill_switch_payments: false,
+            kill_switch_booking: false,
+            kill_switch_tms_pushes: false,
+            kill_switch_notifications: false,
+            kill_switch_document_uploads: false,
         }
     }
 }

@@ -196,9 +196,21 @@ pub async fn list_recent_conversation_workspace_records_for_user(
     pool: &DbPool,
     viewer_user_id: i64,
     viewer_role: Option<UserRole>,
+    viewer_organization_id: Option<i64>,
     limit: i64,
 ) -> Result<Vec<ConversationWorkspaceRecord>, sqlx::Error> {
     if viewer_role == Some(UserRole::Admin) {
+        if let Some(organization_id) = viewer_organization_id {
+            return sqlx::query_as::<_, ConversationWorkspaceRecord>(&format!(
+                "{}\n        WHERE c.organization_id = $1\n        ORDER BY last_activity_at DESC, c.id DESC\n        LIMIT $2",
+                conversation_workspace_select_sql()
+            ))
+            .bind(organization_id)
+            .bind(limit)
+            .fetch_all(pool)
+            .await;
+        }
+
         return list_recent_conversation_workspace_records(pool, limit).await;
     }
 
@@ -231,8 +243,20 @@ pub async fn find_conversation_workspace_record_for_user(
     conversation_id: i64,
     viewer_user_id: i64,
     viewer_role: Option<UserRole>,
+    viewer_organization_id: Option<i64>,
 ) -> Result<Option<ConversationWorkspaceRecord>, sqlx::Error> {
     if viewer_role == Some(UserRole::Admin) {
+        if let Some(organization_id) = viewer_organization_id {
+            return sqlx::query_as::<_, ConversationWorkspaceRecord>(&format!(
+                "{}\n        WHERE c.id = $1 AND c.organization_id = $2\n        LIMIT 1",
+                conversation_workspace_select_sql()
+            ))
+            .bind(conversation_id)
+            .bind(organization_id)
+            .fetch_optional(pool)
+            .await;
+        }
+
         return find_conversation_workspace_record(pool, conversation_id).await;
     }
 

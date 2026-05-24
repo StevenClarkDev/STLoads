@@ -99,6 +99,7 @@ Copy-Item rust-port\.env.ibm.example rust-port\.env.ibm.runtime
 Edit `rust-port\.env.ibm.runtime` and set at minimum:
 - `DATABASE_URL`
 - `PUBLIC_BASE_URL`
+- `CORS_ALLOWED_ORIGINS`
 - `APP_ENV`
 - `RUN_MIGRATIONS`
 - `DOCUMENT_STORAGE_BACKEND`
@@ -109,15 +110,25 @@ Edit `rust-port\.env.ibm.runtime` and set at minimum:
 - `OBJECT_STORAGE_SECRET_ACCESS_KEY`
 - `OBJECT_STORAGE_FORCE_PATH_STYLE`
 - `OBJECT_STORAGE_PREFIX`
+- `STRIPE_SECRET`
 - `STRIPE_WEBHOOK_SHARED_SECRET`
+- `STRIPE_WEBHOOK_CONNECT_SECRET`
+- `STRIPE_CONNECT_REFRESH_URL`
+- `STRIPE_CONNECT_RETURN_URL`
 - `TMS_SHARED_SECRET`
+- `MAIL_MAILER`
+- `MAIL_HOST`
+- `MAIL_FROM_ADDRESS`
+- `MAIL_FAIL_OPEN`
 
 For the very first deploy:
-- set `RUN_MIGRATIONS=true`
+- keep `RUN_MIGRATIONS=false`
 - keep `PORT=8080`
 - keep `DEPLOYMENT_TARGET=ibm-code-engine`
 - set `DOCUMENT_STORAGE_BACKEND=ibm_cos`
 - point the `OBJECT_STORAGE_*` values at the IBM Cloud Object Storage bucket for this environment
+- for production, set `APP_ENV=production`, `MAIL_MAILER=smtp`, and `MAIL_FAIL_OPEN=false`
+- for production, replace every `replace-me`, `replace_me`, `example.com`, and local placeholder before deploying; startup will fail if required values are missing or placeholders
 
 Example PostgreSQL DSN shape:
 
@@ -129,6 +140,24 @@ Example IBM COS endpoint shape:
 
 ```text
 https://s3.us-south.cloud-object-storage.appdomain.cloud
+```
+
+Use `/health/live` for the Code Engine liveness probe and `/health/ready` for the readiness probe. `/health/ready` returns HTTP 503 until required dependencies are configured and connected.
+
+Before deploying a web revision that needs schema changes, run the explicit migration command from a trusted workstation or one-off job with the target environment loaded:
+
+```powershell
+cd rust-port
+cargo run -p backend --bin run_migrations
+```
+
+Use `docs/ENTERPRISE_MIGRATION_RUNBOOK.md` for pre-checks, rollback, and failed-migration handling.
+Use `docs/ENTERPRISE_ROLLBACK_RUNBOOK.md` before every release so the previous known-good backend/frontend revisions, runtime secret, database snapshot, and object-storage prefix are recorded.
+
+Before creating or updating the Code Engine runtime secret, validate the runtime file:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "rust-port\scripts\validate_runtime_env.ps1" -EnvFile "rust-port\.env.ibm.runtime" -TargetEnvironment staging
 ```
 
 ## Step 5: Create A Runtime Secret In Code Engine
@@ -199,12 +228,12 @@ Important notes:
 - document upload, protected file reads, onboarding KYC, and Google-address browser behavior should still be checked manually in the browser
 - use `docs/IBM_STAGING_SMOKE_CHECKLIST.md` as the hosted signoff checklist
 
-## Step 9: Turn Off Startup Migrations After The First Healthy Deploy
+## Step 9: Verify Startup Migrations Stay Off
 
-After the first successful deployment and smoke pass:
+Before every web deployment:
 
 1. Edit `rust-port\.env.ibm.runtime`
-2. change `RUN_MIGRATIONS=true` to `RUN_MIGRATIONS=false`
+2. confirm `RUN_MIGRATIONS=false`
 3. recreate the secret
 4. update the app
 

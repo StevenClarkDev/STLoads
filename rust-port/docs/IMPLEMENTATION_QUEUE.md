@@ -2,6 +2,12 @@
 
 Last updated: 2026-04-15
 
+> Superseded for enterprise execution.
+>
+> This queue is preserved as historical Laravel-to-Rust migration context. Current enterprise-readiness work must be planned and updated in `docs/ENTERPRISE_LOADBOARD_TASK_LIST.md`, with `P0`/`P1` execution cards mirrored in `docs/ENTERPRISE_WORK_BOARD.md`.
+>
+> Do not use this file as the active source of truth for new enterprise work.
+
 This file turns the remaining Laravel-to-Rust/Leptos migration work into an execution queue.
 Priority labels are practical cutover labels, not abstract severity labels.
 

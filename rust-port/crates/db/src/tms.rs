@@ -547,6 +547,26 @@ pub async fn find_handoff_by_id(
     .await
 }
 
+pub async fn handoff_belongs_to_organization(
+    pool: &DbPool,
+    handoff_id: i64,
+    organization_id: i64,
+) -> Result<bool, sqlx::Error> {
+    let exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM stloads_handoffs
+            WHERE id = $1 AND organization_id = $2
+        )",
+    )
+    .bind(handoff_id)
+    .bind(organization_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(exists)
+}
+
 pub async fn create_sync_error(
     pool: &DbPool,
     handoff_id: Option<i64>,

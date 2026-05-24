@@ -1,4 +1,9 @@
-use crate::{auth_session, realtime_bus::RoutedRealtimeEvent, screen_data, state::AppState};
+use std::time::Duration as StdDuration;
+
+use crate::{
+    auth_session, rate_limit::RateLimitPolicy, realtime_bus::RoutedRealtimeEvent, screen_data,
+    state::AppState,
+};
 use axum::{
     Json, Router,
     body::Body,
@@ -44,6 +49,17 @@ use shared::{
 };
 use std::collections::HashMap;
 use tracing::{info, warn};
+
+fn dispatch_document_policy(name: &'static str) -> RateLimitPolicy {
+    RateLimitPolicy::new(name, 60, StdDuration::from_secs(60 * 60))
+}
+
+fn rate_limit_message(flow: &str, retry_after_seconds: u64) -> String {
+    format!(
+        "Too many {} attempts. Wait about {} seconds before trying again.",
+        flow, retry_after_seconds
+    )
+}
 #[derive(Debug, Serialize)]
 struct DispatchOverview {
     contract: LoadModuleContract,
@@ -850,6 +866,16 @@ async fn upload_load_document_handler(
     headers: HeaderMap,
     multipart: Multipart,
 ) -> Json<ApiResponse<UpsertLoadDocumentResponse>> {
+    if state.config.kill_switch_document_uploads {
+        return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
+            success: false,
+            load_id,
+            document_id: None,
+            message: "Document uploads are temporarily disabled by an operational kill switch."
+                .into(),
+        }));
+    }
+
     let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
         .await
         .ok()
@@ -869,6 +895,21 @@ async fn upload_load_document_handler(
             message: "Sign in before uploading load documents from the Rust profile.".into(),
         }));
     };
+
+    let rate_decision = state
+        .check_rate_limit(
+            dispatch_document_policy("dispatch_document_upload"),
+            format!("{}:{}", session.user.id, load_id),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(UpsertLoadDocumentResponse {
+            success: false,
+            load_id,
+            document_id: None,
+            message: rate_limit_message("load document upload", rate_decision.retry_after_seconds),
+        }));
+    }
 
     let Some(pool) = state.pool.as_ref() else {
         log_dispatch_failure(
@@ -909,7 +950,7 @@ async fn upload_load_document_handler(
         }));
     };
 
-    if !can_manage_load_documents(&session, load.user_id) {
+    if !can_manage_load_documents(&session, load.user_id, load.organization_id) {
         log_dispatch_failure(
             "upload_load_document",
             Some(session.user.id),
@@ -1048,6 +1089,19 @@ async fn download_load_document_file(
             "Sign in before viewing load document files from the Rust profile.",
         );
     };
+
+    let rate_decision = state
+        .check_rate_limit(
+            dispatch_document_policy("dispatch_document_read"),
+            format!("{}:{}", session.user.id, document_id),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return text_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            &rate_limit_message("load document read", rate_decision.retry_after_seconds),
+        );
+    }
 
     let Some(pool) = state.pool.as_ref() else {
         return text_response(
@@ -1191,7 +1245,7 @@ async fn create_load_document_handler(
         }));
     };
 
-    if !can_manage_load_documents(&session, load.user_id) {
+    if !can_manage_load_documents(&session, load.user_id, load.organization_id) {
         log_dispatch_failure(
             "create_load_document",
             Some(session.user.id),
@@ -1349,7 +1403,7 @@ async fn update_load_document_handler(
         }));
     };
 
-    if !can_manage_load_documents(&session, scope.load_owner_user_id) {
+    if !can_manage_load_documents(&session, scope.load_owner_user_id, scope.organization_id) {
         log_dispatch_failure(
             "update_load_document",
             Some(session.user.id),
@@ -1506,7 +1560,7 @@ async fn verify_load_document_handler(
         }));
     };
 
-    if !can_manage_load_documents(&session, scope.load_owner_user_id) {
+    if !can_manage_load_documents(&session, scope.load_owner_user_id, scope.organization_id) {
         log_dispatch_failure(
             "verify_load_document",
             Some(session.user.id),
@@ -1619,6 +1673,16 @@ async fn book_leg(
     headers: HeaderMap,
     Json(payload): Json<BookLoadLegRequest>,
 ) -> Json<ApiResponse<BookLoadLegResponse>> {
+    if state.config.kill_switch_booking {
+        return Json(ApiResponse::ok(BookLoadLegResponse {
+            success: false,
+            leg_id,
+            status_label: "Paused".into(),
+            message: "Carrier booking is temporarily disabled by an operational kill switch."
+                .into(),
+        }));
+    }
+
     let Some(pool) = state.pool.as_ref() else {
         log_dispatch_failure(
             "book_leg",
@@ -2604,7 +2668,8 @@ async fn build_load_profile_screen(
         );
     }
 
-    let can_manage_documents = can_manage_load_documents(viewer, load.user_id);
+    let can_manage_documents =
+        can_manage_load_documents(viewer, load.user_id, load.organization_id);
 
     let load_types = list_load_types(pool).await.unwrap_or_default();
     let equipments = list_equipments(pool).await.unwrap_or_default();
@@ -2920,7 +2985,12 @@ fn empty_load_profile_screen(
 fn can_manage_load_documents(
     viewer: &crate::auth_session::ResolvedSession,
     load_owner_user_id: Option<i64>,
+    organization_id: i64,
 ) -> bool {
+    if !crate::auth_session::session_matches_organization(viewer, organization_id) {
+        return false;
+    }
+
     if viewer.user.primary_role() == Some(UserRole::Admin) {
         return true;
     }
@@ -2943,7 +3013,7 @@ fn can_view_load_profile(
     viewer: &crate::auth_session::ResolvedSession,
     load: &db::dispatch::LoadRecord,
 ) -> bool {
-    can_manage_load_documents(viewer, load.user_id)
+    can_manage_load_documents(viewer, load.user_id, load.organization_id)
 }
 
 fn profile_load_leg_status_label(status_id: i16) -> String {

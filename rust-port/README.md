@@ -17,6 +17,26 @@ This workspace is the starting point for the Rust + Leptos copy of the current L
 - `docs/FRONTEND_BLUEPRINT.md`: page inventory and Leptos module plan.
 - `docs/ENTERPRISE_LOADBOARD_ROADMAP.md`: enterprise-readiness roadmap for the Rust platform.
 - `docs/ENTERPRISE_LOADBOARD_TASK_LIST.md`: production task tracker for following the roadmap to enterprise readiness.
+- `docs/ENTERPRISE_WORK_BOARD.md`: execution board for `P0`/`P1` enterprise-readiness tasks.
+- `docs/ENTERPRISE_READINESS_GATES.md`: measurable alpha, beta, pilot, production, and enterprise-ready gates.
+- `docs/ENTERPRISE_OPERATING_MODEL.md`: recommended first enterprise-release market, role, and operating-model scope.
+- `docs/ENTERPRISE_CUSTOMER_ONBOARDING.md`: repeatable enterprise tenant onboarding checklist and owner handoff.
+- `docs/ENTERPRISE_CUSTOMER_SUCCESS_AND_TRAINING.md`: enterprise training, help-center, support handoff, adoption, and renewal playbook.
+- `docs/ENTERPRISE_SLA_SUPPORT_TIERS.md`: enterprise support tiers, SLA targets, maintenance windows, and escalation commitments.
+- `docs/ENTERPRISE_CUSTOMER_OFFBOARDING.md`: enterprise customer offboarding, data-return, retention, and access-shutdown process.
+- `docs/ENTERPRISE_SUPPORT_CASE_MANAGEMENT.md`: enterprise support-case model, SLA case workflow, reporting, and customer feedback loop.
+- `docs/ENTERPRISE_MIGRATION_RUNBOOK.md`: operator-controlled database migration command, rollback, and failed-migration procedure.
+- `docs/ENTERPRISE_RELEASE_ENVIRONMENTS.md`: local, CI, staging, pilot, and production environment matrix plus runtime validation policy.
+- `docs/ENTERPRISE_ROLLBACK_RUNBOOK.md`: backend, frontend, database, object-storage, and release rollback procedure.
+- `docs/ENTERPRISE_FEATURE_FLAGS_AND_CHANGE_CONTROL.md`: feature-flag strategy, emergency kill switches, and production change approval checklist.
+- `docs/ENTERPRISE_RELEASE_COMMUNICATIONS.md`: customer release notes, UAT, maintenance notices, known issues, and rollout feedback loop.
+- `docs/ENTERPRISE_DATA_MIGRATION_CUTOVER_PLAN.md`: production data migration, reconciliation, freeze window, rollback point, and business validation plan.
+- `docs/ENTERPRISE_BROWSER_SESSION_SECURITY.md`: browser bearer-auth, CSRF decision, cookie migration gate, CORS, and custom-domain session controls.
+- `docs/ENTERPRISE_RATE_LIMITING_AND_LOCKOUT.md`: rate limiting, brute-force lockout, protected surfaces, and the distributed-store production gap.
+- `docs/ENTERPRISE_MFA_AND_STEP_UP.md`: privileged MFA, recovery codes, and step-up requirements for high-risk actions.
+- `docs/ENTERPRISE_ORGANIZATION_TENANT_MODEL.md`: organization tables, memberships, default-tenant migration, and tenant-scoped table ownership.
+- `docs/ENTERPRISE_TENANT_ISOLATION.md`: current tenant isolation enforcement, tests, and remaining break-glass requirements.
+- `docs/ENTERPRISE_PERMISSION_MATRIX.md`: platform-role and organization-role permission matrix plus route guard map.
 - `docs/CANONICAL_STATUS_MODEL.md`: Rust-side status model and legacy PHP code mapping.
 - `docs/SCHEMA_BASELINE.md`: draft SQL baseline inferred from Laravel write paths.
 - `docs/POSTGRES_PIVOT.md`: PostgreSQL migration checklist for the Rust port.

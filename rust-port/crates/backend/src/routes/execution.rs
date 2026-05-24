@@ -6,6 +6,8 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use std::time::Duration as StdDuration;
+
 use chrono::{NaiveDateTime, Utc};
 use db::tracking::{
     CreateLegDocumentParams, advance_leg_execution, create_leg_document, create_tracking_point,
@@ -27,7 +29,20 @@ use shared::{
     RealtimeEvent, RealtimeEventKind, RealtimeTopic,
 };
 
-use crate::{auth_session, realtime_bus::RoutedRealtimeEvent, state::AppState};
+use crate::{
+    auth_session, rate_limit::RateLimitPolicy, realtime_bus::RoutedRealtimeEvent, state::AppState,
+};
+
+fn execution_document_policy(name: &'static str) -> RateLimitPolicy {
+    RateLimitPolicy::new(name, 60, StdDuration::from_secs(60 * 60))
+}
+
+fn rate_limit_message(flow: &str, retry_after_seconds: u64) -> String {
+    format!(
+        "Too many {} attempts. Wait about {} seconds before trying again.",
+        flow, retry_after_seconds
+    )
+}
 
 #[derive(Debug, Serialize)]
 struct ExecutionOverview {
@@ -361,6 +376,16 @@ async fn upload_leg_document(
     headers: HeaderMap,
     multipart: Multipart,
 ) -> Json<ApiResponse<ExecutionUploadDocumentResponse>> {
+    if state.config.kill_switch_document_uploads {
+        return Json(ApiResponse::ok(ExecutionUploadDocumentResponse {
+            success: false,
+            leg_id: leg_id.max(0) as u64,
+            document_id: None,
+            message: "Document uploads are temporarily disabled by an operational kill switch."
+                .into(),
+        }));
+    }
+
     let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
@@ -376,6 +401,24 @@ async fn upload_leg_document(
                     .into(),
         }));
     };
+
+    let rate_decision = state
+        .check_rate_limit(
+            execution_document_policy("execution_document_upload"),
+            format!("{}:{}", session.user.id, leg_id),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return Json(ApiResponse::ok(ExecutionUploadDocumentResponse {
+            success: false,
+            leg_id: leg_id.max(0) as u64,
+            document_id: None,
+            message: rate_limit_message(
+                "execution document upload",
+                rate_decision.retry_after_seconds,
+            ),
+        }));
+    }
 
     let Some(pool) = state.pool.as_ref() else {
         return Json(ApiResponse::ok(ExecutionUploadDocumentResponse {
@@ -529,6 +572,19 @@ async fn download_leg_document_file(
             "Sign in before viewing execution document files from the Rust tracking workspace.",
         );
     };
+
+    let rate_decision = state
+        .check_rate_limit(
+            execution_document_policy("execution_document_read"),
+            format!("{}:{}", session.user.id, document_id),
+        )
+        .await;
+    if !rate_decision.allowed {
+        return text_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            &rate_limit_message("execution document read", rate_decision.retry_after_seconds),
+        );
+    }
 
     let Some(pool) = state.pool.as_ref() else {
         return text_response(
