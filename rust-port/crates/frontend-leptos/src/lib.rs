@@ -1,4 +1,10 @@
+// Leptos page/render helpers often receive many signals and callbacks from the
+// parent view. Refactoring every helper into one-off parameter structs would add
+// noise without reducing runtime risk, so Phase 16 keeps this lint documented.
+#![allow(clippy::too_many_arguments)]
+
 pub mod api;
+pub mod components;
 pub mod device_location;
 pub mod document_upload;
 pub mod google_places;
@@ -16,12 +22,14 @@ use leptos_router::{
 
 use layouts::{AdminFrame, AuthFrame, UserFrame};
 use pages::{
-    AccountLifecyclePage, AdminChangePasswordPage, AdminDashboardPage, AdminLoadsPage,
-    AdminRolesPage, AdminUsersByRolePage, AdminUsersPage, ChatWorkspacePage, DashboardPage,
-    DispatchDeskPage, EscrowOperationsPage, ExecutionLegPage, ForgotPasswordPage, LoadBoardPage,
-    LoadBuilderPage, LoadProfilePage, LoginPage, MasterDataPage, MfaPage, NotFoundPage,
-    OnboardingPage, OnboardingReviewPage, PortalLandingPage, ProfilePage, RegisterPage,
-    ResetPasswordPage, StloadsOperationsPage, StloadsReconciliationPage, VerifyOtpPage,
+    AccessReviewsPage, AccountLifecyclePage, AdminChangePasswordPage, AdminDashboardPage,
+    AdminLoadsPage, AdminRolesPage, AdminUsersByRolePage, AdminUsersPage, AuditSearchPage,
+    ChatWorkspacePage, CustomerTrackingPage, DashboardPage, DispatchDeskPage,
+    EnterpriseIdentityPage, EscrowOperationsPage, ExecutionLegPage, ForgotPasswordPage,
+    IntegrationPortalPage, LegalAgreementsPage, LoadBoardPage, LoadBuilderPage, LoadProfilePage,
+    LoginPage, MasterDataPage, MfaPage, NotFoundPage, NotificationCenterPage, OnboardingPage,
+    OnboardingReviewPage, PortalLandingPage, ProfilePage, RegisterPage, ResetPasswordPage,
+    StloadsOperationsPage, StloadsReconciliationPage, SupportSearchPage, VerifyOtpPage,
 };
 use session::{AuthProvider, use_auth};
 
@@ -80,10 +88,30 @@ pub fn App() -> impl IntoView {
                         }
                     />
                     <Route
+                        path=path!("driver/legs/:leg_id")
+                        view=|| view! {
+                            <UserFrame>
+                                <ExecutionLegPage />
+                            </UserFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("track/:share_token")
+                        view=|| view! { <CustomerTrackingPage /> }
+                    />
+                    <Route
                         path=path!("chat")
                         view=|| view! {
                             <UserFrame>
                                 <ChatWorkspacePage />
+                            </UserFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("notifications")
+                        view=|| view! {
+                            <UserFrame>
+                                <NotificationCenterPage />
                             </UserFrame>
                         }
                     />
@@ -168,6 +196,14 @@ pub fn App() -> impl IntoView {
                         }
                     />
                     <Route
+                        path=path!("auth/legal-agreements")
+                        view=|| view! {
+                            <AuthFrame>
+                                <LegalAgreementsPage />
+                            </AuthFrame>
+                        }
+                    />
+                    <Route
                         path=path!("admin")
                         view=|| view! {
                             <AdminFrame>
@@ -204,6 +240,38 @@ pub fn App() -> impl IntoView {
                         view=|| view! {
                             <AdminFrame>
                                 <AccountLifecyclePage />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/support")
+                        view=|| view! {
+                            <AdminFrame>
+                                <SupportSearchPage />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/audit")
+                        view=|| view! {
+                            <AdminFrame>
+                                <AuditSearchPage />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/identity")
+                        view=|| view! {
+                            <AdminFrame>
+                                <EnterpriseIdentityPage />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/access-reviews")
+                        view=|| view! {
+                            <AdminFrame>
+                                <AccessReviewsPage />
                             </AdminFrame>
                         }
                     />
@@ -276,6 +344,14 @@ pub fn App() -> impl IntoView {
                         view=|| view! {
                             <AdminFrame>
                                 <StloadsReconciliationPage />
+                            </AdminFrame>
+                        }
+                    />
+                    <Route
+                        path=path!("admin/integrations")
+                        view=|| view! {
+                            <AdminFrame>
+                                <IntegrationPortalPage />
                             </AdminFrame>
                         }
                     />

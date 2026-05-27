@@ -1,0 +1,12 @@
+{
+  "name": "stloads-rust-port-quality",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "frontend:e2e": "playwright test",
+    "frontend:e2e:update": "playwright test --update-snapshots"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}

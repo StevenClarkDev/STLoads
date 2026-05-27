@@ -33,6 +33,38 @@ impl EscrowStatus {
             _ => None,
         }
     }
+
+    pub const fn can_transition_to(self, target: Self) -> bool {
+        use EscrowStatus::*;
+
+        if matches!((self, target), (current, next) if current as u8 == next as u8) {
+            return true;
+        }
+
+        match self {
+            Unfunded => matches!(target, Funded | Failed | OnHold),
+            Funded => matches!(target, Released | Refunded | OnHold | Failed),
+            OnHold => matches!(target, Funded | Refunded | Failed),
+            Failed => matches!(target, Unfunded),
+            Released | Refunded => false,
+        }
+    }
+}
+
+pub fn validate_escrow_transition(
+    current: EscrowStatus,
+    target: EscrowStatus,
+) -> Result<(), String> {
+    current
+        .can_transition_to(target)
+        .then_some(())
+        .ok_or_else(|| {
+            format!(
+                "Escrow transition {} -> {} is not allowed.",
+                current.as_legacy_label(),
+                target.as_legacy_label()
+            )
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,4 +193,51 @@ pub fn stripe_webhook_events() -> &'static [StripeWebhookEventDescriptor] {
 
 pub fn payments_module_contract() -> PaymentsModuleContract {
     PAYMENTS_MODULE_CONTRACT.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EscrowStatus, validate_escrow_transition};
+
+    #[test]
+    fn escrow_state_machine_allows_funding_hold_and_release_paths() {
+        let valid = [
+            (EscrowStatus::Unfunded, EscrowStatus::Funded),
+            (EscrowStatus::Unfunded, EscrowStatus::Failed),
+            (EscrowStatus::Funded, EscrowStatus::OnHold),
+            (EscrowStatus::OnHold, EscrowStatus::Funded),
+            (EscrowStatus::Funded, EscrowStatus::Released),
+            (EscrowStatus::Funded, EscrowStatus::Refunded),
+            (EscrowStatus::Failed, EscrowStatus::Unfunded),
+        ];
+
+        for (current, target) in valid {
+            assert!(
+                validate_escrow_transition(current, target).is_ok(),
+                "expected {:?} -> {:?} to be valid",
+                current,
+                target
+            );
+        }
+    }
+
+    #[test]
+    fn escrow_state_machine_blocks_terminal_finance_reopen() {
+        let invalid = [
+            (EscrowStatus::Released, EscrowStatus::Funded),
+            (EscrowStatus::Released, EscrowStatus::Refunded),
+            (EscrowStatus::Refunded, EscrowStatus::Funded),
+            (EscrowStatus::Unfunded, EscrowStatus::Released),
+            (EscrowStatus::Failed, EscrowStatus::Released),
+        ];
+
+        for (current, target) in invalid {
+            assert!(
+                validate_escrow_transition(current, target).is_err(),
+                "expected {:?} -> {:?} to be invalid",
+                current,
+                target
+            );
+        }
+    }
 }

@@ -29,7 +29,7 @@ pub fn AdminRolesPage() -> impl IntoView {
         }
 
         loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::fetch_admin_role_permissions().await {
                 Ok(next) => {

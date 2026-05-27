@@ -30,7 +30,7 @@ pub fn OnboardingReviewPage() -> impl IntoView {
         }
 
         loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::fetch_admin_onboarding_reviews().await {
                 Ok(next) => {
@@ -92,9 +92,6 @@ pub fn OnboardingReviewPage() -> impl IntoView {
                                     </section>
                                     <section style="display:grid;gap:1rem;">
                                         {filtered_users.into_iter().map(|user| {
-                                            let feedback = feedback;
-                                            let action_loading_user_id = action_loading_user_id;
-                                            let refresh_nonce = refresh_nonce;
                                             let card_notice = RwSignal::new(None::<String>);
                                             let show_details = RwSignal::new(false);
                                             let company_name = user.company_name.clone();

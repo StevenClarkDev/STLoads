@@ -219,6 +219,7 @@ impl EmailService {
             .await
     }
 
+    #[allow(dead_code)]
     pub async fn send_account_review_status(
         &self,
         to_email: &str,
@@ -226,6 +227,21 @@ impl EmailService {
         role_label: &str,
         status: AccountStatus,
         remarks: Option<&str>,
+    ) -> Result<MailOutcome, String> {
+        self.send_account_review_status_with_request_id(
+            to_email, to_name, role_label, status, remarks, None,
+        )
+        .await
+    }
+
+    pub async fn send_account_review_status_with_request_id(
+        &self,
+        to_email: &str,
+        to_name: &str,
+        role_label: &str,
+        status: AccountStatus,
+        remarks: Option<&str>,
+        request_id: Option<&str>,
     ) -> Result<MailOutcome, String> {
         let (subject, template_name, body) = match status {
             AccountStatus::Approved => (
@@ -266,10 +282,18 @@ impl EmailService {
             }
         };
 
-        self.send_html(to_email, Some(to_name), subject, &body, template_name)
-            .await
+        self.send_html_with_request_id(
+            to_email,
+            Some(to_name),
+            subject,
+            &body,
+            template_name,
+            request_id,
+        )
+        .await
     }
 
+    #[allow(dead_code)]
     pub async fn send_load_review_status(
         &self,
         to_email: &str,
@@ -277,6 +301,21 @@ impl EmailService {
         load_id: i64,
         status_id: i16,
         remarks: Option<&str>,
+    ) -> Result<MailOutcome, String> {
+        self.send_load_review_status_with_request_id(
+            to_email, to_name, load_id, status_id, remarks, None,
+        )
+        .await
+    }
+
+    pub async fn send_load_review_status_with_request_id(
+        &self,
+        to_email: &str,
+        to_name: &str,
+        load_id: i64,
+        status_id: i16,
+        remarks: Option<&str>,
+        request_id: Option<&str>,
     ) -> Result<MailOutcome, String> {
         let (subject, title, summary, box_title, box_body, template_name) = match status_id {
             2 => (
@@ -327,8 +366,15 @@ impl EmailService {
             "#1F537B",
         );
 
-        self.send_html(to_email, Some(to_name), subject, &body, template_name)
-            .await
+        self.send_html_with_request_id(
+            to_email,
+            Some(to_name),
+            subject,
+            &body,
+            template_name,
+            request_id,
+        )
+        .await
     }
 
     async fn send_html(
@@ -338,6 +384,19 @@ impl EmailService {
         subject: &str,
         html_body: &str,
         template_name: &str,
+    ) -> Result<MailOutcome, String> {
+        self.send_html_with_request_id(to_email, to_name, subject, html_body, template_name, None)
+            .await
+    }
+
+    pub async fn send_html_with_request_id(
+        &self,
+        to_email: &str,
+        to_name: Option<&str>,
+        subject: &str,
+        html_body: &str,
+        template_name: &str,
+        request_id: Option<&str>,
     ) -> Result<MailOutcome, String> {
         let to_email = to_email.trim();
         if to_email.is_empty() {
@@ -356,6 +415,7 @@ impl EmailService {
             let record = enqueue_email(
                 pool,
                 EnqueueEmailParams {
+                    request_id,
                     template_name,
                     to_email,
                     to_name,
@@ -570,8 +630,7 @@ fn send_smtp_message(
 ) -> Result<(), String> {
     let host = config
         .host
-        .as_ref()
-        .map(String::as_str)
+        .as_deref()
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| "MAIL_HOST is required when MAIL_MAILER=smtp.".to_string())?;
 
@@ -922,6 +981,9 @@ mod tests {
             port: 3001,
             deployment_target: "test".into(),
             environment: "test".into(),
+            runtime_mode: "web".into(),
+            log_format: "pretty".into(),
+            otel_exporter_endpoint: None,
             public_base_url: Some("https://backend.example.test".into()),
             cors_allowed_origins: vec!["https://portal.example.test".into()],
             run_migrations: false,

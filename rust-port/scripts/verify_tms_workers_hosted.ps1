@@ -1,7 +1,7 @@
 param(
     [string]$BaseUrl = 'https://stloads-rust-backend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud',
     [string]$AdminEmail = 'admin.smoke@stloads.test',
-    [string]$AdminPassword = 'AdminPass123!',
+    [string]$AdminPassword = $env:STLOADS_SMOKE_ADMIN_PASSWORD,
     [string]$DatabaseUrl = '',
     [int]$RetryTimeoutSeconds = 420,
     [int]$ReconciliationTimeoutSeconds = 420,
@@ -12,6 +12,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $BaseUrl = $BaseUrl.TrimEnd('/')
+if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
+    throw 'AdminPassword or STLOADS_SMOKE_ADMIN_PASSWORD is required for hosted TMS worker verification.'
+}
 
 function Write-Step {
     param([string]$Message)

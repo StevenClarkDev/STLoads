@@ -281,17 +281,18 @@ Acceptance criteria:
 
 Steps:
 
-1. Define required closeout documents by customer, commodity, and mode.
-2. Add document checklist on each leg.
-3. Add POD validation workflow.
-4. Add detention, lumper, accessorial, and claim capture.
-5. Add dispute flow before release.
-6. Add closeout package export.
+1. [x] Define required closeout documents by customer, commodity, and mode.
+2. [x] Add document checklist on each leg.
+3. [x] Add POD validation workflow.
+4. [x] Add detention, lumper, accessorial, and claim capture.
+5. [x] Add dispute flow before release.
+6. [x] Add closeout package export.
 7. Add invoice handoff.
 
 Acceptance criteria:
 
 - A delivered load is not financially releasable until proof, exceptions, and billing conditions are satisfied.
+- ENT-0805 completion note: verified closeout export is now a production ZIP package (`application/zip`) with `manifest.txt` and embedded document bytes; generation fails if the required delivery POD cannot be read.
 
 ## Phase 4: Payments, Finance, And Risk
 
@@ -647,7 +648,7 @@ Exit criteria:
 1. Centralize execution state machine.
 2. Add geofencing and ETA/delay detection.
 3. Add mobile-first driver workflow.
-4. Add required POD and closeout package generation.
+4. [x] Add required POD and closeout package generation.
 5. Add exception management and customer tracking visibility.
 
 Exit criteria:
@@ -760,4 +761,3 @@ The platform is enterprise-ready when all of the following are true:
 - TMS/API integrations are versioned, idempotent, observable, and replayable.
 - The system has logs, metrics, traces, alerts, backups, runbooks, and incident response.
 - Enterprise customers can receive security, compliance, uptime, and audit answers without custom developer investigation.
-

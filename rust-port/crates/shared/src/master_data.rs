@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MasterDataSummaryCard {
@@ -56,9 +57,67 @@ pub struct MasterDataScreen {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MasterDataExportResponse {
+    pub exported_at: String,
+    pub sections: Vec<MasterDataSection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleCatalogUpsertRequest {
     pub id: Option<u64>,
     pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GovernedCatalogUpsertRequest {
+    pub id: Option<u64>,
+    pub code: String,
+    pub label: String,
+    pub description: Option<String>,
+    pub requires_approval: bool,
+    pub effective_from: Option<String>,
+    pub effective_to: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MasterDataImportRequest {
+    pub kind: String,
+    pub rows: Vec<GovernedCatalogUpsertRequest>,
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentRequirementRuleUpsertRequest {
+    pub id: Option<u64>,
+    pub rule_key: String,
+    pub label: String,
+    pub requirement_scope: String,
+    pub role_key: Option<String>,
+    pub lifecycle_state: String,
+    pub document_type_key: String,
+    pub blocks_transition: bool,
+    pub requires_approval: bool,
+    pub effective_from: Option<String>,
+    pub effective_to: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomerConfigurationRuleUpsertRequest {
+    pub id: Option<u64>,
+    pub config_key: String,
+    pub config_area: String,
+    pub customer_contract_id: Option<u64>,
+    pub customer_contract_lane_id: Option<u64>,
+    pub facility_id: Option<u64>,
+    pub carrier_group_key: Option<String>,
+    pub visibility_rule: Option<Value>,
+    pub compliance_gate: Option<Value>,
+    pub billing_rules: Option<Value>,
+    pub notification_rules: Option<Value>,
+    pub required_reference_keys: Vec<String>,
+    pub requires_approval: bool,
+    pub effective_from: Option<String>,
+    pub effective_to: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,4 +153,9 @@ pub struct MasterDataMutationResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MasterDataDeleteRequest {
     pub id: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MasterDataRollbackRequest {
+    pub change_id: u64,
 }

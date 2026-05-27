@@ -19,10 +19,12 @@ aws-config = "1.8"
 aws-credential-types = "1.2"
 aws-sdk-s3 = "1.79"
 axum = { version = "0.8", features = ["macros", "ws", "multipart"] }
+base64 = "0.22"
 bcrypt = "0.16"
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
 hmac = "0.12"
+jsonwebtoken = "9"
 leptos = "0.8"
 leptos_router = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
@@ -37,5 +39,6 @@ thiserror = "2.0"
 tokio = { version = "1.0", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "compression-full", "trace"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 uuid = { version = "1.0", features = ["serde", "v4", "js"] }
+zip = { version = "2.4", default-features = false, features = ["deflate"] }

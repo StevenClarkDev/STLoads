@@ -1,7 +1,7 @@
 param(
     [string]$BaseUrl = 'http://127.0.0.1:3001',
     [string]$AdminEmail = 'admin.smoke@stloads.test',
-    [string]$AdminPassword = 'AdminPass123!'
+    [string]$AdminPassword = $env:STLOADS_SMOKE_ADMIN_PASSWORD
 )
 
 Set-StrictMode -Version Latest
@@ -14,7 +14,7 @@ $accounts = @(
         key = 'broker_approved'
         name = 'Rust QA Broker'
         email = 'broker.qa@stloads.test'
-        password = 'BrokerQaPass123!'
+        password = $env:STLOADS_QA_BROKER_PASSWORD
         role_key = 'broker'
         final_status = 'approved'
         onboarding = @{
@@ -28,7 +28,7 @@ $accounts = @(
         key = 'freight_forwarder_approved'
         name = 'Rust QA Freight Forwarder'
         email = 'forwarder.qa@stloads.test'
-        password = 'ForwarderQaPass123!'
+        password = $env:STLOADS_QA_FORWARDER_PASSWORD
         role_key = 'freight_forwarder'
         final_status = 'approved'
         onboarding = @{
@@ -42,7 +42,7 @@ $accounts = @(
         key = 'pending_otp'
         name = 'Rust QA Pending OTP'
         email = 'pending.otp.qa@stloads.test'
-        password = 'PendingOtpQa123!'
+        password = $env:STLOADS_QA_PENDING_OTP_PASSWORD
         role_key = 'shipper'
         final_status = 'pending_otp'
     }
@@ -50,7 +50,7 @@ $accounts = @(
         key = 'pending_review'
         name = 'Rust QA Pending Review'
         email = 'pending.review.qa@stloads.test'
-        password = 'PendingReviewQa123!'
+        password = $env:STLOADS_QA_PENDING_REVIEW_PASSWORD
         role_key = 'carrier'
         final_status = 'pending_review'
         onboarding = @{
@@ -65,7 +65,7 @@ $accounts = @(
         key = 'revision_requested'
         name = 'Rust QA Revision Requested'
         email = 'revision.requested.qa@stloads.test'
-        password = 'RevisionQa123!'
+        password = $env:STLOADS_QA_REVISION_PASSWORD
         role_key = 'shipper'
         final_status = 'revision_requested'
         onboarding = @{
@@ -80,7 +80,7 @@ $accounts = @(
         key = 'rejected'
         name = 'Rust QA Rejected'
         email = 'rejected.qa@stloads.test'
-        password = 'RejectedQa123!'
+        password = $env:STLOADS_QA_REJECTED_PASSWORD
         role_key = 'broker'
         final_status = 'rejected'
         onboarding = @{
@@ -91,6 +91,16 @@ $accounts = @(
         }
     }
 )
+
+if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
+    throw 'STLOADS_SMOKE_ADMIN_PASSWORD is required to seed QA operator accounts.'
+}
+
+foreach ($account in $accounts) {
+    if ([string]::IsNullOrWhiteSpace($account.password)) {
+        throw "A password environment variable is required for QA account '$($account.key)'."
+    }
+}
 
 function Write-Step {
     param([string]$Message)

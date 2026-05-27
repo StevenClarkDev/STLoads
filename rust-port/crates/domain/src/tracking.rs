@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::execution::is_trackable_execution_status;
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Coordinate {
     pub lat: f64,
@@ -66,4 +68,56 @@ pub fn tracking_module_contract() -> TrackingModuleContract {
 
 pub fn leg_event_types() -> &'static [LegEventType] {
     LEG_EVENT_TYPES
+}
+
+pub fn can_store_location_ping(status_id: i16, has_tracking_consent: bool) -> bool {
+    has_tracking_consent && is_trackable_execution_status(status_id)
+}
+
+pub fn haversine_km(first: Coordinate, second: Coordinate) -> f64 {
+    let earth_radius_km = 6371.0_f64;
+    let d_lat = (second.lat - first.lat).to_radians();
+    let d_lng = (second.lng - first.lng).to_radians();
+    let first_lat = first.lat.to_radians();
+    let second_lat = second.lat.to_radians();
+
+    let a = (d_lat / 2.0).sin().powi(2)
+        + first_lat.cos() * second_lat.cos() * (d_lng / 2.0).sin().powi(2);
+    let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
+    earth_radius_km * c
+}
+
+pub fn is_inside_geofence(point: Coordinate, stop: Coordinate, radius_km: f64) -> bool {
+    haversine_km(point, stop) <= radius_km
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn location_pings_require_active_state_and_consent() {
+        assert!(can_store_location_ping(7, true));
+        assert!(!can_store_location_ping(7, false));
+        assert!(!can_store_location_ping(4, true));
+    }
+
+    #[test]
+    fn geofence_checks_distance_from_stop() {
+        let stop = Coordinate {
+            lat: 32.7767,
+            lng: -96.7970,
+        };
+        let nearby = Coordinate {
+            lat: 32.7770,
+            lng: -96.7980,
+        };
+        let far = Coordinate {
+            lat: 35.1495,
+            lng: -90.0490,
+        };
+
+        assert!(is_inside_geofence(nearby, stop, 0.25));
+        assert!(!is_inside_geofence(far, stop, 0.25));
+    }
 }

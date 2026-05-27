@@ -1,9 +1,9 @@
 param(
     [string]$BaseUrl = 'https://stloads-rust-backend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud',
     [string]$AdminEmail = 'admin.smoke@stloads.test',
-    [string]$AdminPassword = 'AdminPass123!',
+    [string]$AdminPassword = $env:STLOADS_SMOKE_ADMIN_PASSWORD,
     [string]$CarrierEmail = 'carrier.smoke@stloads.test',
-    [string]$CarrierPassword = 'CarrierPass123!',
+    [string]$CarrierPassword = $env:STLOADS_SMOKE_CARRIER_PASSWORD,
     [long]$CarrierUserId = 9103,
     [long]$BookingLegId = 9311,
     [string]$StripeSecret = $env:STRIPE_SECRET,
@@ -18,6 +18,14 @@ $ErrorActionPreference = 'Stop'
 
 $BaseUrl = $BaseUrl.TrimEnd('/')
 $StripeApiBaseUrl = $StripeApiBaseUrl.TrimEnd('/')
+
+if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
+    throw 'STLOADS_SMOKE_ADMIN_PASSWORD is required for hosted Stripe verification.'
+}
+
+if ([string]::IsNullOrWhiteSpace($CarrierPassword)) {
+    throw 'STLOADS_SMOKE_CARRIER_PASSWORD is required for hosted Stripe verification.'
+}
 
 function Write-Step {
     param([string]$Message)

@@ -1,7 +1,10 @@
 pub mod auth;
 pub mod dispatch;
+pub mod execution;
+pub mod governance;
 pub mod marketplace;
 pub mod master_data;
+pub mod operating_authority;
 pub mod payments;
 pub mod tms;
 pub mod tracking;

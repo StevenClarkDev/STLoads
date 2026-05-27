@@ -7,246 +7,24 @@ use crate::{
     session::{self, use_auth},
 };
 use shared::{
-    ExecutionActionItem, ExecutionDocumentItem, ExecutionDocumentTypeOption,
-    ExecutionLegActionRequest, ExecutionLegScreen, ExecutionNoteItem, ExecutionTimelineItem,
-    ExecutionTrackingPointItem, RealtimeEventKind, RealtimeTopic,
+    ExecutionCloseoutApprovalRequest, ExecutionCustomerTrackingLinkRequest,
+    ExecutionCustomerTrackingRevokeRequest, ExecutionFinanceExceptionDecisionRequest,
+    ExecutionFinanceExceptionRequest, ExecutionLegActionRequest, ExecutionLegScreen,
+    ExecutionRoutePlanRequest, ExecutionTelematicsConnectionRequest,
+    ExecutionTrackingConsentRequest, RealtimeEventKind, RealtimeTopic,
 };
 
-fn tone_style(tone: &str) -> &'static str {
-    match tone {
-        "success" => {
-            "background:#e8fff3;padding:0.25rem 0.55rem;border-radius:999px;color:#0f766e;"
-        }
-        "warning" => {
-            "background:#fff7dd;padding:0.25rem 0.55rem;border-radius:999px;color:#b45309;"
-        }
-        "danger" => "background:#ffe4e6;padding:0.25rem 0.55rem;border-radius:999px;color:#be123c;",
-        "info" => "background:#e0f2fe;padding:0.25rem 0.55rem;border-radius:999px;color:#0369a1;",
-        "primary" => {
-            "background:#ede9fe;padding:0.25rem 0.55rem;border-radius:999px;color:#6d28d9;"
-        }
-        _ => "background:#f1f5f9;padding:0.25rem 0.55rem;border-radius:999px;color:#475569;",
-    }
-}
-
-fn tracking_embed_url(points: &[ExecutionTrackingPointItem]) -> Option<String> {
-    let latest = points
-        .iter()
-        .find(|point| point.is_latest)
-        .or_else(|| points.first())?;
-
-    let (min_lat, max_lat) = points
-        .iter()
-        .fold((latest.lat, latest.lat), |(min, max), point| {
-            (min.min(point.lat), max.max(point.lat))
-        });
-    let (min_lng, max_lng) = points
-        .iter()
-        .fold((latest.lng, latest.lng), |(min, max), point| {
-            (min.min(point.lng), max.max(point.lng))
-        });
-
-    let lat_padding = ((max_lat - min_lat).abs() * 0.25).max(0.02);
-    let lng_padding = ((max_lng - min_lng).abs() * 0.25).max(0.02);
-
-    Some(format!(
-        "https://www.openstreetmap.org/export/embed.html?bbox={:.6},{:.6},{:.6},{:.6}&layer=mapnik&marker={:.6},{:.6}",
-        min_lng - lng_padding,
-        min_lat - lat_padding,
-        max_lng + lng_padding,
-        max_lat + lat_padding,
-        latest.lat,
-        latest.lng,
-    ))
-}
-
-fn tracking_point_map_url(point: &ExecutionTrackingPointItem) -> String {
-    format!(
-        "https://www.google.com/maps?q={:.6},{:.6}",
-        point.lat, point.lng
-    )
-}
-
-fn tracking_route_maps_url(
-    start: &ExecutionTrackingPointItem,
-    end: &ExecutionTrackingPointItem,
-) -> String {
-    format!(
-        "https://www.google.com/maps/dir/{:.6},{:.6}/{:.6},{:.6}",
-        start.lat, start.lng, end.lat, end.lng
-    )
-}
-
-fn haversine_km(first_lat: f64, first_lng: f64, second_lat: f64, second_lng: f64) -> f64 {
-    let earth_radius_km = 6371.0_f64;
-    let d_lat = (second_lat - first_lat).to_radians();
-    let d_lng = (second_lng - first_lng).to_radians();
-    let first_lat = first_lat.to_radians();
-    let second_lat = second_lat.to_radians();
-
-    let a = (d_lat / 2.0).sin().powi(2)
-        + first_lat.cos() * second_lat.cos() * (d_lng / 2.0).sin().powi(2);
-    let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
-    earth_radius_km * c
-}
-
-fn tracking_distance_km(points: &[ExecutionTrackingPointItem]) -> Option<f64> {
-    if points.len() < 2 {
-        return None;
-    }
-
-    let total = points
-        .windows(2)
-        .map(|window| haversine_km(window[0].lat, window[0].lng, window[1].lat, window[1].lng))
-        .sum::<f64>();
-
-    Some(total)
-}
-
-fn tracking_window_summary(points: &[ExecutionTrackingPointItem]) -> Option<String> {
-    if points.is_empty() {
-        return None;
-    }
-
-    let latest = points
-        .iter()
-        .find(|point| point.is_latest)
-        .or_else(|| points.first())?;
-    let earliest = points.last().unwrap_or(latest);
-
-    Some(format!(
-        "Window: {} -> {}",
-        earliest.recorded_at_label, latest.recorded_at_label
-    ))
-}
-
-fn gps_coverage_label(point_count: usize, tracking_health_tone: &str) -> (&'static str, String) {
-    if point_count == 0 {
-        ("danger", "No route trace yet".into())
-    } else if point_count == 1 {
-        ("warning", "Single-point route".into())
-    } else if matches!(tracking_health_tone, "warning" | "danger") {
-        ("warning", "Route trace is stale".into())
-    } else {
-        ("success", format!("{} plotted point(s)", point_count))
-    }
-}
-
-fn document_readiness_label(
-    document_count: usize,
-    delivery_completion_ready: bool,
-) -> (&'static str, String) {
-    if delivery_completion_ready {
-        ("success", "POD and note ready".into())
-    } else if document_count == 0 {
-        ("danger", "No execution docs yet".into())
-    } else {
-        ("warning", format!("{} doc(s) attached", document_count))
-    }
-}
-
-fn count_execution_documents_by_type(
-    documents: &[ExecutionDocumentItem],
-    document_type_key: &str,
-) -> usize {
-    documents
-        .iter()
-        .filter(|document| document.document_type_key == document_type_key)
-        .count()
-}
-
-fn execution_blocker_items(
-    point_count: usize,
-    document_count: usize,
-    note_count: usize,
-    tracking_health_tone: &str,
-    can_send_location_ping: bool,
-    live_tracking_available: bool,
-    delivery_completion_ready: bool,
-) -> Vec<String> {
-    let mut items = Vec::new();
-
-    if point_count == 0 {
-        items.push(
-            "GPS coverage has not started yet, so dispatch still cannot see a live route."
-                .to_string(),
-        );
-    } else if point_count == 1 {
-        items.push(
-            "Only one GPS point is on record, so the route span is still thin for operator review."
-                .to_string(),
-        );
-    }
-
-    if matches!(tracking_health_tone, "warning" | "danger") {
-        items.push(
-            "Tracking health is degraded. Send a fresh ping or restart live tracking before the next leg transition."
-                .to_string(),
-        );
-    }
-
-    if document_count == 0 {
-        items.push(
-            "No execution paperwork is attached yet, so proof and exception handling are still weak."
-                .to_string(),
-        );
-    }
-
-    if note_count == 0 {
-        items.push(
-            "No execution notes have been captured yet, so operator context is still missing from the timeline."
-                .to_string(),
-        );
-    }
-
-    if !delivery_completion_ready {
-        items.push(
-            "Delivery closeout is still blocked until both a POD and an execution note are present."
-                .to_string(),
-        );
-    }
-
-    if !can_send_location_ping {
-        items.push(
-            "This session cannot send GPS directly, so the next location refresh depends on the booked carrier or ops."
-                .to_string(),
-        );
-    } else if live_tracking_available
-        && point_count > 0
-        && !matches!(tracking_health_tone, "warning" | "danger")
-    {
-        items.push(
-            "Live tracking is available here and should stay on while the truck is moving."
-                .to_string(),
-        );
-    }
-
-    if items.is_empty() {
-        items.push(
-            "No obvious operator blockers are open right now; this leg looks healthy from the Rust execution side."
-                .to_string(),
-        );
-    }
-
-    items
-}
-
-fn event_tone(event_type_key: &str) -> &'static str {
-    match event_type_key {
-        "pickup_started" | "pickup_arrived" => "primary",
-        "pickup_departed" | "in_transit" => "warning",
-        "delivery_arrived" | "delivery_completed" => "success",
-        "location_ping" => "info",
-        _ => "info",
-    }
-}
-
+use super::{
+    execution_helpers::*,
+    execution_workflow_helpers::*,
+    shared::{FIELD_LABEL_STYLE, MUTED_TEXT_STYLE, PANEL_SCROLL_STYLE},
+};
 #[component]
 pub fn ExecutionLegPage() -> impl IntoView {
     let auth = use_auth();
-    let auth_for_admin_handoffs = auth.clone();
-    let auth_for_desk_handoffs = auth.clone();
-    let auth_for_payment_handoffs = auth.clone();
+    let auth_for_admin_handoffs = auth;
+    let auth_for_desk_handoffs = auth;
+    let auth_for_payment_handoffs = auth;
     let params = use_params_map();
     let leg_id = Memo::new(move |_| {
         params.with(|map| {
@@ -268,6 +46,19 @@ pub fn ExecutionLegPage() -> impl IntoView {
     let upload_document_name = RwSignal::new(String::new());
     let upload_document_type = RwSignal::new("delivery_pod".to_string());
     let is_uploading_document = RwSignal::new(false);
+    let is_recording_consent = RwSignal::new(false);
+    let is_saving_workflow = RwSignal::new(false);
+    let closeout_note = RwSignal::new(String::new());
+    let finance_exception_description = RwSignal::new(String::new());
+    let finance_exception_amount = RwSignal::new(String::new());
+    let finance_exception_decision_type = RwSignal::new("accessorial".to_string());
+    let finance_exception_decision_status = RwSignal::new("approved".to_string());
+    let finance_exception_resolution_note = RwSignal::new(String::new());
+    let customer_tracking_expires_hours = RwSignal::new("168".to_string());
+    let customer_tracking_revoke_reason = RwSignal::new(String::new());
+    let telematics_provider = RwSignal::new("manual_mobile".to_string());
+    let route_distance = RwSignal::new(String::new());
+    let route_duration = RwSignal::new(String::new());
     let live_tracking_enabled = RwSignal::new(false);
     let is_toggling_live_tracking = RwSignal::new(false);
     let live_tracking_watcher_id = RwSignal::new(None::<i32>);
@@ -319,13 +110,23 @@ pub fn ExecutionLegPage() -> impl IntoView {
         }
 
         is_loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::fetch_execution_leg_screen(leg_id).await {
                 Ok(next_screen) => {
                     error_message.set(None);
                     screen.set(Some(next_screen));
+                    if let Ok(summary) =
+                        document_upload::replay_offline_execution_submissions(leg_id).await
+                        && (!summary.contains("\"replayed\":0")
+                            || !summary.contains("\"pendingCount\":0"))
+                    {
+                        action_message.set(Some(format!(
+                            "Offline execution replay checked: {}",
+                            summary
+                        )));
+                    }
                 }
                 Err(error) => {
                     if error.contains("returned 401") {
@@ -355,7 +156,7 @@ pub fn ExecutionLegPage() -> impl IntoView {
 
         let current_leg_id = leg_id.get();
         let current_user_id = current_session.user.as_ref().map(|user| user.id);
-        let auth = auth.clone();
+        let auth = auth;
 
         if let Some(existing_handle) = ws_handle.get_untracked() {
             existing_handle.abort();
@@ -402,7 +203,7 @@ pub fn ExecutionLegPage() -> impl IntoView {
 
         pending_action_key.set(Some(action_key.clone()));
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::run_execution_leg_action(
@@ -430,8 +231,28 @@ pub fn ExecutionLegPage() -> impl IntoView {
                             &auth,
                             "Your Rust session expired; sign in again.",
                         );
+                        action_message.set(Some(error));
+                    } else {
+                        let payload = format!(
+                            "{{\"action_key\":{:?},\"note\":{:?}}}",
+                            action_key.clone(),
+                            action_note.get()
+                        );
+                        match document_upload::queue_offline_execution_submission(
+                            leg_id,
+                            "driver_action",
+                            &payload,
+                        ) {
+                            Ok(summary) => action_message.set(Some(format!(
+                                "Network failed, so the driver action was queued offline: {}",
+                                summary
+                            ))),
+                            Err(queue_error) => action_message.set(Some(format!(
+                                "{}; offline queue failed: {}",
+                                error, queue_error
+                            ))),
+                        }
                     }
-                    action_message.set(Some(error));
                 }
             }
 
@@ -449,11 +270,12 @@ pub fn ExecutionLegPage() -> impl IntoView {
 
         is_sending_location.set(true);
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
+            let captured_position = device_location::current_position().await;
             let result = async {
-                let (lat, lng) = device_location::current_position().await?;
+                let (lat, lng) = captured_position.clone()?;
                 api::send_execution_location_ping(
                     leg_id,
                     &shared::ExecutionLocationPingRequest {
@@ -479,8 +301,24 @@ pub fn ExecutionLegPage() -> impl IntoView {
                             &auth,
                             "Your Rust session expired; sign in again.",
                         );
+                        action_message.set(Some(error));
+                    } else if let Ok((lat, lng)) = captured_position {
+                        let payload = format!("{{\"lat\":{},\"lng\":{}}}", lat, lng);
+                        match document_upload::queue_offline_execution_submission(
+                            leg_id, "gps_ping", &payload,
+                        ) {
+                            Ok(summary) => action_message.set(Some(format!(
+                                "Network failed, so the GPS ping was queued offline: {}",
+                                summary
+                            ))),
+                            Err(queue_error) => action_message.set(Some(format!(
+                                "{}; offline queue failed: {}",
+                                error, queue_error
+                            ))),
+                        }
+                    } else {
+                        action_message.set(Some(error));
                     }
-                    action_message.set(Some(error));
                 }
             }
 
@@ -523,7 +361,7 @@ pub fn ExecutionLegPage() -> impl IntoView {
         let input_id = document_upload::execution_upload_input_id(current_screen.leg_id);
         is_uploading_document.set(true);
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match document_upload::upload_execution_document(
@@ -548,12 +386,438 @@ pub fn ExecutionLegPage() -> impl IntoView {
                             &auth,
                             "Your Rust session expired; sign in again.",
                         );
+                        action_message.set(Some(error));
+                    } else {
+                        match document_upload::queue_offline_execution_document_upload(
+                            current_screen.leg_id,
+                            &document_name_value,
+                            &document_type_value,
+                            &input_id,
+                        )
+                        .await
+                        {
+                            Ok(summary) => action_message.set(Some(format!(
+                                "Upload failed, so the document was queued offline: {}",
+                                summary
+                            ))),
+                            Err(queue_error) => action_message.set(Some(format!(
+                                "{}; offline document queue failed: {}",
+                                error, queue_error
+                            ))),
+                        }
+                    }
+                }
+            }
+
+            is_uploading_document.set(false);
+        });
+    };
+
+    let record_tracking_consent = move |_| {
+        let Some(current_screen) = screen.get() else {
+            action_message.set(Some(
+                "Execution data is not ready yet, so tracking consent cannot be recorded.".into(),
+            ));
+            return;
+        };
+
+        is_recording_consent.set(true);
+        action_message.set(None);
+        let auth = auth;
+
+        spawn_local(async move {
+            match api::capture_execution_tracking_consent(
+                current_screen.leg_id,
+                &ExecutionTrackingConsentRequest {
+                    consent_text: current_screen.tracking_consent_text.clone(),
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
                     }
                     action_message.set(Some(error));
                 }
             }
 
-            is_uploading_document.set(false);
+            is_recording_consent.set(false);
+        });
+    };
+
+    let queue_offline_note = move |_| {
+        let Some(current_screen) = screen.get() else {
+            action_message.set(Some(
+                "Execution data is not ready for offline queueing.".into(),
+            ));
+            return;
+        };
+
+        let payload = format!(
+            "{{\"note\":{:?},\"status\":\"{}\"}}",
+            action_note.get(),
+            current_screen.status_label
+        );
+        match document_upload::queue_offline_execution_submission(
+            current_screen.leg_id,
+            "driver_note",
+            &payload,
+        ) {
+            Ok(summary) => action_message.set(Some(format!(
+                "Offline note queued locally for later reconciliation: {}",
+                summary
+            ))),
+            Err(error) => action_message.set(Some(error)),
+        }
+    };
+
+    let save_closeout_approval = move |_| {
+        let Some(current_screen) = screen.get() else {
+            action_message.set(Some(
+                "Execution data is not ready for closeout review.".into(),
+            ));
+            return;
+        };
+
+        is_saving_workflow.set(true);
+        action_message.set(None);
+        let auth = auth;
+
+        spawn_local(async move {
+            match api::review_execution_closeout(
+                current_screen.leg_id,
+                &ExecutionCloseoutApprovalRequest {
+                    pod_review_status: "approved".into(),
+                    export_path: Some(format!(
+                        "/execution/legs/{}/closeout-package",
+                        current_screen.leg_id
+                    )),
+                    note: {
+                        let value = closeout_note.get();
+                        (!value.trim().is_empty()).then_some(value)
+                    },
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        closeout_note.set(String::new());
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            is_saving_workflow.set(false);
+        });
+    };
+
+    let save_finance_exception = move |_| {
+        let Some(current_screen) = screen.get() else {
+            action_message.set(Some(
+                "Execution data is not ready for finance exception intake.".into(),
+            ));
+            return;
+        };
+
+        let description = finance_exception_description.get();
+        let amount_cents = finance_exception_amount
+            .get()
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .map(|value| (value * 100.0).round() as i64);
+        is_saving_workflow.set(true);
+        action_message.set(None);
+        let auth = auth;
+
+        spawn_local(async move {
+            match api::create_execution_finance_exception(
+                current_screen.leg_id,
+                &ExecutionFinanceExceptionRequest {
+                    exception_type: "accessorial".into(),
+                    status: "pending".into(),
+                    amount_cents,
+                    visibility: "internal".into(),
+                    description,
+                    evidence_document_id: None,
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        finance_exception_description.set(String::new());
+                        finance_exception_amount.set(String::new());
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            is_saving_workflow.set(false);
+        });
+    };
+
+    let create_customer_tracking_link = move |_| {
+        let Some(current_screen) = screen.get() else {
+            action_message.set(Some(
+                "Execution data is not ready for customer tracking setup.".into(),
+            ));
+            return;
+        };
+
+        let expires_in_hours = customer_tracking_expires_hours
+            .get()
+            .trim()
+            .parse::<i64>()
+            .ok();
+        is_saving_workflow.set(true);
+        action_message.set(None);
+        let auth = auth;
+
+        spawn_local(async move {
+            match api::create_customer_tracking_link(
+                current_screen.leg_id,
+                &ExecutionCustomerTrackingLinkRequest {
+                    visibility_scope: "status_eta_latest_location".into(),
+                    expires_in_hours,
+                    rotate_existing: true,
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            is_saving_workflow.set(false);
+        });
+    };
+
+    let decide_finance_exception = move |_| {
+        let Some(current_screen) = screen.get() else {
+            action_message.set(Some(
+                "Execution data is not ready for finance exception decisions.".into(),
+            ));
+            return;
+        };
+
+        is_saving_workflow.set(true);
+        action_message.set(None);
+        let exception_type = finance_exception_decision_type.get();
+        let status = finance_exception_decision_status.get();
+        let note = finance_exception_resolution_note.get();
+        let auth = auth;
+
+        spawn_local(async move {
+            match api::decide_execution_finance_exception(
+                current_screen.leg_id,
+                &ExecutionFinanceExceptionDecisionRequest {
+                    exception_type,
+                    status,
+                    resolution_note: (!note.trim().is_empty()).then_some(note),
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        finance_exception_resolution_note.set(String::new());
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            is_saving_workflow.set(false);
+        });
+    };
+
+    let revoke_customer_tracking_link = move |_| {
+        let Some(current_screen) = screen.get() else {
+            action_message.set(Some(
+                "Execution data is not ready for customer tracking revocation.".into(),
+            ));
+            return;
+        };
+
+        is_saving_workflow.set(true);
+        action_message.set(None);
+        let reason = customer_tracking_revoke_reason.get();
+        let auth = auth;
+
+        spawn_local(async move {
+            match api::revoke_customer_tracking_links(
+                current_screen.leg_id,
+                &ExecutionCustomerTrackingRevokeRequest {
+                    reason: (!reason.trim().is_empty()).then_some(reason),
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        customer_tracking_revoke_reason.set(String::new());
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            is_saving_workflow.set(false);
+        });
+    };
+
+    let save_telematics = move |_| {
+        let Some(current_screen) = screen.get() else {
+            action_message.set(Some(
+                "Execution data is not ready for telematics setup.".into(),
+            ));
+            return;
+        };
+
+        is_saving_workflow.set(true);
+        action_message.set(None);
+        let provider = telematics_provider.get();
+        let auth = auth;
+
+        spawn_local(async move {
+            match api::upsert_execution_telematics(
+                current_screen.leg_id,
+                &ExecutionTelematicsConnectionRequest {
+                    provider_key: provider,
+                    status: "planned".into(),
+                    fallback_behavior:
+                        "Use mobile driver tracking when provider data is stale or unavailable."
+                            .into(),
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            is_saving_workflow.set(false);
+        });
+    };
+
+    let save_route_plan = move |_| {
+        let Some(current_screen) = screen.get() else {
+            action_message.set(Some(
+                "Execution data is not ready for route planning.".into(),
+            ));
+            return;
+        };
+
+        is_saving_workflow.set(true);
+        action_message.set(None);
+        let distance = route_distance.get().trim().parse::<f64>().ok();
+        let duration = route_duration.get().trim().parse::<i32>().ok();
+        let auth = auth;
+
+        spawn_local(async move {
+            match api::upsert_execution_route_plan(
+                current_screen.leg_id,
+                &ExecutionRoutePlanRequest {
+                    provider_key: "manual".into(),
+                    distance_miles: distance,
+                    duration_minutes: duration,
+                    truck_safe: true,
+                    status: "approved_manual".into(),
+                    constraints: serde_json::json!({
+                        "source": "operator_entered",
+                        "truck_safe_review": true
+                    }),
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+            is_saving_workflow.set(false);
         });
     };
 
@@ -581,7 +845,7 @@ pub fn ExecutionLegPage() -> impl IntoView {
 
         is_toggling_live_tracking.set(true);
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             let url = api::api_href(&format!("/execution/legs/{}/location", leg_id));
@@ -626,7 +890,7 @@ pub fn ExecutionLegPage() -> impl IntoView {
     view! {
         <article style="display:grid;gap:1.25rem;">
             <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                <div style="display:grid;gap:0.35rem;">
+                <div style=FIELD_LABEL_STYLE>
                     <h2>{move || screen.get().map(|value| value.title).unwrap_or_else(|| "Execution Workspace".into())}</h2>
                     <p>{move || screen.get().map(|value| value.subtitle).unwrap_or_else(|| "Rust tracking and execution view".into())}</p>
                 </div>
@@ -666,11 +930,6 @@ pub fn ExecutionLegPage() -> impl IntoView {
                         .clone()
                         .unwrap_or_else(|| "Tracking health will appear here once execution data settles.".into());
                     let tracking_health_tone = screen_value.tracking_health_tone.clone();
-                    let _tracking_health_tone_for_hint = tracking_health_tone.clone();
-                    let _next_action_label = screen_value
-                        .next_action_label
-                        .clone()
-                        .unwrap_or_else(|| "Use the execution controls below to keep this leg moving.".into());
                     let latest_tracking_point = tracking_points
                         .iter()
                         .find(|point| point.is_latest)
@@ -678,33 +937,8 @@ pub fn ExecutionLegPage() -> impl IntoView {
                         .or_else(|| tracking_points.first().cloned());
                     let earliest_tracking_point = tracking_points.last().cloned();
                     let documents = screen_value.documents.clone();
+                    let required_documents = screen_value.required_documents.clone();
                     let document_count = documents.len();
-                    let (_gps_focus_tone, _gps_focus_label) =
-                        gps_coverage_label(tracking_point_count, &tracking_health_tone);
-                    let (_document_focus_tone, _document_focus_label) = document_readiness_label(
-                        document_count,
-                        screen_value.delivery_completion_ready,
-                    );
-                    let _execution_blockers = execution_blocker_items(
-                        tracking_point_count,
-                        document_count,
-                        note_count,
-                        &tracking_health_tone,
-                        screen_value.can_send_location_ping,
-                        screen_value.live_tracking_available,
-                        screen_value.delivery_completion_ready,
-                    );
-                    let document_type_options = screen_value.document_type_options.clone();
-                    let _pickup_bol_count =
-                        count_execution_documents_by_type(&documents, "pickup_bol");
-                    let _pickup_photo_count =
-                        count_execution_documents_by_type(&documents, "pickup_photo");
-                    let _delivery_pod_count =
-                        count_execution_documents_by_type(&documents, "delivery_pod");
-                    let _delivery_photo_count =
-                        count_execution_documents_by_type(&documents, "delivery_photo");
-                    let _other_document_count =
-                        count_execution_documents_by_type(&documents, "other");
                     let route_stage_key = screen_value.status_label.to_ascii_lowercase();
                     let desk_handoff = if route_stage_key.contains("delivery")
                         || route_stage_key.contains("completed")
@@ -721,7 +955,7 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                 <InfoCard label="Route" value=screen_value.route_label.clone() />
                                 <InfoCard label="Carrier" value=screen_value.carrier_label.clone().unwrap_or_else(|| "No carrier booked yet".into()) />
                                 <div style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.4rem;">
-                                    <small style="color:#64748b;">"Execution status"</small>
+                                    <small style=MUTED_TEXT_STYLE>"Execution status"</small>
                                     <span style=tone_style(&screen_value.status_tone)>{screen_value.status_label.clone()}</span>
                                     <small>{move || if ws_connected.get() { "Realtime execution refresh connected" } else { "Realtime execution refresh idle" }}</small>
                                 </div>
@@ -733,6 +967,22 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                 <InfoCard label="Timeline Events" value=timeline_count.to_string() />
                                 <InfoCard label="Execution Notes" value=note_count.to_string() />
                                 <InfoCard label="Operator Mode" value=screen_value.operator_mode_label.clone() />
+                                <InfoCard
+                                    label="Privacy"
+                                    value=if screen_value.tracking_consent_granted {
+                                        "Tracking consent recorded".into()
+                                    } else {
+                                        "Consent required".into()
+                                    }
+                                />
+                                <InfoCard
+                                    label="Closeout"
+                                    value=screen_value.closeout_package_label.clone()
+                                />
+                                <InfoCard
+                                    label="Route Plan"
+                                    value=screen_value.route_plan_label.clone()
+                                />
                                 <InfoCard
                                     label="Delivery Readiness"
                                     value=if screen_value.delivery_completion_ready {
@@ -774,205 +1024,20 @@ pub fn ExecutionLegPage() -> impl IntoView {
                                 })}
                             </section>
 
-                            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;align-items:start;">
-                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.85rem;">
-                                    <div style="padding:0.85rem 1rem;border:1px solid #dbeafe;border-radius:0.9rem;background:#eff6ff;display:grid;gap:0.35rem;">
-                                        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap;">
-                                            <div style="display:grid;gap:0.2rem;">
-                                                <strong>{screen_value.operator_mode_label.clone()}</strong>
-                                                {screen_value.live_tracking_note.clone().map(|note| view! {
-                                                    <small style="color:#1d4ed8;">{note}</small>
-                                                })}
-                                            </div>
-                                            <span style=move || tone_style(if live_tracking_enabled.get() { "success" } else if screen_value.live_tracking_available { "warning" } else { "info" })>
-                                                {move || if live_tracking_enabled.get() {
-                                                    "Tracking: ON".to_string()
-                                                } else if screen_value.live_tracking_available {
-                                                    "Tracking: Ready".to_string()
-                                                } else {
-                                                    "Tracking: View only".to_string()
-                                                }}
-                                            </span>
-                                        </div>
-                                        {screen_value.live_tracking_available.then(|| view! {
-                                            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                                                <button
-                                                    type="button"
-                                                    style="padding:0.55rem 0.85rem;border-radius:0.8rem;border:none;background:#166534;color:white;cursor:pointer;"
-                                                    disabled=move || is_toggling_live_tracking.get() || live_tracking_enabled.get()
-                                                    on:click=start_live_tracking
-                                                >
-                                                    {move || if is_toggling_live_tracking.get() && !live_tracking_enabled.get() { "Starting..." } else { "Start live tracking" }}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    style="padding:0.55rem 0.85rem;border-radius:0.8rem;border:none;background:#475569;color:white;cursor:pointer;"
-                                                    disabled=move || is_toggling_live_tracking.get() || !live_tracking_enabled.get()
-                                                    on:click=stop_live_tracking
-                                                >
-                                                    {move || if is_toggling_live_tracking.get() && live_tracking_enabled.get() { "Stopping..." } else { "Stop live tracking" }}
-                                                </button>
-                                            </div>
-                                        })}
-                                    </div>
-
-                                    <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                                        <strong>"Execution actions"</strong>
-                                        <button
-                                            type="button"
-                                            style="padding:0.55rem 0.85rem;border-radius:0.8rem;border:none;background:#0f766e;color:white;cursor:pointer;"
-                                            disabled=move || is_sending_location.get() || !screen_value.can_send_location_ping
-                                            on:click=send_current_location
-                                        >
-                                            {move || if is_sending_location.get() { "Sending GPS..." } else if screen_value.can_send_location_ping { "Send current GPS" } else { "GPS locked" }}
-                                        </button>
-                                    </div>
-                                    <div style="display:grid;gap:0.35rem;padding:0.85rem 1rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;">
-                                        <strong>"Latest location"</strong>
-                                        <span>{screen_value.latest_location_label.clone().unwrap_or_else(|| "No location ping yet".into())}</span>
-                                        <small>{screen_value.latest_coordinate_label.clone().unwrap_or_else(|| "Waiting for the first GPS update".into())}</small>
-                                        <small style="color:#64748b;">{tracking_window_label.clone()}</small>
-                                        <span style=tone_style(&tracking_health_tone)>{screen_value.tracking_health_tone.replace('_', " ")}</span>
-                                        <small style="color:#64748b;">{tracking_health_label.clone()}</small>
-                                        {screen_value.latest_map_url.clone().map(|map_url| view! {
-                                            <a href=map_url target="_blank" rel="noopener noreferrer" style="justify-self:start;padding:0.45rem 0.75rem;border-radius:0.75rem;background:#e0f2fe;color:#075985;text-decoration:none;">
-                                                "Open latest point"
-                                            </a>
-                                        })}
-                                    </div>
-                                    <div style="display:grid;gap:0.4rem;padding:0.85rem 1rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;">
-                                        <strong>"Execution note"</strong>
-                                        <textarea
-                                            rows="3"
-                                            placeholder="Add carrier or operator context for the next execution step"
-                                            prop:value=move || action_note.get()
-                                            on:input=move |ev| action_note.set(event_target_value(&ev))
-                                            disabled=move || pending_action_key.get().is_some()
-                                        />
-                                        {screen_value.delivery_completion_note.clone().map(|note| view! {
-                                            <small style=move || if screen_value.delivery_completion_ready { "color:#166534;" } else { "color:#b45309;" }>{note}</small>
-                                        })}
-                                    </div>
-                                    <div style="display:grid;gap:0.75rem;">
-                                        {action_items.into_iter().map(|item| render_action_item(item, pending_action_key, run_action)).collect_view()}
-                                    </div>
-                                </section>
-
-                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.85rem;overflow:auto;">
-                                    <strong>"Live location map"</strong>
-                                    {tracking_embed.clone().map(|embed_url| view! {
-                                        <iframe
-                                            src=embed_url
-                                            style="width:100%;min-height:320px;border:1px solid #e5e7eb;border-radius:0.95rem;background:#f8fafc;"
-                                        ></iframe>
-                                    }.into_any()).unwrap_or_else(|| view! {
-                                        <section style="padding:1rem;border:1px dashed #cbd5e1;border-radius:0.95rem;background:#f8fafc;">
-                                            <strong>"No live map yet"</strong>
-                                        </section>
-                                    }.into_any())}
-                                    {latest_tracking_point.clone().map(|point| view! {
-                                        <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;padding:0.75rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;">
-                                            <div style="display:grid;gap:0.2rem;">
-                                                <strong>"Latest plotted point"</strong>
-                                                <small>{point.recorded_at_label.clone()}</small>
-                                                <small style="color:#64748b;">{format!("{:.5}, {:.5}", point.lat, point.lng)}</small>
-                                            </div>
-                                            <a href=tracking_point_map_url(&point) target="_blank" rel="noopener noreferrer" style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#e0f2fe;color:#075985;text-decoration:none;">
-                                                "Open exact point"
-                                            </a>
-                                        </div>
-                                    })}
-                                    {earliest_tracking_point.clone().map(|point| view! {
-                                        <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;padding:0.75rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;">
-                                            <div style="display:grid;gap:0.2rem;">
-                                                <strong>"First plotted point"</strong>
-                                                <small>{point.recorded_at_label.clone()}</small>
-                                                <small style="color:#64748b;">{format!("{:.5}, {:.5}", point.lat, point.lng)}</small>
-                                            </div>
-                                            <a href=tracking_point_map_url(&point) target="_blank" rel="noopener noreferrer" style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#f1f5f9;color:#0f172a;text-decoration:none;">
-                                                "Open starting point"
-                                            </a>
-                                        </div>
-                                    })}
-                                    {earliest_tracking_point.clone().zip(latest_tracking_point.clone()).map(|(start, end)| view! {
-                                        <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;padding:0.75rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;">
-                                            <div style="display:grid;gap:0.2rem;">
-                                                <strong>"Route handoff"</strong>
-                                            </div>
-                                            <a href=tracking_route_maps_url(&start, &end) target="_blank" rel="noopener noreferrer" style="padding:0.45rem 0.75rem;border-radius:0.75rem;background:#ede9fe;color:#5b21b6;text-decoration:none;">
-                                                "Open route span"
-                                            </a>
-                                        </div>
-                                    })}
-                                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;">
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.15rem;">
-                                            <strong>"Tracking session"</strong>
-                                            <small style="color:#64748b;">{tracking_window_label.clone()}</small>
-                                        </div>
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.15rem;">
-                                            <strong>"Approx. distance"</strong>
-                                            <small style="color:#64748b;">{tracking_distance_label.clone()}</small>
-                                        </div>
-                                        <div style="padding:0.8rem 0.9rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.15rem;">
-                                            <strong>"Tracking health"</strong>
-                                            <span style=tone_style(&tracking_health_tone)>{screen_value.tracking_health_tone.replace('_', " ")}</span>
-                                        </div>
-                                    </div>
-                                    <strong>"Tracking points"</strong>
-                                    {render_tracking_points(tracking_points)}
-                                </section>
-                            </section>
+                            {render_execution_tracking_workspace(                                 screen_value.clone(),                                 action_items,                                 tracking_points,                                 tracking_embed,                                 latest_tracking_point,                                 earliest_tracking_point,                                 tracking_distance_label,                                 tracking_window_label,                                 tracking_health_label,                                 tracking_health_tone,                                 is_recording_consent,                                 live_tracking_enabled,                                 is_toggling_live_tracking,                                 is_sending_location,                                 pending_action_key,                                 action_note,                                 record_tracking_consent,                                 start_live_tracking,                                 stop_live_tracking,                                 send_current_location,                                 queue_offline_note,                                 run_action,                             )}
 
                             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;align-items:start;">
-                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.85rem;overflow:auto;">
+                                <section style=PANEL_SCROLL_STYLE>
                                     <strong>"Timeline"</strong>
                                     {render_timeline(timeline)}
                                 </section>
-                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.85rem;overflow:auto;">
+                                <section style=PANEL_SCROLL_STYLE>
                                     <strong>"Execution note history"</strong>
                                     {render_execution_notes(notes_history)}
                                 </section>
                             </section>
 
-                            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;align-items:start;">
-                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.85rem;overflow:auto;">
-                                    <div style="display:grid;gap:0.3rem;">
-                                        <strong>"Execution documents"</strong>
-                                        <small style="color:#64748b;">{format!("{} execution document(s) currently attached.", document_count)}</small>
-                                    </div>
-                                    <div style="display:grid;gap:0.65rem;padding:0.85rem 1rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;">
-                                        <strong>"Upload document"</strong>
-                                        <input
-                                            type="text"
-                                            placeholder="Optional custom document name"
-                                            prop:value=move || upload_document_name.get()
-                                            on:input=move |ev| upload_document_name.set(event_target_value(&ev))
-                                            disabled=move || !screen_value.can_upload_documents || is_uploading_document.get()
-                                        />
-                                        <select
-                                            prop:value=move || upload_document_type.get()
-                                            on:change=move |ev| upload_document_type.set(event_target_value(&ev))
-                                            disabled=move || !screen_value.can_upload_documents || is_uploading_document.get()
-                                        >
-                                            {document_type_options.into_iter().map(render_document_type_option).collect_view()}
-                                        </select>
-                                        <input
-                                            id=document_upload::execution_upload_input_id(screen_value.leg_id)
-                                            type="file"
-                                            disabled=move || !screen_value.can_upload_documents || is_uploading_document.get()
-                                        />
-                                        <button
-                                            type="button"
-                                            style="padding:0.55rem 0.85rem;border-radius:0.8rem;border:none;background:#111827;color:white;cursor:pointer;justify-self:start;"
-                                            disabled=move || !screen_value.can_upload_documents || is_uploading_document.get()
-                                            on:click=move |_| upload_execution_document()
-                                        >
-                                            {move || if is_uploading_document.get() { "Uploading..." } else if screen_value.can_upload_documents { "Upload execution document" } else { "Upload locked" }}
-                                        </button>
-                                    </div>
-                                    {render_documents(documents, open_document)}
-                                </section>
-                            </section>
+                            {render_closeout_documents_customer_and_finance(                                 screen_value.clone(),                                 required_documents,                                 documents,                                 document_count,                                 upload_document_name,                                 upload_document_type,                                 is_uploading_document,                                 closeout_note,                                 is_saving_workflow,                                 customer_tracking_expires_hours,                                 customer_tracking_revoke_reason,                                 telematics_provider,                                 route_distance,                                 route_duration,                                 finance_exception_description,                                 finance_exception_amount,                                 finance_exception_decision_type,                                 finance_exception_decision_status,                                 finance_exception_resolution_note,                                 upload_execution_document,                                 open_document,                                 save_closeout_approval,                                 create_customer_tracking_link,                                 revoke_customer_tracking_link,                                 save_telematics,                                 save_route_plan,                                 save_finance_exception,                                 decide_finance_exception,                             )}
 
                         </>
                     }.into_any()
@@ -985,159 +1050,5 @@ pub fn ExecutionLegPage() -> impl IntoView {
                 }
             }}
         </article>
-    }
-}
-
-fn render_action_item(
-    item: ExecutionActionItem,
-    pending_action_key: RwSignal<Option<String>>,
-    run_action: impl Fn(String) + Copy + 'static,
-) -> impl IntoView {
-    let item_key = item.key.clone();
-    let is_pending = Signal::derive(move || pending_action_key.get() == Some(item_key.clone()));
-    let button_label = item.label.clone();
-    let action_key = item.key.clone();
-    let description = item.description.clone();
-    let is_enabled = item.is_enabled;
-
-    view! {
-        <div style="padding:0.85rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#fcfcfb;display:grid;gap:0.45rem;">
-            <strong>{button_label.clone()}</strong>
-            <small style="color:#64748b;">{description}</small>
-            <button
-                type="button"
-                style="padding:0.55rem 0.85rem;border-radius:0.8rem;border:none;background:#111827;color:white;cursor:pointer;justify-self:start;"
-                disabled=move || is_pending.get() || !is_enabled
-                on:click=move |_| run_action(action_key.clone())
-            >
-                {move || if is_pending.get() { "Working...".to_string() } else if is_enabled { button_label.clone() } else { "Unavailable".to_string() }}
-            </button>
-        </div>
-    }
-}
-
-fn render_tracking_points(points: Vec<ExecutionTrackingPointItem>) -> AnyView {
-    if points.is_empty() {
-        view! { <p style="margin:0;">"No GPS points have been stored for this leg yet."</p> }
-            .into_any()
-    } else {
-        view! {
-            <table style="width:100%;border-collapse:collapse;min-width:420px;">
-                <thead style="background:#f8fafc;">
-                    <tr>
-                        <th style="text-align:left;padding:0.75rem;">"Recorded"</th>
-                        <th style="text-align:left;padding:0.75rem;">"Coordinates"</th>
-                        <th style="text-align:left;padding:0.75rem;">"State"</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {points.into_iter().map(|point| view! {
-                        <tr style="border-top:1px solid #f1f5f9;vertical-align:top;">
-                            <td style="padding:0.75rem;">{point.recorded_at_label.clone()}</td>
-                            <td style="padding:0.75rem;">{format!("{:.5}, {:.5}", point.lat, point.lng)}</td>
-                            <td style="padding:0.75rem;display:grid;gap:0.35rem;">
-                                <span>{if point.is_latest { "Latest" } else { "Historical" }}</span>
-                                <a href=tracking_point_map_url(&point) target="_blank" rel="noopener noreferrer" style="color:#0f766e;text-decoration:none;">
-                                    "Open point"
-                                </a>
-                            </td>
-                        </tr>
-                    }).collect_view()}
-                </tbody>
-            </table>
-        }.into_any()
-    }
-}
-
-fn render_timeline(items: Vec<ExecutionTimelineItem>) -> AnyView {
-    if items.is_empty() {
-        view! { <p style="margin:0;">"No execution events are recorded yet."</p> }.into_any()
-    } else {
-        view! {
-            <div style="display:grid;gap:0.7rem;">
-                {items.into_iter().map(|item| view! {
-                    <div style="padding:0.8rem 0.95rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.15rem;">
-                        <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                            <strong>{item.event_type_label}</strong>
-                            <span style=tone_style(event_tone(&item.event_type_key))>{item.event_type_key.replace('_', " ")}</span>
-                        </div>
-                        <small>{item.created_at_label}</small>
-                    </div>
-                }).collect_view()}
-            </div>
-        }.into_any()
-    }
-}
-
-fn render_documents(
-    items: Vec<ExecutionDocumentItem>,
-    open_document: impl Fn(String) + Copy + 'static,
-) -> AnyView {
-    if items.is_empty() {
-        view! { <p style="margin:0;">"No execution-stage documents have been attached to this leg yet."</p> }.into_any()
-    } else {
-        view! {
-            <div style="display:grid;gap:0.7rem;">
-                {items.into_iter().map(|item| view! {
-                    <div style="padding:0.8rem 0.95rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.15rem;">
-                        <strong>{item.document_type_label}</strong>
-                        <small>{item.file_label}</small>
-                        <small style="color:#64748b;">{item.uploaded_by_label.unwrap_or_else(|| "Uploader not recorded".into())}</small>
-                        <small>{item.created_at_label}</small>
-                        {item.download_path.clone().map(|path| {
-                            if item.can_view_file {
-                                view! {
-                                    <button
-                                        type="button"
-                                        style="padding:0.45rem 0.75rem;border-radius:0.75rem;border:none;background:#0f766e;color:white;cursor:pointer;justify-self:start;"
-                                        on:click=move |_| open_document(path.clone())
-                                    >
-                                        "View file"
-                                    </button>
-                                }.into_any()
-                            } else {
-                                view! { <small>"File binary is restricted to admin and the uploader."</small> }.into_any()
-                            }
-                        }).unwrap_or_else(|| view! { <small>"File binary is restricted to admin and the uploader."</small> }.into_any())}
-                    </div>
-                }).collect_view()}
-            </div>
-        }.into_any()
-    }
-}
-
-fn render_execution_notes(items: Vec<ExecutionNoteItem>) -> AnyView {
-    if items.is_empty() {
-        view! { <p style="margin:0;">"No execution notes have been captured yet for this leg."</p> }
-            .into_any()
-    } else {
-        view! {
-            <div style="display:grid;gap:0.7rem;">
-                {items.into_iter().map(|item| view! {
-                    <div style="padding:0.8rem 0.95rem;border:1px solid #e5e7eb;border-radius:0.9rem;background:#fcfcfb;display:grid;gap:0.2rem;">
-                        <strong>{item.actor_label}</strong>
-                        <small style="color:#64748b;">{item.status_label}</small>
-                        <span>{item.remarks_label}</span>
-                        <small>{item.created_at_label}</small>
-                    </div>
-                }).collect_view()}
-            </div>
-        }.into_any()
-    }
-}
-
-fn render_document_type_option(option: ExecutionDocumentTypeOption) -> impl IntoView {
-    view! {
-        <option value=option.key>{format!("{} - {}", option.label, option.description)}</option>
-    }
-}
-
-#[component]
-fn InfoCard(label: &'static str, value: String) -> impl IntoView {
-    view! {
-        <div style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.4rem;">
-            <small style="color:#64748b;">{label}</small>
-            <strong>{value}</strong>
-        </div>
     }
 }

@@ -6,616 +6,18 @@ use crate::{
     session::{self, use_auth},
 };
 use shared::{
-    AdminReviewLoadRequest, EscrowFundRequest, EscrowHoldRequest, EscrowReleaseRequest,
-    LoadDocumentRow, LoadHandoffSummary, LoadHistoryRow, LoadProfileLegRow, LoadProfileScreen,
-    UpsertLoadDocumentRequest, VerifyLoadDocumentRequest,
+    EscrowFundRequest, EscrowHoldRequest, EscrowReleaseRequest, FacilityAppointmentRequest,
+    GenerateFreightDocumentsRequest, LoadDocumentRow, LoadLifecycleActionRequest,
+    LoadProfileLegRow, LoadProfileScreen, RateCalculationRequest, UpsertLoadDocumentRequest,
+    VerifyLoadDocumentRequest,
 };
 
-fn tone_style(tone: &str) -> &'static str {
-    match tone {
-        "success" => {
-            "background:#e8fff3;padding:0.25rem 0.55rem;border-radius:999px;color:#0f766e;"
-        }
-        "warning" => {
-            "background:#fff7dd;padding:0.25rem 0.55rem;border-radius:999px;color:#b45309;"
-        }
-        "danger" => "background:#ffe4e6;padding:0.25rem 0.55rem;border-radius:999px;color:#be123c;",
-        "info" => "background:#e0f2fe;padding:0.25rem 0.55rem;border-radius:999px;color:#0369a1;",
-        "primary" => {
-            "background:#ede9fe;padding:0.25rem 0.55rem;border-radius:999px;color:#6d28d9;"
-        }
-        "dark" => "background:#e5e7eb;padding:0.25rem 0.55rem;border-radius:999px;color:#111827;",
-        _ => "background:#f1f5f9;padding:0.25rem 0.55rem;border-radius:999px;color:#475569;",
-    }
-}
-
-fn human_file_size(bytes: Option<u64>) -> String {
-    match bytes {
-        Some(value) if value >= 1024 * 1024 => format!("{:.1} MB", value as f64 / 1024.0 / 1024.0),
-        Some(value) if value >= 1024 => format!("{:.1} KB", value as f64 / 1024.0),
-        Some(value) => format!("{} B", value),
-        None => "Size not recorded".into(),
-    }
-}
-
-fn render_handoff(handoff: Option<LoadHandoffSummary>, admin_mode: bool) -> AnyView {
-    match handoff {
-        Some(handoff) => {
-            let reconciliation_href = match handoff.status_tone.as_str() {
-                "danger" => Some("/admin/stloads/reconciliation?action=mismatch_detected".to_string()),
-                "warning" => Some("/admin/stloads/reconciliation?action=auto_archive".to_string()),
-                _ => None,
-            };
-            view! {
-            <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.85rem;">
-                <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                    <div>
-                        <strong>"STLOADS board status"</strong>
-                        <div><small>{format!("TMS Load {}", handoff.tms_load_id)}</small></div>
-                    </div>
-                    <div style="display:grid;gap:0.45rem;justify-items:end;">
-                        <span style=tone_style(&handoff.status_tone)>{handoff.status_label}</span>
-                        {admin_mode.then(|| view! {
-                            <div style="display:flex;gap:0.45rem;flex-wrap:wrap;justify-content:flex-end;">
-                                <A href="/admin/stloads/operations" attr:style="padding:0.45rem 0.7rem;border-radius:0.75rem;background:#eef2ff;color:#312e81;text-decoration:none;">
-                                    "STLOADS Ops"
-                                </A>
-                                {reconciliation_href.clone().map(|href| view! {
-                                    <A href=href attr:style="padding:0.45rem 0.7rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
-                                        "Reconciliation"
-                                    </A>
-                                })}
-                            </div>
-                        })}
-                    </div>
-                </div>
-                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;">
-                    <div><small style="color:#64748b;">"Board rate"</small><div>{handoff.board_rate_label}</div></div>
-                    <div><small style="color:#64748b;">"TMS status"</small><div>{handoff.tms_status_label.unwrap_or_else(|| "No upstream status yet".into())}</div></div>
-                    <div><small style="color:#64748b;">"TMS status updated"</small><div>{handoff.tms_status_at_label.unwrap_or_else(|| "No upstream timestamp yet".into())}</div></div>
-                    <div><small style="color:#64748b;">"Published"</small><div>{handoff.published_at_label.unwrap_or_else(|| "Not published yet".into())}</div></div>
-                    <div><small style="color:#64748b;">"Pushed by"</small><div>{handoff.pushed_by_label.unwrap_or_else(|| "System".into())}</div></div>
-                </div>
-            </section>
-        }.into_any()
-        }
-        None => view! {
-            <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fcfcfb;">
-                "This load has not been pushed to STLOADS yet."
-            </section>
-        }.into_any(),
-    }
-}
-
-fn render_legs(
-    legs: Vec<LoadProfileLegRow>,
-    admin_mode: bool,
-    can_manage_payments: bool,
-    finance_loading_leg_id: RwSignal<Option<u64>>,
-    run_finance_action: impl Fn(LoadProfileLegRow) + Copy + 'static,
-) -> AnyView {
-    if legs.is_empty() {
-        view! { <p style="margin:0;">"No legs are attached to this load yet."</p> }.into_any()
-    } else {
-        view! {
-            <table style="width:100%;border-collapse:collapse;min-width:760px;">
-                <thead style="background:#f8fafc;">
-                    <tr>
-                        <th style="text-align:left;padding:0.75rem;">"Leg"</th>
-                        <th style="text-align:left;padding:0.75rem;">"Route"</th>
-                        <th style="text-align:left;padding:0.75rem;">"Dates"</th>
-                        <th style="text-align:left;padding:0.75rem;">"Status"</th>
-                        <th style="text-align:left;padding:0.75rem;">"Rate"</th>
-                        <th style="text-align:left;padding:0.75rem;">"Action"</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {legs.into_iter().map(|leg| {
-                        let can_track = !leg.status_label.trim().is_empty();
-                        let finance_leg = leg.clone();
-                        let leg_id = leg.leg_id;
-                        let confirm_finance_action = RwSignal::new(None::<String>);
-                        view! {
-                            <tr style="border-top:1px solid #f1f5f9;vertical-align:top;">
-                                <td style="padding:0.75rem;">
-                                    <strong>{leg.leg_code.clone()}</strong>
-                                    {leg.carrier_label.clone().map(|carrier| view! { <div><small>{carrier}</small></div> })}
-                                </td>
-                                <td style="padding:0.75rem;">{leg.route_label.clone()}</td>
-                                <td style="padding:0.75rem;">{format!("{} -> {}", leg.pickup_date_label, leg.delivery_date_label)}</td>
-                                <td style="padding:0.75rem;display:grid;gap:0.35rem;">
-                                    <span style=tone_style(&leg.status_tone)>{leg.status_label.clone()}</span>
-                                    <small>{leg.bid_status_label.clone()}</small>
-                                    {leg.payment_label.clone().map(|label| view! {
-                                        <small style="color:#7c3aed;">{format!("Payment: {}", label)}</small>
-                                    })}
-                                </td>
-                                <td style="padding:0.75rem;">{leg.amount_label.clone()}</td>
-                                <td style="padding:0.75rem;display:grid;gap:0.4rem;min-width:180px;">
-                                    {can_track.then(|| view! {
-                                        <A href=format!("/execution/legs/{}", leg.leg_id) attr:style="color:#1d4ed8;text-decoration:none;">"Track leg"</A>
-                                    })}
-                                    {admin_mode.then(|| {
-                                        leg.payments_href.clone().map(|href| view! {
-                                            <A href=href attr:style="display:inline-block;padding:0.45rem 0.7rem;border-radius:0.7rem;background:#fff7dd;color:#92400e;text-decoration:none;">
-                                                "Payments"
-                                            </A>
-                                        })
-                                    })}
-                                    {admin_mode.then(|| {
-                                        leg.finance_action_label.clone().map(|label| {
-                                            if leg.finance_action_enabled && can_manage_payments {
-                                                view! {
-                                                    <div style="display:grid;gap:0.35rem;">
-                                                        <button
-                                                            type="button"
-                                                            style="padding:0.45rem 0.7rem;border:none;border-radius:0.7rem;background:#166534;color:white;cursor:pointer;"
-                                                            disabled=move || finance_loading_leg_id.get() == Some(leg_id)
-                                                            on:click=move |_| {
-                                                                let Some(action_key) = finance_leg.finance_action_key.clone() else {
-                                                                    return;
-                                                                };
-                                                                if confirm_finance_action.get() != Some(action_key.clone()) {
-                                                                    confirm_finance_action.set(Some(action_key));
-                                                                } else {
-                                                                    run_finance_action(finance_leg.clone());
-                                                                    confirm_finance_action.set(None);
-                                                                }
-                                                            }
-                                                        >
-                                                            {move || {
-                                                                if finance_loading_leg_id.get() == Some(leg_id) {
-                                                                    "Updating finance...".to_string()
-                                                                } else if confirm_finance_action.get() == leg.finance_action_key {
-                                                                    format!("Confirm {}", label.clone())
-                                                                } else {
-                                                                    label.clone()
-                                                                }
-                                                            }}
-                                                        </button>
-                                                        {move || {
-                                                            if confirm_finance_action.get().is_some()
-                                                                && finance_loading_leg_id.get() != Some(leg_id)
-                                                            {
-                                                                view! {
-                                                                    <button
-                                                                        type="button"
-                                                                        style="padding:0.45rem 0.7rem;border:1px solid #d6d3d1;border-radius:0.7rem;background:#fafaf9;color:#111827;cursor:pointer;"
-                                                                        on:click=move |_| confirm_finance_action.set(None)
-                                                                    >
-                                                                        "Cancel finance action"
-                                                                    </button>
-                                                                }.into_any()
-                                                            } else {
-                                                                view! { <></> }.into_any()
-                                                            }
-                                                        }}
-                                                    </div>
-                                                }.into_any()
-                                            } else if leg.finance_action_enabled {
-                                                view! {
-                                                    <small style="color:#92400e;">"Payments permission required for direct finance actions."</small>
-                                                }.into_any()
-                                            } else {
-                                                view! {
-                                                    <small style="color:#64748b;">{label}</small>
-                                                }.into_any()
-                                            }
-                                        })
-                                    })}
-                                    {(admin_mode && leg.payments_href.is_none() && leg.finance_action_label.is_none()).then(|| view! {
-                                        <small style="color:#64748b;">"Finance controls will appear here when this leg reaches a payment milestone."</small>
-                                    })}
-                                </td>
-                            </tr>
-                        }
-                    }).collect_view()}
-                </tbody>
-            </table>
-        }.into_any()
-    }
-}
-
-fn admin_profile_actions(
-    load_id: u64,
-    has_pending: bool,
-    has_release_ready: bool,
-    release_ready_leg_id: Option<u64>,
-    review_note: RwSignal<String>,
-    review_loading: RwSignal<bool>,
-    finance_loading: RwSignal<bool>,
-    action_message: RwSignal<Option<String>>,
-    refresh_nonce: RwSignal<u64>,
-) -> AnyView {
-    if !has_pending && !has_release_ready {
-        return view! { <></> }.into_any();
-    }
-
-    let run_review = move |decision: &'static str| {
-        review_loading.set(true);
-        let note = review_note.get();
-        let remarks = if note.trim().is_empty() {
-            None
-        } else {
-            Some(note.trim().to_string())
-        };
-        spawn_local(async move {
-            match api::review_admin_load(
-                load_id,
-                &AdminReviewLoadRequest {
-                    decision: decision.into(),
-                    remarks,
-                },
-            )
-            .await
-            {
-                Ok(response) => {
-                    action_message.set(Some(response.message));
-                    if response.success {
-                        review_note.set(String::new());
-                        refresh_nonce.update(|value| *value += 1);
-                    }
-                }
-                Err(error) => action_message.set(Some(error)),
-            }
-            review_loading.set(false);
-        });
-    };
-    let release_ready_leg_id_for_action = release_ready_leg_id;
-    let run_release = move || {
-        let Some(leg_id) = release_ready_leg_id_for_action else {
-            action_message.set(Some(
-                "No release-ready leg is available on this profile yet.".into(),
-            ));
-            return;
-        };
-        finance_loading.set(true);
-        spawn_local(async move {
-            match api::release_escrow(
-                leg_id,
-                &EscrowReleaseRequest {
-                    transfer_id: None,
-                    note: Some(format!(
-                        "Triggered from the Rust admin load profile for load #{}.",
-                        load_id
-                    )),
-                },
-            )
-            .await
-            {
-                Ok(response) => {
-                    action_message.set(Some(response.message));
-                    if response.success {
-                        refresh_nonce.update(|value| *value += 1);
-                    }
-                }
-                Err(error) => action_message.set(Some(error)),
-            }
-            finance_loading.set(false);
-        });
-    };
-
-    view! {
-        <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fffbeb;display:grid;gap:0.85rem;">
-            <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                <div style="display:grid;gap:0.25rem;">
-                    <strong>"Admin workflow controls"</strong>
-                    <small style="color:#78716c;">
-                        "This profile is open inside the admin shell, so review and finance shortcuts stay here instead of forcing a Blade fallback."
-                    </small>
-                </div>
-                {has_release_ready.then(|| {
-                    let href = release_ready_leg_id
-                        .map(|leg_id| {
-                            format!(
-                                "/admin/payments?leg_id={}&action=release&source=admin-load-profile&load_id={}",
-                                leg_id, load_id
-                            )
-                        })
-                        .unwrap_or_else(|| "/admin/payments".into());
-                    view! {
-                        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                            <button
-                                type="button"
-                                on:click=move |_| run_release()
-                                disabled=move || finance_loading.get()
-                                style="padding:0.55rem 0.85rem;border:none;border-radius:0.75rem;background:#166534;color:white;cursor:pointer;"
-                            >
-                                {move || if finance_loading.get() { "Releasing..." } else { "Release Funds" }}
-                            </button>
-                            <A href=href attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#e0f2fe;color:#0f172a;text-decoration:none;">
-                                "Open Payments Console"
-                            </A>
-                        </div>
-                    }
-                })}
-            </div>
-
-            {has_pending.then(|| view! {
-                <div style="display:grid;gap:0.6rem;padding-top:0.35rem;border-top:1px solid #e7e5e4;">
-                    <small style="color:#57534e;">
-                        "At least one leg is still pending approval. Approve, reject, or send back the load from this profile."
-                    </small>
-                    <textarea
-                        rows="3"
-                        prop:value=move || review_note.get()
-                        on:input=move |ev| review_note.set(event_target_value(&ev))
-                        placeholder="Remarks are required for reject or revision"
-                        style="padding:0.7rem 0.8rem;border:1px solid #d6d3d1;border-radius:0.85rem;resize:vertical;"
-                    />
-                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                        <button
-                            type="button"
-                            disabled=move || review_loading.get()
-                            on:click=move |_| run_review("approve")
-                            style="padding:0.55rem 0.8rem;border:none;border-radius:0.8rem;background:#166534;color:white;cursor:pointer;"
-                        >
-                            {move || if review_loading.get() { "Working..." } else { "Approve load" }}
-                        </button>
-                        <button
-                            type="button"
-                            disabled=move || review_loading.get()
-                            on:click=move |_| run_review("revision")
-                            style="padding:0.55rem 0.8rem;border:none;border-radius:0.8rem;background:#b45309;color:white;cursor:pointer;"
-                        >
-                            "Send back for revision"
-                        </button>
-                        <button
-                            type="button"
-                            disabled=move || review_loading.get()
-                            on:click=move |_| run_review("reject")
-                            style="padding:0.55rem 0.8rem;border:none;border-radius:0.8rem;background:#be123c;color:white;cursor:pointer;"
-                        >
-                            "Reject load"
-                        </button>
-                    </div>
-                </div>
-            })}
-
-            {has_release_ready.then(|| view! {
-                <div style="display:grid;gap:0.35rem;padding-top:0.35rem;border-top:1px solid #e7e5e4;">
-                    <small style="color:#57534e;">
-                        "This load has a release-ready leg, so admin can release funds here or open the payments console for exception handling."
-                    </small>
-                </div>
-            })}
-        </section>
-    }
-    .into_any()
-}
-
-fn render_admin_profile_summary(
-    _load_id: u64,
-    legs: Vec<LoadProfileLegRow>,
-    documents: Vec<LoadDocumentRow>,
-    history: Vec<LoadHistoryRow>,
-    handoff: Option<LoadHandoffSummary>,
-) -> impl IntoView {
-    let pending_count = legs.iter().filter(|leg| leg.status_code == 1).count();
-    let release_ready_count = legs
-        .iter()
-        .filter(|leg| {
-            leg.finance_action_key.as_deref() == Some("release") && leg.finance_action_enabled
-        })
-        .count();
-    let execution_active_count = legs
-        .iter()
-        .filter(|leg| matches!(leg.status_code, 5 | 6 | 8 | 9))
-        .count();
-    let missing_blockchain_count = documents
-        .iter()
-        .filter(|document| document.can_verify_blockchain && document.blockchain_label.is_none())
-        .count();
-    let recent_history_count = history.len().min(5);
-    let first_active_leg_id = legs
-        .iter()
-        .find(|leg| matches!(leg.status_code, 5 | 6 | 8 | 9))
-        .map(|leg| leg.leg_id);
-    let first_payments_href = legs.iter().find_map(|leg| leg.payments_href.clone());
-    let _first_finance_label = legs
-        .iter()
-        .find(|leg| leg.finance_action_enabled)
-        .and_then(|leg| leg.finance_action_label.clone());
-    let unassigned_leg_count = legs
-        .iter()
-        .filter(|leg| {
-            leg.carrier_label
-                .as_ref()
-                .is_none_or(|label| label.trim().is_empty())
-        })
-        .count();
-    let stloads_attention = handoff
-        .as_ref()
-        .filter(|handoff| matches!(handoff.status_tone.as_str(), "warning" | "danger"));
-    let reconciliation_href = stloads_attention.map(|handoff| {
-        if handoff.status_tone == "danger" {
-            "/admin/stloads/reconciliation?action=mismatch_detected".to_string()
-        } else {
-            "/admin/stloads/reconciliation?action=auto_archive".to_string()
-        }
-    });
-    let _blocker_items = {
-        let mut items = Vec::new();
-
-        if pending_count > 0 {
-            items.push(format!(
-                "{} leg(s) still need review before this load is truly clear.",
-                pending_count
-            ));
-        }
-
-        if release_ready_count > 0 {
-            items.push(format!(
-                "{} leg(s) are release-ready and should move through finance next.",
-                release_ready_count
-            ));
-        }
-
-        if unassigned_leg_count > 0 {
-            items.push(format!(
-                "{} leg(s) still show no carrier assignment on the profile.",
-                unassigned_leg_count
-            ));
-        }
-
-        if missing_blockchain_count > 0 {
-            items.push(format!(
-                "{} document row(s) can still be anchored for blockchain follow-up.",
-                missing_blockchain_count
-            ));
-        }
-
-        if let Some(handoff) = stloads_attention {
-            items.push(format!(
-                "STLOADS handoff is signaling {} and should be checked in ops or reconciliation.",
-                handoff.status_label
-            ));
-        }
-
-        if items.is_empty() {
-            items.push(
-                "No major admin blockers stand out here; the profile reads clean from the Rust side."
-                    .to_string(),
-            );
-        }
-
-        items
-    };
-
-    let cards = vec![
-        (
-            "Pending legs",
-            pending_count.to_string(),
-            if pending_count > 0 {
-                "warning"
-            } else {
-                "success"
-            },
-            "Legs that still need an admin review decision.",
-        ),
-        (
-            "Release-ready legs",
-            release_ready_count.to_string(),
-            if release_ready_count > 0 {
-                "success"
-            } else {
-                "info"
-            },
-            "Legs that can complete direct release in the Rust profile.",
-        ),
-        (
-            "Execution-active",
-            execution_active_count.to_string(),
-            if execution_active_count > 0 {
-                "primary"
-            } else {
-                "info"
-            },
-            "Legs still moving through pickup, transit, or delivery.",
-        ),
-        (
-            "Docs awaiting anchor",
-            missing_blockchain_count.to_string(),
-            if missing_blockchain_count > 0 {
-                "warning"
-            } else {
-                "success"
-            },
-            "Profile documents still eligible for blockchain follow-up.",
-        ),
-        (
-            "Carrier gaps",
-            unassigned_leg_count.to_string(),
-            if unassigned_leg_count > 0 {
-                "danger"
-            } else {
-                "success"
-            },
-            "Legs still missing a clear carrier assignment on this profile.",
-        ),
-        (
-            "Recent history rows",
-            recent_history_count.to_string(),
-            "dark",
-            "Latest visible status changes and operator context on this load.",
-        ),
-    ];
-
-    view! {
-        <section style="display:grid;gap:0.85rem;">
-            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;">
-                {cards.into_iter().map(|(label, value, tone, _note)| view! {
-                    <div style="padding:0.9rem 1rem;border:1px solid #e5e7eb;border-radius:0.95rem;background:#ffffff;display:grid;gap:0.3rem;">
-                        <div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:center;flex-wrap:wrap;">
-                            <strong>{label}</strong>
-                            <span style=tone_style(tone)>{tone.replace('_', " ")}</span>
-                        </div>
-                        <div style="font-size:1.3rem;font-weight:700;color:#111827;">{value}</div>
-                    </div>
-                }).collect_view()}
-            </section>
-            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                {first_active_leg_id.map(|leg_id| view! {
-                    <A href=format!("/execution/legs/{}", leg_id) attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#e8fff3;color:#166534;text-decoration:none;">
-                        "Track active leg"
-                    </A>
-                })}
-                {first_payments_href.clone().map(|href| view! {
-                    <A href=href attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#fff7dd;color:#92400e;text-decoration:none;">
-                        "Open Payments"
-                    </A>
-                })}
-                <A href="/admin/stloads/operations" attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#eef2ff;color:#312e81;text-decoration:none;">
-                    "STLOADS Ops"
-                </A>
-                {reconciliation_href.clone().map(|href| view! {
-                    <A href=href attr:style="padding:0.55rem 0.85rem;border-radius:0.75rem;background:#ffe4e6;color:#be123c;text-decoration:none;">
-                        "Reconciliation"
-                    </A>
-                })}
-            </div>
-        </section>
-    }
-}
-
-fn render_admin_attention_lanes(
-    _load_id: u64,
-    _legs: Vec<LoadProfileLegRow>,
-    _documents: Vec<LoadDocumentRow>,
-    _handoff: Option<LoadHandoffSummary>,
-) -> impl IntoView {
-    view! { <></> }
-}
-
-fn render_history(history: Vec<LoadHistoryRow>) -> AnyView {
-    if history.is_empty() {
-        view! { <p style="margin:0;">"No history entries are recorded for this load yet."</p> }
-            .into_any()
-    } else {
-        view! {
-            <table style="width:100%;border-collapse:collapse;min-width:720px;">
-                <thead style="background:#f8fafc;">
-                    <tr>
-                        <th style="text-align:left;padding:0.75rem;">"When"</th>
-                        <th style="text-align:left;padding:0.75rem;">"Status"</th>
-                        <th style="text-align:left;padding:0.75rem;">"Actor"</th>
-                        <th style="text-align:left;padding:0.75rem;">"Remarks"</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {history.into_iter().map(|entry| view! {
-                        <tr style="border-top:1px solid #f1f5f9;vertical-align:top;">
-                            <td style="padding:0.75rem;">{entry.created_at_label}</td>
-                            <td style="padding:0.75rem;"><span style=tone_style(&entry.status_tone)>{entry.status_label}</span></td>
-                            <td style="padding:0.75rem;">{entry.actor_label}</td>
-                            <td style="padding:0.75rem;">{entry.remarks_label}</td>
-                        </tr>
-                    }).collect_view()}
-                </tbody>
-            </table>
-        }.into_any()
-    }
-}
+use super::load_profile_documents_helpers::render_load_documents_panel;
+use super::load_profile_helpers::{
+    admin_profile_actions, render_admin_attention_lanes, render_admin_profile_summary,
+    render_handoff, render_history, render_legs, tone_style,
+};
+use super::shared::{FIELD_LABEL_STYLE, MUTED_TEXT_STYLE, PANEL_SCROLL_STYLE};
 
 #[component]
 pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
@@ -647,11 +49,21 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
     let file_size_input = RwSignal::new(String::new());
     let is_saving_document = RwSignal::new(false);
     let verifying_document_id = RwSignal::new(None::<u64>);
+    let generating_documents = RwSignal::new(false);
     let opening_document_id = RwSignal::new(None::<u64>);
     let admin_review_note = RwSignal::new(String::new());
     let admin_review_loading = RwSignal::new(false);
     let admin_finance_loading = RwSignal::new(false);
     let leg_finance_loading_id = RwSignal::new(None::<u64>);
+    let rating_loading = RwSignal::new(false);
+    let appointment_leg_id = RwSignal::new(String::new());
+    let appointment_stop_type = RwSignal::new("pickup".to_string());
+    let appointment_start = RwSignal::new(String::new());
+    let appointment_end = RwSignal::new(String::new());
+    let appointment_time_zone = RwSignal::new("UTC".to_string());
+    let appointment_dock = RwSignal::new(String::new());
+    let appointment_notes = RwSignal::new(String::new());
+    let appointment_loading = RwSignal::new(false);
     let can_manage_payments = Signal::derive(move || {
         session::has_permission(&auth, "access_admin_portal")
             || session::has_permission(&auth, "manage_payments")
@@ -684,7 +96,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
         }
 
         is_loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::fetch_load_profile_screen(load_id).await {
@@ -767,7 +179,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
         let input_id = document_upload::upload_input_id(current_screen.load_id);
         is_uploading_document.set(true);
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match document_upload::upload_load_document(
@@ -840,7 +252,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
 
         is_saving_document.set(true);
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::update_load_document(document_id, &payload).await {
@@ -869,7 +281,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
     let verify_document = move |document_id: u64| {
         verifying_document_id.set(Some(document_id));
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::verify_load_document(
@@ -898,6 +310,41 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
             }
 
             verifying_document_id.set(None);
+        });
+    };
+
+    let generate_standard_documents = move |load_id: u64| {
+        generating_documents.set(true);
+        action_message.set(None);
+        let auth = auth;
+
+        spawn_local(async move {
+            match api::generate_standard_freight_documents(
+                load_id,
+                &GenerateFreightDocumentsRequest {
+                    template_keys: Vec::new(),
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+
+            generating_documents.set(false);
         });
     };
 
@@ -962,6 +409,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                     api::fund_escrow(
                         leg.leg_id,
                         &EscrowFundRequest {
+                            idempotency_key: None,
                             amount_cents: None,
                             currency: Some("USD".into()),
                             platform_fee_cents: None,
@@ -973,11 +421,21 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                     )
                     .await
                 }
-                "hold" => api::hold_escrow(leg.leg_id, &EscrowHoldRequest { note }).await,
+                "hold" => {
+                    api::hold_escrow(
+                        leg.leg_id,
+                        &EscrowHoldRequest {
+                            idempotency_key: None,
+                            note,
+                        },
+                    )
+                    .await
+                }
                 "release" => {
                     api::release_escrow(
                         leg.leg_id,
                         &EscrowReleaseRequest {
+                            idempotency_key: None,
                             transfer_id: None,
                             note,
                         },
@@ -1001,6 +459,133 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
         });
     };
 
+    let run_lifecycle_action = move |load_id: u64, action: String| {
+        action_message.set(None);
+        let template_name = (action == "template").then(|| {
+            screen
+                .get_untracked()
+                .and_then(|value| value.load_number)
+                .map(|value| format!("{} template", value))
+                .unwrap_or_else(|| "Load template".into())
+        });
+
+        spawn_local(async move {
+            match api::run_load_lifecycle_action(
+                load_id,
+                &LoadLifecycleActionRequest {
+                    action,
+                    reason: None,
+                    template_name,
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => action_message.set(Some(error)),
+            }
+        });
+    };
+
+    let calculate_rating = move |load_id: u64| {
+        rating_loading.set(true);
+        action_message.set(None);
+        let auth = auth;
+
+        spawn_local(async move {
+            match api::calculate_load_rate(
+                load_id,
+                &RateCalculationRequest {
+                    mileage_miles_override: None,
+                    mileage_source_override: None,
+                    manual_override_total: None,
+                    manual_override_reason: None,
+                },
+            )
+            .await
+            {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+
+            rating_loading.set(false);
+        });
+    };
+
+    let schedule_appointment = move |load_id: u64| {
+        let leg_id = match appointment_leg_id.get().trim().parse::<u64>() {
+            Ok(value) if value > 0 => value,
+            _ => {
+                action_message.set(Some("Choose a valid leg id before scheduling.".into()));
+                return;
+            }
+        };
+        if appointment_start.get().trim().is_empty() {
+            action_message.set(Some("Appointment start is required.".into()));
+            return;
+        }
+
+        appointment_loading.set(true);
+        action_message.set(None);
+        let auth = auth;
+        let payload = FacilityAppointmentRequest {
+            leg_id,
+            stop_type: appointment_stop_type.get(),
+            appointment_ref: None,
+            appointment_start: appointment_start.get(),
+            appointment_end: (!appointment_end.get().trim().is_empty())
+                .then_some(appointment_end.get()),
+            appointment_time_zone: (!appointment_time_zone.get().trim().is_empty())
+                .then_some(appointment_time_zone.get()),
+            dock_name: (!appointment_dock.get().trim().is_empty())
+                .then_some(appointment_dock.get()),
+            contact_name: None,
+            contact_phone: None,
+            contact_email: None,
+            notes: (!appointment_notes.get().trim().is_empty()).then_some(appointment_notes.get()),
+            reason: Some("Scheduled from Rust load profile.".into()),
+        };
+
+        spawn_local(async move {
+            match api::schedule_facility_appointment(load_id, &payload).await {
+                Ok(response) => {
+                    action_message.set(Some(response.message));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+
+            appointment_loading.set(false);
+        });
+    };
+
     let back_href = if admin_mode { "/admin/loads" } else { "/loads" };
     let profile_title = if admin_mode {
         "Admin Load Profile"
@@ -1011,13 +596,25 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
     view! {
         <article style="display:grid;gap:1.25rem;">
             <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                <div style="display:grid;gap:0.35rem;">
+                <div style=FIELD_LABEL_STYLE>
                     <h2>{move || screen.get().and_then(|value| value.load_number).unwrap_or_else(|| profile_title.into())}</h2>
                     <p>{move || screen.get().map(|value| value.subtitle).unwrap_or_else(|| "Rust load detail view".into())}</p>
                 </div>
                 <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;">
                     <A href=back_href attr:style="padding:0.7rem 1rem;border-radius:0.9rem;background:#f4f4f5;color:#111827;text-decoration:none;">{if admin_mode { "Back to admin loads" } else { "Back to loads" }}</A>
                     <A href=move || screen.get().map(|value| format!("/loads/{}/edit", value.load_id)).unwrap_or_else(|| "/loads/new".into()) attr:style="padding:0.7rem 1rem;border-radius:0.9rem;background:#fff7ed;color:#9a3412;text-decoration:none;">"Edit load"</A>
+                    <button
+                        type="button"
+                        disabled=move || rating_loading.get() || screen.get().is_none()
+                        on:click=move |_| {
+                            if let Some(current) = screen.get() {
+                                calculate_rating(current.load_id);
+                            }
+                        }
+                        style="padding:0.7rem 1rem;border:none;border-radius:0.9rem;background:#0f766e;color:white;cursor:pointer;"
+                    >
+                        {move || if rating_loading.get() { "Calculating..." } else { "Calculate rate" }}
+                    </button>
                     <A href="/loads/new" attr:style="padding:0.7rem 1rem;border-radius:0.9rem;background:#111827;color:white;text-decoration:none;">"Create another load"</A>
                 </div>
             </section>
@@ -1035,7 +632,9 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                     }.into_any()
                 } else if let Some(screen_value) = screen.get() {
                     let documents = screen_value.documents.clone();
+                    let required_documents = screen_value.required_documents.clone();
                     let can_manage_documents = screen_value.can_manage_documents;
+                    let lifecycle_load_id = screen_value.load_id;
                     let upload_input_id = document_upload::upload_input_id(screen_value.load_id);
                     let has_pending_leg = screen_value.legs.iter().any(|leg| leg.status_code == 1);
                     let release_ready_leg_id = screen_value
@@ -1046,10 +645,96 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                     let has_release_ready_leg = release_ready_leg_id.is_some();
                     view! {
                         <>
+                            <section style="display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap;padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;">
+                                <div style="display:grid;gap:0.25rem;">
+                                    <strong>"Lifecycle"</strong>
+                                    <span style=tone_style(match screen_value.lifecycle_status.as_str() {
+                                        "published" => "success",
+                                        "revised" => "primary",
+                                        "cancelled" => "warning",
+                                        "archived" => "dark",
+                                        _ => "secondary",
+                                    })>{format!("{} v{}", screen_value.lifecycle_status, screen_value.revision_number)}</span>
+                                </div>
+                                <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+                                    {screen_value.lifecycle_actions.clone().into_iter().map(|item| {
+                                        let action_key = item.action.clone();
+                                        let disabled_title = item.disabled_reason.clone().unwrap_or_default();
+                                        view! {
+                                            <button
+                                                type="button"
+                                                title=disabled_title
+                                                disabled=!item.enabled
+                                                on:click=move |_| run_lifecycle_action(lifecycle_load_id, action_key.clone())
+                                                style=format!(
+                                                    "padding:0.55rem 0.85rem;border-radius:0.8rem;border:1px solid #d1d5db;cursor:{};{}",
+                                                    if item.enabled { "pointer" } else { "not-allowed" },
+                                                    if item.enabled { tone_style(&item.tone) } else { "background:#f8fafc;color:#94a3b8;" }
+                                                )
+                                            >
+                                                {item.label}
+                                            </button>
+                                        }
+                                    }).collect_view()}
+                                </div>
+                            </section>
+
+                            <section style="display:grid;gap:0.85rem;padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;">
+                                <div style="display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap;">
+                                    <strong>"Facility appointment"</strong>
+                                    <button
+                                        type="button"
+                                        disabled=move || appointment_loading.get()
+                                        on:click=move |_| schedule_appointment(screen_value.load_id)
+                                        style="padding:0.55rem 0.85rem;border:none;border-radius:0.8rem;background:#111827;color:white;cursor:pointer;"
+                                    >
+                                        {move || if appointment_loading.get() { "Scheduling..." } else { "Schedule" }}
+                                    </button>
+                                </div>
+                                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;align-items:end;">
+                                    <label style="display:grid;gap:0.3rem;">
+                                        <span>"Leg id"</span>
+                                        <select prop:value=move || appointment_leg_id.get() on:change=move |ev| appointment_leg_id.set(event_target_value(&ev)) style="padding:0.65rem 0.75rem;border:1px solid #d1d5db;border-radius:0.75rem;background:white;">
+                                            <option value="">"Choose leg"</option>
+                                            {screen_value.legs.clone().into_iter().map(|leg| view! {
+                                                <option value={leg.leg_id.to_string()}>{leg.leg_code}</option>
+                                            }).collect_view()}
+                                        </select>
+                                    </label>
+                                    <label style="display:grid;gap:0.3rem;">
+                                        <span>"Stop"</span>
+                                        <select prop:value=move || appointment_stop_type.get() on:change=move |ev| appointment_stop_type.set(event_target_value(&ev)) style="padding:0.65rem 0.75rem;border:1px solid #d1d5db;border-radius:0.75rem;background:white;">
+                                            <option value="pickup">"Pickup"</option>
+                                            <option value="delivery">"Delivery"</option>
+                                        </select>
+                                    </label>
+                                    <label style="display:grid;gap:0.3rem;">
+                                        <span>"Start"</span>
+                                        <input type="datetime-local" prop:value=move || appointment_start.get() on:input=move |ev| appointment_start.set(event_target_value(&ev)) style="padding:0.65rem 0.75rem;border:1px solid #d1d5db;border-radius:0.75rem;" />
+                                    </label>
+                                    <label style="display:grid;gap:0.3rem;">
+                                        <span>"End"</span>
+                                        <input type="datetime-local" prop:value=move || appointment_end.get() on:input=move |ev| appointment_end.set(event_target_value(&ev)) style="padding:0.65rem 0.75rem;border:1px solid #d1d5db;border-radius:0.75rem;" />
+                                    </label>
+                                    <label style="display:grid;gap:0.3rem;">
+                                        <span>"Time zone"</span>
+                                        <input prop:value=move || appointment_time_zone.get() on:input=move |ev| appointment_time_zone.set(event_target_value(&ev)) placeholder="America/Chicago" style="padding:0.65rem 0.75rem;border:1px solid #d1d5db;border-radius:0.75rem;" />
+                                    </label>
+                                    <label style="display:grid;gap:0.3rem;">
+                                        <span>"Dock"</span>
+                                        <input prop:value=move || appointment_dock.get() on:input=move |ev| appointment_dock.set(event_target_value(&ev)) placeholder="Dock 4" style="padding:0.65rem 0.75rem;border:1px solid #d1d5db;border-radius:0.75rem;" />
+                                    </label>
+                                    <label style="display:grid;gap:0.3rem;">
+                                        <span>"Notes"</span>
+                                        <input prop:value=move || appointment_notes.get() on:input=move |ev| appointment_notes.set(event_target_value(&ev)) placeholder="Check-in, parking, lumper, warnings" style="padding:0.65rem 0.75rem;border:1px solid #d1d5db;border-radius:0.75rem;" />
+                                    </label>
+                                </div>
+                            </section>
+
                             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;align-items:start;">
                                 {screen_value.info_fields.into_iter().map(|field| view! {
                                     <div class="wrap-safe" style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fcfcfb;display:grid;gap:0.35rem;">
-                                        <small class="wrap-safe" style="color:#64748b;">{field.label}</small>
+                                        <small class="wrap-safe" style=MUTED_TEXT_STYLE>{field.label}</small>
                                         <strong class="wrap-safe">{field.value}</strong>
                                     </div>
                                 }).collect_view()}
@@ -1084,7 +769,7 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                             </section>
 
                             <section style="display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));align-items:start;">
-                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.85rem;overflow:auto;">
+                                <section style=PANEL_SCROLL_STYLE>
                                     <strong>"Load legs"</strong>
                                     {render_legs(
                                         screen_value.legs.clone(),
@@ -1095,215 +780,10 @@ pub fn LoadProfilePage(#[prop(optional)] admin_mode: bool) -> impl IntoView {
                                     )}
                                 </section>
 
-                                <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:1rem;overflow:auto;">
-                                    <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                                        <strong>"Documents"</strong>
-                                        {can_manage_documents.then(|| view! {
-                                            <button
-                                                type="button"
-                                                style="padding:0.55rem 0.85rem;border-radius:0.8rem;border:1px solid #d1d5db;background:#f8fafc;color:#111827;cursor:pointer;"
-                                                on:click=move |_| { clear_upload_form(); clear_document_form(); }
-                                            >
-                                                "Reset forms"
-                                            </button>
-                                        })}
-                                    </div>
-
-                                    {can_manage_documents.then(|| view! {
-                                        <form
-                                            style="display:grid;gap:0.85rem;padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fcfcfb;"
-                                            on:submit=move |ev| {
-                                                ev.prevent_default();
-                                                upload_document();
-                                            }
-                                        >
-                                            <strong>"Upload a document"</strong>
-                                            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
-                                                <label style="display:grid;gap:0.35rem;">
-                                                    <span>"Document name"</span>
-                                                    <input type="text" prop:value=move || upload_document_name.get() on:input=move |ev| upload_document_name.set(event_target_value(&ev)) placeholder="Rate confirmation" />
-                                                </label>
-                                                <label style="display:grid;gap:0.35rem;">
-                                                    <span>"Document type"</span>
-                                                    <input type="text" prop:value=move || upload_document_type.get() on:input=move |ev| upload_document_type.set(event_target_value(&ev)) placeholder="rate_confirmation" />
-                                                </label>
-                                            </div>
-                                            <label style="display:grid;gap:0.35rem;">
-                                                <span>"Choose file"</span>
-                                                <input id=upload_input_id.clone() type="file" />
-                                            </label>
-                                            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;">
-                                                <button type="submit" style="padding:0.65rem 0.95rem;border-radius:0.85rem;border:none;background:#111827;color:white;cursor:pointer;" disabled=move || is_uploading_document.get()>
-                                                    {move || if is_uploading_document.get() { "Uploading..." } else { "Upload document" }}
-                                                </button>
-                                            </div>
-                                        </form>
-                                    })}
-
-                                    {can_manage_documents.then(|| view! {
-                                        <form
-                                            style="display:grid;gap:0.85rem;padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#f8fafc;"
-                                            on:submit=move |ev| {
-                                                ev.prevent_default();
-                                                save_document();
-                                            }
-                                        >
-                                            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
-                                                <label style="display:grid;gap:0.35rem;">
-                                                    <span>"Document name"</span>
-                                                    <input type="text" prop:value=move || document_name.get() on:input=move |ev| document_name.set(event_target_value(&ev)) placeholder="Rate confirmation" />
-                                                </label>
-                                                <label style="display:grid;gap:0.35rem;">
-                                                    <span>"Document type"</span>
-                                                    <input type="text" prop:value=move || document_type.get() on:input=move |ev| document_type.set(event_target_value(&ev)) placeholder="rate_confirmation" />
-                                                </label>
-                                            </div>
-                                            <label style="display:grid;gap:0.35rem;">
-                                                <span>"Storage path or URL"</span>
-                                                <input type="text" prop:value=move || file_path.get() on:input=move |ev| file_path.set(event_target_value(&ev)) placeholder="ibm-cos://bucket/load-docs/rate-confirmation.pdf" />
-                                            </label>
-                                            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.85rem;">
-                                                <label style="display:grid;gap:0.35rem;">
-                                                    <span>"Original file name"</span>
-                                                    <input type="text" prop:value=move || original_name.get() on:input=move |ev| original_name.set(event_target_value(&ev)) placeholder="rate-confirmation.pdf" />
-                                                </label>
-                                                <label style="display:grid;gap:0.35rem;">
-                                                    <span>"MIME type"</span>
-                                                    <input type="text" prop:value=move || mime_type.get() on:input=move |ev| mime_type.set(event_target_value(&ev)) placeholder="application/pdf" />
-                                                </label>
-                                                <label style="display:grid;gap:0.35rem;">
-                                                    <span>"File size (bytes)"</span>
-                                                    <input type="number" min="0" step="1" prop:value=move || file_size_input.get() on:input=move |ev| file_size_input.set(event_target_value(&ev)) placeholder="1048576" />
-                                                </label>
-                                            </div>
-                                            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;">
-                                                <button type="submit" style="padding:0.65rem 0.95rem;border-radius:0.85rem;border:none;background:#111827;color:white;cursor:pointer;" disabled=move || is_saving_document.get()>
-                                                    {move || if is_saving_document.get() {
-                                                        "Saving..."
-                                                    } else {
-                                                        "Save metadata"
-                                                    }}
-                                                </button>
-                                            </div>
-                                        </form>
-                                    })}
-
-                                    {documents.is_empty().then(|| view! {
-                                        <p style="margin:0;">"No documents are attached yet. Upload the first one here to start the Rust-side document workflow."</p>
-                                    })}
-
-                                    {(!documents.is_empty()).then(|| view! {
-                                        <table style="width:100%;border-collapse:collapse;min-width:720px;">
-                                            <thead style="background:#f8fafc;">
-                                                <tr>
-                                                    <th style="text-align:left;padding:0.75rem;">"Name"</th>
-                                                    <th style="text-align:left;padding:0.75rem;">"File"</th>
-                                                    <th style="text-align:left;padding:0.75rem;">"Blockchain"</th>
-                                                    <th style="text-align:left;padding:0.75rem;">"Uploaded"</th>
-                                                    <th style="text-align:left;padding:0.75rem;">"Actions"</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {documents.into_iter().map(|document| {
-                                                    let file_meta = format!("{} | {}", document.mime_type.clone().unwrap_or_else(|| "unknown mime".into()), human_file_size(document.file_size_bytes));
-                                                    let blockchain_badge = document.blockchain_label.clone().map(|label| {
-                                                        let tone = document.blockchain_tone.clone().unwrap_or_else(|| "secondary".into());
-                                                        view! { <span style=tone_style(&tone)>{label}</span> }.into_any()
-                                                    });
-                                                    let can_edit_row = document.can_edit;
-                                                    let can_verify_row = document.can_verify_blockchain;
-                                                    let can_view_row = document.can_view_file && document.download_path.is_some();
-                                                    let edit_row = document.clone();
-                                                    let document_id = document.id;
-                                                    let download_path = document.download_path.clone();
-                                                    let file_name = document
-                                                        .original_name
-                                                        .clone()
-                                                        .unwrap_or_else(|| document.file_label.clone());
-                                                    let can_preview_row = document.mime_type.clone().map(|mime| {
-                                                        mime.starts_with("image/") || mime.eq_ignore_ascii_case("application/pdf")
-                                                    }).unwrap_or(false);
-                                                    view! {
-                                                        <tr style="border-top:1px solid #f1f5f9;vertical-align:top;">
-                                                            <td style="padding:0.75rem;display:grid;gap:0.3rem;">
-                                                                <strong>{document.document_name}</strong>
-                                                                <small>{document.document_type_label}</small>
-                                                            </td>
-                                                            <td style="padding:0.75rem;display:grid;gap:0.35rem;">
-                                                                <strong>{document.file_label}</strong>
-                                                                <small>{file_meta}</small>
-                                                                <small style="color:#64748b;word-break:break-all;">{document.source_path}</small>
-                                                                {document.uploaded_by_label.clone().map(|label| view! { <small style="color:#64748b;">{label}</small> })}
-                                                            </td>
-                                                            <td style="padding:0.75rem;display:grid;gap:0.35rem;">
-                                                                {blockchain_badge.unwrap_or_else(|| view! { <span>"Not anchored yet"</span> }.into_any())}
-                                                                {document.blockchain_hash_preview.clone().map(|preview| view! {
-                                                                    <small style="color:#64748b;">{format!("Hash: {}", preview)}</small>
-                                                                })}
-                                                            </td>
-                                                            <td style="padding:0.75rem;">{document.uploaded_at_label}</td>
-                                                            <td style="padding:0.75rem;display:grid;gap:0.5rem;min-width:190px;">
-                                                                {can_view_row.then(|| {
-                                                                    let preview_path = download_path.clone().unwrap_or_default();
-                                                                    let download_path = download_path.clone().unwrap_or_default();
-                                                                    let file_name = file_name.clone();
-                                                                    view! {
-                                                                        <div style="display:grid;gap:0.35rem;">
-                                                                            <button
-                                                                                type="button"
-                                                                                style="padding:0.55rem 0.8rem;border-radius:0.75rem;border:none;background:#1d4ed8;color:white;cursor:pointer;"
-                                                                                disabled=move || opening_document_id.get() == Some(document_id)
-                                                                                on:click=move |_| open_document(document_id, preview_path.clone())
-                                                                            >
-                                                                                {move || if opening_document_id.get() == Some(document_id) {
-                                                                                    "Opening...".to_string()
-                                                                                } else if can_preview_row {
-                                                                                    "Preview".to_string()
-                                                                                } else {
-                                                                                    "View file".to_string()
-                                                                                }}
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                style="padding:0.55rem 0.8rem;border-radius:0.75rem;border:1px solid #d1d5db;background:#f8fafc;color:#111827;cursor:pointer;"
-                                                                                disabled=move || opening_document_id.get() == Some(document_id)
-                                                                                on:click=move |_| download_document(document_id, download_path.clone(), file_name.clone())
-                                                                            >
-                                                                                {move || if opening_document_id.get() == Some(document_id) { "Preparing..." } else { "Download" }}
-                                                                            </button>
-                                                                        </div>
-                                                                    }
-                                                                })}
-                                                                {can_edit_row.then(|| view! {
-                                                                    <button
-                                                                        type="button"
-                                                                        style="padding:0.55rem 0.8rem;border-radius:0.75rem;border:1px solid #d1d5db;background:#f8fafc;color:#111827;cursor:pointer;"
-                                                                        on:click=move |_| start_edit_document(edit_row.clone())
-                                                                    >
-                                                                        "Edit row"
-                                                                    </button>
-                                                                })}
-                                                                {can_verify_row.then(|| view! {
-                                                                    <button
-                                                                        type="button"
-                                                                        style="padding:0.55rem 0.8rem;border-radius:0.75rem;border:none;background:#0f766e;color:white;cursor:pointer;"
-                                                                        disabled=move || verifying_document_id.get() == Some(document_id)
-                                                                        on:click=move |_| verify_document(document_id)
-                                                                    >
-                                                                        {move || if verifying_document_id.get() == Some(document_id) { "Anchoring..." } else { "Anchor to blockchain" }}
-                                                                    </button>
-                                                                })}
-                                                            </td>
-                                                        </tr>
-                                                    }
-                                                }).collect_view()}
-                                            </tbody>
-                                        </table>
-                                    })}
-                                </section>
+                                {render_load_documents_panel(screen_value.load_id, can_manage_documents, required_documents, documents, generating_documents, upload_document_name, upload_document_type, upload_input_id.clone(), is_uploading_document, document_name, document_type, file_path, original_name, mime_type, file_size_input, is_saving_document, opening_document_id, verifying_document_id, generate_standard_documents, clear_upload_form, clear_document_form, upload_document, save_document, open_document, download_document, start_edit_document, verify_document)}
                             </section>
 
-                            <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;display:grid;gap:0.85rem;overflow:auto;">
+                            <section style=PANEL_SCROLL_STYLE>
                                 <strong>"History"</strong>
                                 {render_history(screen_value.history.clone())}
                             </section>

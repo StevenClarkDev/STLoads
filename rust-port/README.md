@@ -37,6 +37,7 @@ This workspace is the starting point for the Rust + Leptos copy of the current L
 - `docs/ENTERPRISE_ORGANIZATION_TENANT_MODEL.md`: organization tables, memberships, default-tenant migration, and tenant-scoped table ownership.
 - `docs/ENTERPRISE_TENANT_ISOLATION.md`: current tenant isolation enforcement, tests, and remaining break-glass requirements.
 - `docs/ENTERPRISE_PERMISSION_MATRIX.md`: platform-role and organization-role permission matrix plus route guard map.
+- `docs/ENTERPRISE_TEST_LANES_AND_CI.md`: Phase 16 test lanes, CI jobs, pinned frontend build tooling, and smoke/performance verification policy.
 - `docs/CANONICAL_STATUS_MODEL.md`: Rust-side status model and legacy PHP code mapping.
 - `docs/SCHEMA_BASELINE.md`: draft SQL baseline inferred from Laravel write paths.
 - `docs/POSTGRES_PIVOT.md`: PostgreSQL migration checklist for the Rust port.

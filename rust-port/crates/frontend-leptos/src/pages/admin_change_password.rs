@@ -29,7 +29,7 @@ pub fn AdminChangePasswordPage() -> impl IntoView {
                 let submit = move |ev: SubmitEvent| {
                     ev.prevent_default();
                     saving.set(true);
-                    let auth = auth.clone();
+                    let auth = auth;
 
                     let payload = ChangePasswordRequest {
                         current_password: current_password.get(),

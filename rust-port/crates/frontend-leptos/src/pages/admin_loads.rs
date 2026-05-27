@@ -54,7 +54,7 @@ pub fn AdminLoadsPage() -> impl IntoView {
         }
 
         loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::fetch_admin_load_list_screen(&current_tab).await {
                 Ok(next) => {
@@ -299,6 +299,7 @@ fn render_admin_load_row(
                     api::fund_escrow(
                         leg_id,
                         &EscrowFundRequest {
+                            idempotency_key: None,
                             amount_cents: None,
                             currency: Some("USD".into()),
                             platform_fee_cents: None,
@@ -310,11 +311,21 @@ fn render_admin_load_row(
                     )
                     .await
                 }
-                "hold" => api::hold_escrow(leg_id, &EscrowHoldRequest { note }).await,
+                "hold" => {
+                    api::hold_escrow(
+                        leg_id,
+                        &EscrowHoldRequest {
+                            idempotency_key: None,
+                            note,
+                        },
+                    )
+                    .await
+                }
                 "release" => {
                     api::release_escrow(
                         leg_id,
                         &EscrowReleaseRequest {
+                            idempotency_key: None,
                             transfer_id: None,
                             note,
                         },
@@ -426,7 +437,7 @@ fn render_admin_load_row(
                                             </button>
                                         }.into_any()
                                     } else {
-                                        view! { <></> }.into_any()
+                                        ().into_any()
                                     }
                                 }}
                             </div>

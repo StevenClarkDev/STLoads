@@ -1,7 +1,9 @@
 use leptos::{prelude::*, tachys::view::any_view::IntoAny, task::spawn_local};
+use serde_json::json;
 use shared::{
-    CityUpsertRequest, CountryUpsertRequest, LocationUpsertRequest, MasterDataDeleteRequest,
-    MasterDataMutationResponse, MasterDataRow, MasterDataScreen, SimpleCatalogUpsertRequest,
+    CityUpsertRequest, CountryUpsertRequest, CustomerConfigurationRuleUpsertRequest,
+    DocumentRequirementRuleUpsertRequest, GovernedCatalogUpsertRequest, LocationUpsertRequest,
+    MasterDataDeleteRequest, MasterDataRow, MasterDataScreen, SimpleCatalogUpsertRequest,
 };
 
 use crate::{
@@ -9,68 +11,7 @@ use crate::{
     session::{self, use_auth},
 };
 
-use super::admin_guard_view;
-
-fn scroll_to_top_of_page() {
-    #[cfg(target_arch = "wasm32")]
-    {
-        if let Some(window) = web_sys::window() {
-            window.scroll_to_with_x_and_y(0.0, 0.0);
-        }
-    }
-}
-
-fn tone_style(tone: &str) -> &'static str {
-    match tone {
-        "success" => "background:#e8fff3;padding:0.25rem 0.6rem;border-radius:999px;color:#0f766e;",
-        "warning" => "background:#fff7dd;padding:0.25rem 0.6rem;border-radius:999px;color:#b45309;",
-        "danger" => "background:#fff1f2;padding:0.25rem 0.6rem;border-radius:999px;color:#be123c;",
-        _ => "background:#f1f5f9;padding:0.25rem 0.6rem;border-radius:999px;color:#475569;",
-    }
-}
-
-fn parse_optional_u64(value: &str) -> Option<u64> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        trimmed.parse::<u64>().ok()
-    }
-}
-
-fn supports_write(kind: &str) -> bool {
-    matches!(
-        kind,
-        "countries" | "cities" | "locations" | "load_types" | "equipments" | "commodity_types"
-    )
-}
-
-fn supports_delete(kind: &str) -> bool {
-    supports_write(kind)
-}
-
-fn writable_status_label(kind: &str) -> &'static str {
-    match kind {
-        "countries" => "Writable plus hard delete",
-        "cities" => "Writable plus hard delete",
-        "locations" | "load_types" | "equipments" | "commodity_types" => {
-            "Writable plus safe archive"
-        }
-        _ => "Read only",
-    }
-}
-
-fn delete_label(kind: &str) -> &'static str {
-    match kind {
-        "countries" | "cities" => "Delete",
-        _ => "Archive",
-    }
-}
-
-fn action_key(kind: &str, id: u64) -> String {
-    format!("{}:{}", kind, id)
-}
-
+use super::{admin_guard_view, master_data_helpers::*};
 #[component]
 pub fn MasterDataPage() -> impl IntoView {
     let auth = use_auth();
@@ -105,6 +46,30 @@ pub fn MasterDataPage() -> impl IntoView {
     let location_name = RwSignal::new(String::new());
     let location_country_id = RwSignal::new(String::new());
     let location_city_id = RwSignal::new(String::new());
+    let governed_kind = RwSignal::new("service_levels".to_string());
+    let governed_id = RwSignal::new(String::new());
+    let governed_code = RwSignal::new(String::new());
+    let governed_label = RwSignal::new(String::new());
+    let governed_description = RwSignal::new(String::new());
+    let governed_requires_approval = RwSignal::new(false);
+    let doc_rule_id = RwSignal::new(String::new());
+    let doc_rule_key = RwSignal::new(String::new());
+    let doc_rule_label = RwSignal::new(String::new());
+    let doc_rule_scope = RwSignal::new("load".to_string());
+    let doc_rule_role = RwSignal::new(String::new());
+    let doc_rule_lifecycle = RwSignal::new("booking".to_string());
+    let doc_rule_type = RwSignal::new("rate_confirmation".to_string());
+    let doc_rule_blocks = RwSignal::new(true);
+    let doc_rule_requires_approval = RwSignal::new(true);
+    let customer_config_id = RwSignal::new(String::new());
+    let customer_config_key = RwSignal::new(String::new());
+    let customer_config_area = RwSignal::new("visibility".to_string());
+    let customer_config_contract_id = RwSignal::new(String::new());
+    let customer_config_lane_id = RwSignal::new(String::new());
+    let customer_config_facility_id = RwSignal::new(String::new());
+    let customer_config_carrier_group = RwSignal::new(String::new());
+    let customer_config_refs = RwSignal::new(String::new());
+    let customer_config_requires_approval = RwSignal::new(true);
 
     let can_view = Signal::derive(move || {
         session::has_permission(&auth, "access_admin_portal")
@@ -121,7 +86,7 @@ pub fn MasterDataPage() -> impl IntoView {
         }
 
         is_loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::fetch_master_data_screen().await {
@@ -195,6 +160,49 @@ pub fn MasterDataPage() -> impl IntoView {
             active_editor.set(None);
         }
     };
+    let clear_governed_form = move |_| {
+        governed_id.set(String::new());
+        governed_code.set(String::new());
+        governed_label.set(String::new());
+        governed_description.set(String::new());
+        governed_requires_approval.set(false);
+        if active_editor
+            .get()
+            .as_deref()
+            .map(is_governed_catalog_kind)
+            .unwrap_or(false)
+        {
+            active_editor.set(None);
+        }
+    };
+    let clear_doc_rule_form = move |_| {
+        doc_rule_id.set(String::new());
+        doc_rule_key.set(String::new());
+        doc_rule_label.set(String::new());
+        doc_rule_scope.set("load".into());
+        doc_rule_role.set(String::new());
+        doc_rule_lifecycle.set("booking".into());
+        doc_rule_type.set("rate_confirmation".into());
+        doc_rule_blocks.set(true);
+        doc_rule_requires_approval.set(true);
+        if active_editor.get().as_deref() == Some("document_requirements") {
+            active_editor.set(None);
+        }
+    };
+    let clear_customer_config_form = move |_| {
+        customer_config_id.set(String::new());
+        customer_config_key.set(String::new());
+        customer_config_area.set("visibility".into());
+        customer_config_contract_id.set(String::new());
+        customer_config_lane_id.set(String::new());
+        customer_config_facility_id.set(String::new());
+        customer_config_carrier_group.set(String::new());
+        customer_config_refs.set(String::new());
+        customer_config_requires_approval.set(true);
+        if active_editor.get().as_deref() == Some("customer_configurations") {
+            active_editor.set(None);
+        }
+    };
 
     let save_country = move |_| {
         if country_name.get().trim().is_empty() {
@@ -203,7 +211,7 @@ pub fn MasterDataPage() -> impl IntoView {
         }
 
         pending_action.set(Some("country".into()));
-        let auth = auth.clone();
+        let auth = auth;
         let request = CountryUpsertRequest {
             id: parse_optional_u64(&country_id.get()),
             name: country_name.get(),
@@ -245,7 +253,7 @@ pub fn MasterDataPage() -> impl IntoView {
         };
 
         pending_action.set(Some("city".into()));
-        let auth = auth.clone();
+        let auth = auth;
         let request = CityUpsertRequest {
             id: parse_optional_u64(&city_id.get()),
             name: city_name.get(),
@@ -275,7 +283,7 @@ pub fn MasterDataPage() -> impl IntoView {
         }
 
         pending_action.set(Some("load type".into()));
-        let auth = auth.clone();
+        let auth = auth;
         let request = SimpleCatalogUpsertRequest {
             id: parse_optional_u64(&load_type_id.get()),
             name: load_type_name.get(),
@@ -303,7 +311,7 @@ pub fn MasterDataPage() -> impl IntoView {
         }
 
         pending_action.set(Some("equipment".into()));
-        let auth = auth.clone();
+        let auth = auth;
         let request = SimpleCatalogUpsertRequest {
             id: parse_optional_u64(&equipment_id.get()),
             name: equipment_name.get(),
@@ -331,7 +339,7 @@ pub fn MasterDataPage() -> impl IntoView {
         }
 
         pending_action.set(Some("commodity type".into()));
-        let auth = auth.clone();
+        let auth = auth;
         let request = SimpleCatalogUpsertRequest {
             id: parse_optional_u64(&commodity_type_id.get()),
             name: commodity_type_name.get(),
@@ -359,7 +367,7 @@ pub fn MasterDataPage() -> impl IntoView {
         }
 
         pending_action.set(Some("location".into()));
-        let auth = auth.clone();
+        let auth = auth;
         let request = LocationUpsertRequest {
             id: parse_optional_u64(&location_id.get()),
             name: location_name.get(),
@@ -378,6 +386,150 @@ pub fn MasterDataPage() -> impl IntoView {
                     location_name.set(String::new());
                     location_country_id.set(String::new());
                     location_city_id.set(String::new());
+                },
+            );
+            pending_action.set(None);
+        });
+    };
+    let save_governed_catalog = move |_| {
+        if governed_code.get().trim().is_empty() || governed_label.get().trim().is_empty() {
+            action_message.set(Some(
+                "Enter both a code and label before saving governed configuration.".into(),
+            ));
+            return;
+        }
+
+        let kind = governed_kind.get();
+        pending_action.set(Some(kind.replace('_', " ")));
+        let auth = auth;
+        let description = governed_description.get();
+        let request = GovernedCatalogUpsertRequest {
+            id: parse_optional_u64(&governed_id.get()),
+            code: governed_code.get(),
+            label: governed_label.get(),
+            description: (!description.trim().is_empty()).then_some(description),
+            requires_approval: governed_requires_approval.get(),
+            effective_from: None,
+            effective_to: None,
+        };
+
+        spawn_local(async move {
+            let result = match kind.as_str() {
+                "service_levels" => api::upsert_service_level(&request).await,
+                "rejection_reasons" => api::upsert_rejection_reason(&request).await,
+                "exception_reasons" => api::upsert_exception_reason(&request).await,
+                "trailer_types" => api::upsert_trailer_type(&request).await,
+                "hazmat_classes" => api::upsert_hazmat_class(&request).await,
+                "accessorials" => api::upsert_accessorial(&request).await,
+                _ => Err(format!("Governed save is not supported for '{}'.", kind)),
+            };
+            handle_master_data_result(auth, result, action_message, refresh_nonce, move || {
+                governed_id.set(String::new());
+                governed_code.set(String::new());
+                governed_label.set(String::new());
+                governed_description.set(String::new());
+                governed_requires_approval.set(false);
+            });
+            pending_action.set(None);
+        });
+    };
+    let save_document_requirement = move |_| {
+        if doc_rule_key.get().trim().is_empty() || doc_rule_label.get().trim().is_empty() {
+            action_message.set(Some(
+                "Enter a rule key and label before saving the document requirement.".into(),
+            ));
+            return;
+        }
+
+        pending_action.set(Some("document requirement".into()));
+        let auth = auth;
+        let role = doc_rule_role.get();
+        let request = DocumentRequirementRuleUpsertRequest {
+            id: parse_optional_u64(&doc_rule_id.get()),
+            rule_key: doc_rule_key.get(),
+            label: doc_rule_label.get(),
+            requirement_scope: doc_rule_scope.get(),
+            role_key: (!role.trim().is_empty()).then_some(role),
+            lifecycle_state: doc_rule_lifecycle.get(),
+            document_type_key: doc_rule_type.get(),
+            blocks_transition: doc_rule_blocks.get(),
+            requires_approval: doc_rule_requires_approval.get(),
+            effective_from: None,
+            effective_to: None,
+        };
+
+        spawn_local(async move {
+            handle_master_data_result(
+                auth,
+                api::upsert_document_requirement(&request).await,
+                action_message,
+                refresh_nonce,
+                move || {
+                    doc_rule_id.set(String::new());
+                    doc_rule_key.set(String::new());
+                    doc_rule_label.set(String::new());
+                    doc_rule_scope.set("load".into());
+                    doc_rule_role.set(String::new());
+                    doc_rule_lifecycle.set("booking".into());
+                    doc_rule_type.set("rate_confirmation".into());
+                    doc_rule_blocks.set(true);
+                    doc_rule_requires_approval.set(true);
+                },
+            );
+            pending_action.set(None);
+        });
+    };
+    let save_customer_configuration = move |_| {
+        if customer_config_key.get().trim().is_empty() {
+            action_message.set(Some(
+                "Enter a configuration key before saving customer configuration.".into(),
+            ));
+            return;
+        }
+
+        pending_action.set(Some("customer configuration".into()));
+        let auth = auth;
+        let carrier_group = customer_config_carrier_group.get();
+        let request = CustomerConfigurationRuleUpsertRequest {
+            id: parse_optional_u64(&customer_config_id.get()),
+            config_key: customer_config_key.get(),
+            config_area: customer_config_area.get(),
+            customer_contract_id: parse_optional_u64(&customer_config_contract_id.get()),
+            customer_contract_lane_id: parse_optional_u64(&customer_config_lane_id.get()),
+            facility_id: parse_optional_u64(&customer_config_facility_id.get()),
+            carrier_group_key: (!carrier_group.trim().is_empty()).then_some(carrier_group),
+            visibility_rule: Some(json!({})),
+            compliance_gate: Some(json!({})),
+            billing_rules: Some(json!({})),
+            notification_rules: Some(json!({})),
+            required_reference_keys: customer_config_refs
+                .get()
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .collect(),
+            requires_approval: customer_config_requires_approval.get(),
+            effective_from: None,
+            effective_to: None,
+        };
+
+        spawn_local(async move {
+            handle_master_data_result(
+                auth,
+                api::upsert_customer_configuration(&request).await,
+                action_message,
+                refresh_nonce,
+                move || {
+                    customer_config_id.set(String::new());
+                    customer_config_key.set(String::new());
+                    customer_config_area.set("visibility".into());
+                    customer_config_contract_id.set(String::new());
+                    customer_config_lane_id.set(String::new());
+                    customer_config_facility_id.set(String::new());
+                    customer_config_carrier_group.set(String::new());
+                    customer_config_refs.set(String::new());
+                    customer_config_requires_approval.set(true);
                 },
             );
             pending_action.set(None);
@@ -403,7 +555,7 @@ pub fn MasterDataPage() -> impl IntoView {
             delete_label(&kind).to_lowercase(),
             kind
         )));
-        let auth = auth.clone();
+        let auth = auth;
         let payload = MasterDataDeleteRequest { id: row_id };
 
         spawn_local(async move {
@@ -414,6 +566,14 @@ pub fn MasterDataPage() -> impl IntoView {
                 "equipments" => api::delete_equipment(&payload).await,
                 "commodity_types" => api::delete_commodity_type(&payload).await,
                 "locations" => api::delete_location(&payload).await,
+                "service_levels" => api::delete_service_level(&payload).await,
+                "rejection_reasons" => api::delete_rejection_reason(&payload).await,
+                "exception_reasons" => api::delete_exception_reason(&payload).await,
+                "trailer_types" => api::delete_trailer_type(&payload).await,
+                "hazmat_classes" => api::delete_hazmat_class(&payload).await,
+                "accessorials" => api::delete_accessorial(&payload).await,
+                "document_requirements" => api::delete_document_requirement(&payload).await,
+                "customer_configurations" => api::delete_customer_configuration(&payload).await,
                 _ => Err(format!("Delete flow is not supported for '{}'.", kind)),
             };
 
@@ -471,6 +631,39 @@ pub fn MasterDataPage() -> impl IntoView {
             "commodity_types" => {
                 commodity_type_id.set(row.id.to_string());
                 commodity_type_name.set(row.primary_label);
+            }
+            "service_levels" | "rejection_reasons" | "exception_reasons" | "trailer_types"
+            | "hazmat_classes" | "accessorials" => {
+                governed_kind.set(kind);
+                governed_id.set(row.id.to_string());
+                governed_label.set(row.primary_label);
+                governed_code.set(row.secondary_label.unwrap_or_default());
+                governed_description.set(String::new());
+                governed_requires_approval.set(row.status_label.contains("approval"));
+            }
+            "document_requirements" => {
+                doc_rule_id.set(row.id.to_string());
+                doc_rule_key.set(row.secondary_label.unwrap_or_default());
+                doc_rule_label.set(row.primary_label);
+                let parts = row.detail.split('/').map(str::trim).collect::<Vec<_>>();
+                doc_rule_scope.set(parts.first().copied().unwrap_or("load").into());
+                doc_rule_lifecycle.set(parts.get(1).copied().unwrap_or("booking").into());
+                doc_rule_type.set(parts.get(2).copied().unwrap_or("rate_confirmation").into());
+                doc_rule_role.set(String::new());
+                doc_rule_blocks.set(row.status_label.contains("Blocking"));
+                doc_rule_requires_approval.set(row.status_label.contains("approval"));
+            }
+            "customer_configurations" => {
+                customer_config_id.set(row.id.to_string());
+                customer_config_key.set(row.primary_label);
+                customer_config_area
+                    .set(row.secondary_label.unwrap_or_else(|| "visibility".into()));
+                customer_config_contract_id.set(String::new());
+                customer_config_lane_id.set(String::new());
+                customer_config_facility_id.set(String::new());
+                customer_config_carrier_group.set(String::new());
+                customer_config_refs.set(String::new());
+                customer_config_requires_approval.set(row.status_label.contains("approval"));
             }
             _ => {}
         }
@@ -533,6 +726,45 @@ pub fn MasterDataPage() -> impl IntoView {
                             {render_simple_panel("load_types", "Load type write flow", "Dry Van", load_type_id, load_type_name, save_load_type, clear_load_type_form, "Save load type", Signal::derive(move || active_editor.get().as_deref() == Some("load_types")))}
                             {render_simple_panel("equipments", "Equipment write flow", "Reefer", equipment_id, equipment_name, save_equipment, clear_equipment_form, "Save equipment", Signal::derive(move || active_editor.get().as_deref() == Some("equipments")))}
                             {render_simple_panel("commodity_types", "Commodity type write flow", "Consumer Goods", commodity_type_id, commodity_type_name, save_commodity_type, clear_commodity_form, "Save commodity type", Signal::derive(move || active_editor.get().as_deref() == Some("commodity_types")))}
+                            {render_governed_panel(
+                                governed_kind,
+                                governed_id,
+                                governed_code,
+                                governed_label,
+                                governed_description,
+                                governed_requires_approval,
+                                save_governed_catalog,
+                                clear_governed_form,
+                                Signal::derive(move || active_editor.get().as_deref().map(is_governed_catalog_kind).unwrap_or(false)),
+                            )}
+                            {render_document_requirement_panel(
+                                doc_rule_id,
+                                doc_rule_key,
+                                doc_rule_label,
+                                doc_rule_scope,
+                                doc_rule_role,
+                                doc_rule_lifecycle,
+                                doc_rule_type,
+                                doc_rule_blocks,
+                                doc_rule_requires_approval,
+                                save_document_requirement,
+                                clear_doc_rule_form,
+                                Signal::derive(move || active_editor.get().as_deref() == Some("document_requirements")),
+                            )}
+                            {render_customer_configuration_panel(
+                                customer_config_id,
+                                customer_config_key,
+                                customer_config_area,
+                                customer_config_contract_id,
+                                customer_config_lane_id,
+                                customer_config_facility_id,
+                                customer_config_carrier_group,
+                                customer_config_refs,
+                                customer_config_requires_approval,
+                                save_customer_configuration,
+                                clear_customer_config_form,
+                                Signal::derive(move || active_editor.get().as_deref() == Some("customer_configurations")),
+                            )}
                             {render_location_panel(
                                 screen,
                                 location_id,
@@ -662,314 +894,5 @@ pub fn MasterDataPage() -> impl IntoView {
                 }.into_any()
             }
         }}
-    }
-}
-
-fn master_data_row_matches_query(kind: &str, row: &MasterDataRow, query: &str) -> bool {
-    let query = query.trim().to_ascii_lowercase();
-    if query.is_empty() {
-        return true;
-    }
-
-    kind.to_ascii_lowercase().contains(&query)
-        || row.id.to_string().contains(&query)
-        || row.primary_label.to_ascii_lowercase().contains(&query)
-        || row
-            .secondary_label
-            .as_deref()
-            .unwrap_or_default()
-            .to_ascii_lowercase()
-            .contains(&query)
-        || row.status_label.to_ascii_lowercase().contains(&query)
-        || row.detail.to_ascii_lowercase().contains(&query)
-}
-
-fn handle_master_data_result(
-    auth: session::AuthContext,
-    result: Result<MasterDataMutationResponse, String>,
-    action_message: RwSignal<Option<String>>,
-    refresh_nonce: RwSignal<u64>,
-    clear_form: impl FnOnce(),
-) {
-    match result {
-        Ok(response) => {
-            action_message.set(Some(response.message));
-            if response.success {
-                clear_form();
-                refresh_nonce.update(|value| *value += 1);
-            }
-        }
-        Err(error) => {
-            if error.contains("returned 401") {
-                session::invalidate_session(&auth, "Your Rust session expired; sign in again.");
-            }
-            action_message.set(Some(error));
-        }
-    }
-}
-
-fn render_clear_button(
-    clear_form: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
-) -> impl IntoView {
-    view! {
-        <button
-            type="button"
-            on:click=clear_form
-            style="padding:0.45rem 0.8rem;border:1px solid #d1d5db;border-radius:0.8rem;background:white;cursor:pointer;"
-        >
-            "Clear"
-        </button>
-    }
-}
-
-fn render_simple_panel(
-    kind: &'static str,
-    title: &'static str,
-    placeholder: &'static str,
-    id_signal: RwSignal<String>,
-    name_signal: RwSignal<String>,
-    save_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
-    clear_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
-    button_label: &'static str,
-    is_active: Signal<bool>,
-) -> impl IntoView {
-    view! {
-        <div style=move || {
-            if is_active.get() {
-                "border:2px solid #60a5fa;border-radius:1rem;padding:1rem;background:#f8fbff;display:grid;gap:0.75rem;box-shadow:0 0 0 3px rgba(191,219,254,0.35);".to_string()
-            } else {
-                "border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;".to_string()
-            }
-        }>
-            <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                <strong>{title}</strong>
-                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                    {move || is_active.get().then(|| view! {
-                        <span style=tone_style("info")>{format!("Editing {}", kind.replace('_', " "))}</span>
-                    })}
-                    {render_clear_button(clear_action)}
-                </div>
-            </div>
-            <input
-                prop:value=move || id_signal.get()
-                on:input=move |ev| id_signal.set(event_target_value(&ev))
-                placeholder="Optional ID to edit"
-                style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
-            />
-            <input
-                prop:value=move || name_signal.get()
-                on:input=move |ev| name_signal.set(event_target_value(&ev))
-                placeholder=placeholder
-                style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
-            />
-            <button
-                type="button"
-                on:click=save_action
-                style="padding:0.65rem 0.9rem;border:none;border-radius:0.85rem;background:#111827;color:white;cursor:pointer;"
-            >
-                {button_label}
-            </button>
-        </div>
-    }
-}
-
-fn render_country_panel(
-    country_id: RwSignal<String>,
-    country_name: RwSignal<String>,
-    country_iso_code: RwSignal<String>,
-    save_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
-    clear_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
-    is_active: Signal<bool>,
-) -> impl IntoView {
-    view! {
-        <div style=move || {
-            if is_active.get() {
-                "border:2px solid #60a5fa;border-radius:1rem;padding:1rem;background:#f8fbff;display:grid;gap:0.75rem;box-shadow:0 0 0 3px rgba(191,219,254,0.35);".to_string()
-            } else {
-                "border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;".to_string()
-            }
-        }>
-            <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                <strong>"Countries management"</strong>
-                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                    {move || is_active.get().then(|| view! { <span style=tone_style("info")>"Editing country"</span> })}
-                    {render_clear_button(clear_action)}
-                </div>
-            </div>
-            <input
-                prop:value=move || country_id.get()
-                on:input=move |ev| country_id.set(event_target_value(&ev))
-                placeholder="Optional ID to edit"
-                style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
-            />
-            <input
-                prop:value=move || country_name.get()
-                on:input=move |ev| country_name.set(event_target_value(&ev))
-                placeholder="United States"
-                style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
-            />
-            <input
-                prop:value=move || country_iso_code.get()
-                on:input=move |ev| country_iso_code.set(event_target_value(&ev))
-                placeholder="US"
-                maxlength="8"
-                style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
-            />
-            <button
-                type="button"
-                on:click=save_action
-                style="padding:0.65rem 0.9rem;border:none;border-radius:0.85rem;background:#111827;color:white;cursor:pointer;"
-            >
-                "Save country"
-            </button>
-        </div>
-    }
-}
-
-fn render_city_panel(
-    screen: RwSignal<Option<MasterDataScreen>>,
-    city_id: RwSignal<String>,
-    city_name: RwSignal<String>,
-    city_country_id: RwSignal<String>,
-    save_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
-    clear_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
-    is_active: Signal<bool>,
-) -> impl IntoView {
-    view! {
-        <div style=move || {
-            if is_active.get() {
-                "border:2px solid #60a5fa;border-radius:1rem;padding:1rem;background:#f8fbff;display:grid;gap:0.75rem;box-shadow:0 0 0 3px rgba(191,219,254,0.35);".to_string()
-            } else {
-                "border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;".to_string()
-            }
-        }>
-            <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                <strong>"Cities management"</strong>
-                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                    {move || is_active.get().then(|| view! { <span style=tone_style("info")>"Editing city"</span> })}
-                    {render_clear_button(clear_action)}
-                </div>
-            </div>
-            <input
-                prop:value=move || city_id.get()
-                on:input=move |ev| city_id.set(event_target_value(&ev))
-                placeholder="Optional ID to edit"
-                style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
-            />
-            <input
-                prop:value=move || city_name.get()
-                on:input=move |ev| city_name.set(event_target_value(&ev))
-                placeholder="Houston"
-                style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
-            />
-            <select
-                prop:value=move || city_country_id.get()
-                on:change=move |ev| city_country_id.set(event_target_value(&ev))
-                style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;background:white;"
-            >
-                <option value="">"Choose country"</option>
-                {move || screen.get().map(|data| data.country_options.into_iter().map(|country| view! {
-                    <option value={country.id.to_string()}>{country.label}</option>
-                }).collect_view())}
-            </select>
-            <button
-                type="button"
-                on:click=save_action
-                style="padding:0.65rem 0.9rem;border:none;border-radius:0.85rem;background:#111827;color:white;cursor:pointer;"
-            >
-                "Save city"
-            </button>
-        </div>
-    }
-}
-
-fn render_location_panel(
-    screen: RwSignal<Option<MasterDataScreen>>,
-    location_id: RwSignal<String>,
-    location_name: RwSignal<String>,
-    location_country_id: RwSignal<String>,
-    location_city_id: RwSignal<String>,
-    save_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
-    clear_action: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
-    is_active: Signal<bool>,
-) -> impl IntoView {
-    view! {
-        <div style=move || {
-            if is_active.get() {
-                "border:2px solid #60a5fa;border-radius:1rem;padding:1rem;background:#f8fbff;display:grid;gap:0.75rem;box-shadow:0 0 0 3px rgba(191,219,254,0.35);".to_string()
-            } else {
-                "border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;background:#ffffff;display:grid;gap:0.75rem;".to_string()
-            }
-        }>
-            <div style="display:flex;justify-content:space-between;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-                <strong>"Location write flow"</strong>
-                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                    {move || is_active.get().then(|| view! { <span style=tone_style("info")>"Editing location"</span> })}
-                    {render_clear_button(clear_action)}
-                </div>
-            </div>
-            <input
-                prop:value=move || location_id.get()
-                on:input=move |ev| location_id.set(event_target_value(&ev))
-                placeholder="Optional ID to edit"
-                style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
-            />
-            <input
-                prop:value=move || location_name.get()
-                on:input=move |ev| location_name.set(event_target_value(&ev))
-                placeholder="Dallas Yard"
-                style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;"
-            />
-            <select
-                prop:value=move || location_country_id.get()
-                on:change=move |ev| {
-                    let next_value = event_target_value(&ev);
-                    location_country_id.set(next_value.clone());
-                    if let Some(selected_country_id) = parse_optional_u64(&next_value) {
-                        let matches_country = screen.get().map(|data| {
-                            data.city_options.into_iter().any(|city| {
-                                city.country_id == selected_country_id
-                                    && Some(city.id) == parse_optional_u64(&location_city_id.get())
-                            })
-                        }).unwrap_or(false);
-                        if !matches_country {
-                            location_city_id.set(String::new());
-                        }
-                    } else {
-                        location_city_id.set(String::new());
-                    }
-                }
-                style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;background:white;"
-            >
-                <option value="">"Choose country"</option>
-                {move || screen.get().map(|data| data.country_options.into_iter().map(|country| view! {
-                    <option value={country.id.to_string()}>{country.label}</option>
-                }).collect_view())}
-            </select>
-            <select
-                prop:value=move || location_city_id.get()
-                on:change=move |ev| location_city_id.set(event_target_value(&ev))
-                style="padding:0.75rem 0.9rem;border:1px solid #d1d5db;border-radius:0.85rem;background:white;"
-            >
-                <option value="">"Choose city"</option>
-                {move || {
-                    let selected_country = parse_optional_u64(&location_country_id.get());
-                    screen.get().map(|data| {
-                        data.city_options.into_iter().filter(|city| {
-                            selected_country.map(|country_id| city.country_id == country_id).unwrap_or(true)
-                        }).map(|city| view! {
-                            <option value={city.id.to_string()}>{city.label}</option>
-                        }).collect_view()
-                    })
-                }}
-            </select>
-            <button
-                type="button"
-                on:click=save_action
-                style="padding:0.65rem 0.9rem;border:none;border-radius:0.85rem;background:#111827;color:white;cursor:pointer;"
-            >
-                "Save location"
-            </button>
-        </div>
     }
 }

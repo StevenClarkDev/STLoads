@@ -139,6 +139,8 @@ pub struct KycDocumentRecord {
     pub hash_algorithm: Option<String>,
     pub mock_blockchain_tx: Option<String>,
     pub mock_blockchain_timestamp: Option<NaiveDateTime>,
+    pub current_version: i32,
+    pub version_count: i64,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -480,6 +482,60 @@ pub async fn delete_personal_access_tokens_for_user(
     .await?;
 
     Ok(result.rows_affected())
+}
+
+pub async fn revoke_all_access_artifacts_for_user(
+    pool: &DbPool,
+    user_id: i64,
+) -> Result<u64, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let mut affected = 0;
+
+    affected += sqlx::query(
+        "DELETE FROM personal_access_tokens
+         WHERE tokenable_type = $1 AND tokenable_id = $2",
+    )
+    .bind("App\\Models\\User")
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    affected += sqlx::query("DELETE FROM sessions WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+    affected += sqlx::query(
+        "DELETE FROM password_reset_tokens
+         WHERE LOWER(email) = LOWER((SELECT email FROM users WHERE id = $1))",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    affected += sqlx::query("DELETE FROM mfa_challenges WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+    affected += sqlx::query(
+        "UPDATE users
+         SET remember_token = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+           AND remember_token IS NOT NULL",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+
+    tx.commit().await?;
+    Ok(affected)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -904,7 +960,10 @@ pub async fn list_kyc_documents_by_user_id(
     user_id: i64,
 ) -> Result<Vec<KycDocumentRecord>, sqlx::Error> {
     sqlx::query_as::<_, KycDocumentRecord>(
-        "SELECT id, user_id, document_name, document_type, file_path, original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp, created_at, updated_at
+        "SELECT id, user_id, document_name, document_type, file_path, original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp,
+                COALESCE((SELECT MAX(version_number) FROM kyc_document_versions WHERE document_id = kyc_documents.id), 1)::int AS current_version,
+                COALESCE((SELECT COUNT(*) FROM kyc_document_versions WHERE document_id = kyc_documents.id), 1)::bigint AS version_count,
+                created_at, updated_at
          FROM kyc_documents
          WHERE user_id = $1
          ORDER BY created_at DESC, id DESC",
@@ -919,7 +978,10 @@ pub async fn find_kyc_document_by_id(
     document_id: i64,
 ) -> Result<Option<KycDocumentRecord>, sqlx::Error> {
     sqlx::query_as::<_, KycDocumentRecord>(
-        "SELECT id, user_id, document_name, document_type, file_path, original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp, created_at, updated_at
+        "SELECT id, user_id, document_name, document_type, file_path, original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp,
+                COALESCE((SELECT MAX(version_number) FROM kyc_document_versions WHERE document_id = kyc_documents.id), 1)::int AS current_version,
+                COALESCE((SELECT COUNT(*) FROM kyc_document_versions WHERE document_id = kyc_documents.id), 1)::bigint AS version_count,
+                created_at, updated_at
          FROM kyc_documents
          WHERE id = $1
          LIMIT 1",
@@ -949,8 +1011,30 @@ pub async fn create_kyc_document(
     .fetch_one(pool)
     .await?;
 
+    insert_kyc_document_version(
+        pool,
+        document_id,
+        1,
+        &input.document_name,
+        &input.document_type,
+        &input.file_path,
+        input.original_name.as_deref(),
+        input.mime_type.as_deref(),
+        input.file_size,
+        None,
+        None,
+        None,
+        None,
+        Some(input.user_id),
+        Some("initial upload"),
+    )
+    .await?;
+
     sqlx::query_as::<_, KycDocumentRecord>(
-        "SELECT id, user_id, document_name, document_type, file_path, original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp, created_at, updated_at
+        "SELECT id, user_id, document_name, document_type, file_path, original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp,
+                COALESCE((SELECT MAX(version_number) FROM kyc_document_versions WHERE document_id = kyc_documents.id), 1)::int AS current_version,
+                COALESCE((SELECT COUNT(*) FROM kyc_document_versions WHERE document_id = kyc_documents.id), 1)::bigint AS version_count,
+                created_at, updated_at
          FROM kyc_documents
          WHERE id = $1
          LIMIT 1",
@@ -983,6 +1067,15 @@ pub async fn update_kyc_document(
         tx.rollback().await?;
         return Ok(None);
     };
+
+    let next_version = sqlx::query_scalar::<_, i32>(
+        "SELECT COALESCE(MAX(version_number), 0)::int + 1
+         FROM kyc_document_versions
+         WHERE document_id = $1",
+    )
+    .bind(owned_document_id)
+    .fetch_one(&mut *tx)
+    .await?;
 
     if let Some(file_path) = input.file_path.as_deref() {
         sqlx::query(
@@ -1042,7 +1135,10 @@ pub async fn update_kyc_document(
     .await?;
 
     let updated = sqlx::query_as::<_, KycDocumentRecord>(
-        "SELECT id, user_id, document_name, document_type, file_path, original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp, created_at, updated_at
+        "SELECT id, user_id, document_name, document_type, file_path, original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp,
+                COALESCE((SELECT MAX(version_number) FROM kyc_document_versions WHERE document_id = kyc_documents.id), 1)::int AS current_version,
+                COALESCE((SELECT COUNT(*) FROM kyc_document_versions WHERE document_id = kyc_documents.id), 1)::bigint AS version_count,
+                created_at, updated_at
          FROM kyc_documents
          WHERE id = $1
          LIMIT 1",
@@ -1051,14 +1147,131 @@ pub async fn update_kyc_document(
     .fetch_optional(&mut *tx)
     .await?;
 
+    let mut updated = updated;
+    if let Some(updated_document) = updated.as_mut() {
+        insert_kyc_document_version_in_tx(
+            &mut tx,
+            updated_document.id,
+            next_version.max(1),
+            &updated_document.document_name,
+            &updated_document.document_type,
+            &updated_document.file_path,
+            updated_document.original_name.as_deref(),
+            updated_document.mime_type.as_deref(),
+            updated_document.file_size,
+            updated_document.hash.as_deref(),
+            updated_document.hash_algorithm.as_deref(),
+            updated_document.mock_blockchain_tx.as_deref(),
+            updated_document.mock_blockchain_timestamp,
+            Some(user_id),
+            Some("document replacement or metadata update"),
+        )
+        .await?;
+        updated_document.current_version = next_version.max(1);
+        updated_document.version_count = i64::from(next_version.max(1));
+    }
+
     tx.commit().await?;
     Ok(updated)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn insert_kyc_document_version(
+    pool: &DbPool,
+    document_id: i64,
+    version_number: i32,
+    document_name: &str,
+    document_type: &str,
+    file_path: &str,
+    original_name: Option<&str>,
+    mime_type: Option<&str>,
+    file_size: Option<i64>,
+    hash: Option<&str>,
+    hash_algorithm: Option<&str>,
+    mock_blockchain_tx: Option<&str>,
+    mock_blockchain_timestamp: Option<NaiveDateTime>,
+    uploaded_by_user_id: Option<i64>,
+    replacement_reason: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO kyc_document_versions (
+            document_id, version_number, document_name, document_type, file_path,
+            original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
+            mock_blockchain_timestamp, uploaded_by_user_id, replacement_reason, created_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+         ON CONFLICT (document_id, version_number) DO NOTHING",
+    )
+    .bind(document_id)
+    .bind(version_number)
+    .bind(document_name)
+    .bind(document_type)
+    .bind(file_path)
+    .bind(original_name)
+    .bind(mime_type)
+    .bind(file_size)
+    .bind(hash)
+    .bind(hash_algorithm)
+    .bind(mock_blockchain_tx)
+    .bind(mock_blockchain_timestamp)
+    .bind(uploaded_by_user_id)
+    .bind(replacement_reason)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn insert_kyc_document_version_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    document_id: i64,
+    version_number: i32,
+    document_name: &str,
+    document_type: &str,
+    file_path: &str,
+    original_name: Option<&str>,
+    mime_type: Option<&str>,
+    file_size: Option<i64>,
+    hash: Option<&str>,
+    hash_algorithm: Option<&str>,
+    mock_blockchain_tx: Option<&str>,
+    mock_blockchain_timestamp: Option<NaiveDateTime>,
+    uploaded_by_user_id: Option<i64>,
+    replacement_reason: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO kyc_document_versions (
+            document_id, version_number, document_name, document_type, file_path,
+            original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx,
+            mock_blockchain_timestamp, uploaded_by_user_id, replacement_reason, created_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+         ON CONFLICT (document_id, version_number) DO NOTHING",
+    )
+    .bind(document_id)
+    .bind(version_number)
+    .bind(document_name)
+    .bind(document_type)
+    .bind(file_path)
+    .bind(original_name)
+    .bind(mime_type)
+    .bind(file_size)
+    .bind(hash)
+    .bind(hash_algorithm)
+    .bind(mock_blockchain_tx)
+    .bind(mock_blockchain_timestamp)
+    .bind(uploaded_by_user_id)
+    .bind(replacement_reason)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 pub async fn verify_kyc_document_blockchain(
     pool: &DbPool,
     document_id: i64,
     user_id: i64,
+    content_sha256: &str,
     note: Option<&str>,
     next_status: i16,
 ) -> Result<Option<KycDocumentRecord>, sqlx::Error> {
@@ -1085,22 +1298,26 @@ pub async fn verify_kyc_document_blockchain(
         return Ok(None);
     };
 
-    let timestamp_token = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
-    let hash = format!("mocksha256-{}-{}", document.id, timestamp_token);
-    let tx_id = format!("mocktx-{}-{}", document.user_id, timestamp_token);
+    let next_version = sqlx::query_scalar::<_, i32>(
+        "SELECT COALESCE(MAX(version_number), 0)::int + 1
+         FROM kyc_document_versions
+         WHERE document_id = $1",
+    )
+    .bind(document.id)
+    .fetch_one(&mut *tx)
+    .await?;
 
     sqlx::query(
         "UPDATE kyc_documents
          SET document_type = 'blockchain',
              hash = $1,
-             hash_algorithm = 'mock_sha256',
-             mock_blockchain_tx = $2,
+             hash_algorithm = 'sha256',
+             mock_blockchain_tx = NULL,
              mock_blockchain_timestamp = CURRENT_TIMESTAMP,
              updated_at = CURRENT_TIMESTAMP
-         WHERE id = $3 AND user_id = $4",
+         WHERE id = $2 AND user_id = $3",
     )
-    .bind(&hash)
-    .bind(&tx_id)
+    .bind(content_sha256)
     .bind(document.id)
     .bind(document.user_id)
     .execute(&mut *tx)
@@ -1111,13 +1328,13 @@ pub async fn verify_kyc_document_blockchain(
         .filter(|value| !value.is_empty())
         .map(|value| {
             format!(
-                "Rust self-service profile anchored KYC document {} to blockchain: {}",
+                "Rust self-service profile verified KYC document {} content hash: {}",
                 document.document_name, value
             )
         })
         .unwrap_or_else(|| {
             format!(
-                "Rust self-service profile anchored KYC document {} to blockchain.",
+                "Rust self-service profile verified KYC document {} content hash.",
                 document.document_name
             )
         });
@@ -1125,7 +1342,10 @@ pub async fn verify_kyc_document_blockchain(
     mark_user_profile_submission_for_review(&mut tx, user_id, next_status, &remark).await?;
 
     let updated = sqlx::query_as::<_, KycDocumentRecord>(
-        "SELECT id, user_id, document_name, document_type, file_path, original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp, created_at, updated_at
+        "SELECT id, user_id, document_name, document_type, file_path, original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp,
+                COALESCE((SELECT MAX(version_number) FROM kyc_document_versions WHERE document_id = kyc_documents.id), 1)::int AS current_version,
+                COALESCE((SELECT COUNT(*) FROM kyc_document_versions WHERE document_id = kyc_documents.id), 1)::bigint AS version_count,
+                created_at, updated_at
          FROM kyc_documents
          WHERE id = $1
          LIMIT 1",
@@ -1133,6 +1353,30 @@ pub async fn verify_kyc_document_blockchain(
     .bind(document.id)
     .fetch_optional(&mut *tx)
     .await?;
+
+    let mut updated = updated;
+    if let Some(updated_document) = updated.as_mut() {
+        insert_kyc_document_version_in_tx(
+            &mut tx,
+            updated_document.id,
+            next_version.max(1),
+            &updated_document.document_name,
+            &updated_document.document_type,
+            &updated_document.file_path,
+            updated_document.original_name.as_deref(),
+            updated_document.mime_type.as_deref(),
+            updated_document.file_size,
+            updated_document.hash.as_deref(),
+            updated_document.hash_algorithm.as_deref(),
+            updated_document.mock_blockchain_tx.as_deref(),
+            updated_document.mock_blockchain_timestamp,
+            Some(user_id),
+            Some("blockchain verification metadata update"),
+        )
+        .await?;
+        updated_document.current_version = next_version.max(1);
+        updated_document.version_count = i64::from(next_version.max(1));
+    }
 
     tx.commit().await?;
     Ok(updated)
@@ -1147,7 +1391,10 @@ pub async fn delete_kyc_document(
     let mut tx = pool.begin().await?;
 
     let existing = sqlx::query_as::<_, KycDocumentRecord>(
-        "SELECT id, user_id, document_name, document_type, file_path, original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp, created_at, updated_at
+        "SELECT id, user_id, document_name, document_type, file_path, original_name, mime_type, file_size, hash, hash_algorithm, mock_blockchain_tx, mock_blockchain_timestamp,
+                COALESCE((SELECT MAX(version_number) FROM kyc_document_versions WHERE document_id = kyc_documents.id), 1)::int AS current_version,
+                COALESCE((SELECT COUNT(*) FROM kyc_document_versions WHERE document_id = kyc_documents.id), 1)::bigint AS version_count,
+                created_at, updated_at
          FROM kyc_documents
          WHERE id = $1 AND user_id = $2
          LIMIT 1",

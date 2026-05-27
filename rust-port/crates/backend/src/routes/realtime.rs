@@ -159,6 +159,7 @@ async fn handle_socket(
 
                 if !session_still_valid {
                     let invalidated = RealtimeEvent {
+            request_id: None,
                         kind: RealtimeEventKind::SessionInvalidated,
                         leg_id: None,
                         conversation_id: presence_scope.as_ref().map(|scope| scope.conversation.id.max(0) as u64),
@@ -256,6 +257,7 @@ fn publish_presence_event(
 ) {
     state.publish_realtime(
         RoutedRealtimeEvent::new(RealtimeEvent {
+            request_id: None,
             kind: RealtimeEventKind::ConversationPresenceChanged,
             leg_id: Some(scope.conversation.load_leg_id.max(0) as u64),
             conversation_id: Some(scope.conversation.id.max(0) as u64),

@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+env:
+  CARGO_TERM_COLOR: always
+  TRUNK_VERSION: "0.21.14"
+
+jobs:
+  rust-quality:
+    name: Rust format, check, clippy, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check workspace
+        run: cargo check --workspace
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test workspace
+        run: cargo test --workspace
+
+  sqlx-check:
+    name: SQLx metadata check
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --locked --no-default-features --features postgres,rustls
+      - name: SQLx prepare check
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "Skipping SQLx metadata check because CI_DATABASE_URL is not configured."
+            exit 0
+          fi
+          cargo sqlx prepare --workspace --check
+
+  frontend-release:
+    name: Frontend release build and E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install npm dependencies
+        run: npm ci
+      - name: Install pinned trunk
+        run: cargo install trunk --locked --version "$TRUNK_VERSION"
+      - name: Build Leptos release
+        working-directory: crates/frontend-leptos
+        run: trunk build --release
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Run browser E2E
+        run: npx playwright test
+
+  security:
+    name: Dependency audit and secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install scan tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+          cargo install cargo-audit --locked
+      - name: Install npm dependencies
+        run: npm ci
+      - name: Run security lane
+        shell: pwsh
+        run: ./scripts/run_ci_security.ps1
+
+  docker-build:
+    name: Docker build gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -f Dockerfile -t stloads-backend:ci .
+      - name: Build frontend image
+        run: docker build -f Dockerfile.frontend --build-arg TRUNK_VERSION="$TRUNK_VERSION" -t stloads-frontend:ci .

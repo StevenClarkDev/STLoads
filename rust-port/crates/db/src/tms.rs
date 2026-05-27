@@ -188,6 +188,47 @@ pub struct SyncErrorBreakdownRecord {
     pub count: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct TmsSourceOfTruthRuleRecord {
+    pub id: i64,
+    pub field_key: String,
+    pub owning_system: String,
+    pub conflict_policy: String,
+    pub default_repair_action: String,
+    pub notes: Option<String>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct TmsConflictRecord {
+    pub id: i64,
+    pub handoff_id: i64,
+    pub field_key: String,
+    pub source_of_truth: String,
+    pub stloads_value: Option<String>,
+    pub tms_value: Option<String>,
+    pub conflict_status: String,
+    pub severity: String,
+    pub repair_action: String,
+    pub detected_by: String,
+    pub resolution_note: Option<String>,
+    pub resolved_by: Option<String>,
+    pub resolved_at: Option<NaiveDateTime>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateTmsConflictParams<'a> {
+    pub handoff_id: i64,
+    pub field_key: &'a str,
+    pub stloads_value: Option<&'a str>,
+    pub tms_value: Option<&'a str>,
+    pub severity: &'a str,
+    pub detected_by: &'a str,
+}
+
 pub async fn find_active_handoff_by_tms_load(
     pool: &DbPool,
     tms_load_id: &str,
@@ -417,6 +458,145 @@ pub async fn reconciliation_action_catalog() -> &'static [ReconciliationActionDe
     reconciliation_action_descriptors()
 }
 
+pub async fn list_tms_source_of_truth_rules(
+    pool: &DbPool,
+) -> Result<Vec<TmsSourceOfTruthRuleRecord>, sqlx::Error> {
+    sqlx::query_as::<_, TmsSourceOfTruthRuleRecord>(
+        "SELECT id, field_key, owning_system, conflict_policy, default_repair_action, notes,
+                created_at, updated_at
+         FROM tms_source_of_truth_rules
+         ORDER BY field_key",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn create_tms_conflict(
+    pool: &DbPool,
+    params: CreateTmsConflictParams<'_>,
+) -> Result<TmsConflictRecord, sqlx::Error> {
+    sqlx::query_as::<_, TmsConflictRecord>(
+        "WITH rule AS (
+             SELECT owning_system, default_repair_action
+             FROM tms_source_of_truth_rules
+             WHERE field_key = $2
+             LIMIT 1
+         )
+         INSERT INTO tms_conflict_queue (
+             handoff_id, field_key, source_of_truth, stloads_value, tms_value,
+             severity, repair_action, detected_by, created_at, updated_at
+         )
+         VALUES (
+             $1, $2,
+             COALESCE((SELECT owning_system FROM rule), 'manual_review'),
+             $3, $4, $5,
+             COALESCE((SELECT default_repair_action FROM rule), 'manual_review'),
+             $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+         )
+         RETURNING id, handoff_id, field_key, source_of_truth, stloads_value, tms_value,
+             conflict_status, severity, repair_action, detected_by, resolution_note,
+             resolved_by, resolved_at, created_at, updated_at",
+    )
+    .bind(params.handoff_id)
+    .bind(params.field_key)
+    .bind(params.stloads_value)
+    .bind(params.tms_value)
+    .bind(params.severity)
+    .bind(params.detected_by)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn list_open_tms_conflicts(
+    pool: &DbPool,
+    limit: i64,
+) -> Result<Vec<TmsConflictRecord>, sqlx::Error> {
+    sqlx::query_as::<_, TmsConflictRecord>(
+        "SELECT id, handoff_id, field_key, source_of_truth, stloads_value, tms_value,
+                conflict_status, severity, repair_action, detected_by, resolution_note,
+                resolved_by, resolved_at, created_at, updated_at
+         FROM tms_conflict_queue
+         WHERE conflict_status IN ('open', 'in_review', 'replay_queued')
+         ORDER BY
+             CASE severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END DESC,
+             created_at DESC,
+             id DESC
+         LIMIT $1",
+    )
+    .bind(limit.clamp(1, 250))
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn repair_tms_conflict(
+    pool: &DbPool,
+    conflict_id: i64,
+    resolved_by: &str,
+    resolution_note: Option<&str>,
+) -> Result<Option<TmsConflictRecord>, sqlx::Error> {
+    let Some(conflict) = sqlx::query_as::<_, TmsConflictRecord>(
+        "SELECT id, handoff_id, field_key, source_of_truth, stloads_value, tms_value,
+                conflict_status, severity, repair_action, detected_by, resolution_note,
+                resolved_by, resolved_at, created_at, updated_at
+         FROM tms_conflict_queue
+         WHERE id = $1
+         LIMIT 1",
+    )
+    .bind(conflict_id)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    match conflict.repair_action.as_str() {
+        "requeue_tms_push" => {
+            sqlx::query(
+                "UPDATE stloads_handoffs
+                 SET status = 'requeue_required',
+                     last_push_result = 'Queued by TMS conflict repair action.',
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $1",
+            )
+            .bind(conflict.handoff_id)
+            .execute(pool)
+            .await?;
+        }
+        "accept_tms_value" if conflict.field_key == "external_status" => {
+            sqlx::query(
+                "UPDATE stloads_handoffs
+                 SET tms_status = $2,
+                     last_webhook_at = CURRENT_TIMESTAMP,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $1",
+            )
+            .bind(conflict.handoff_id)
+            .bind(conflict.tms_value.as_deref())
+            .execute(pool)
+            .await?;
+        }
+        _ => {}
+    }
+
+    sqlx::query_as::<_, TmsConflictRecord>(
+        "UPDATE tms_conflict_queue
+         SET conflict_status = CASE WHEN repair_action = 'manual_review' THEN 'resolved' ELSE 'repaired' END,
+             resolved_by = $2,
+             resolution_note = $3,
+             resolved_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING id, handoff_id, field_key, source_of_truth, stloads_value, tms_value,
+             conflict_status, severity, repair_action, detected_by, resolution_note,
+             resolved_by, resolved_at, created_at, updated_at",
+    )
+    .bind(conflict_id)
+    .bind(resolved_by)
+    .bind(resolution_note.map(str::trim).filter(|value| !value.is_empty()))
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn find_sync_error_by_id(
     pool: &DbPool,
     sync_error_id: i64,
@@ -567,6 +747,9 @@ pub async fn handoff_belongs_to_organization(
     Ok(exists)
 }
 
+// Sync errors preserve provider, actor, severity, and request evidence at the call
+// site so reconciliation failures are auditable without a partial context object.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_sync_error(
     pool: &DbPool,
     handoff_id: Option<i64>,
@@ -576,12 +759,13 @@ pub async fn create_sync_error(
     detail: Option<&str>,
     source_module: Option<&str>,
     performed_by: Option<&str>,
+    request_id: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO stloads_sync_errors (
             handoff_id, error_class, severity, title, detail, source_module, performed_by,
-            resolved, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            request_id, resolved, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
     )
     .bind(handoff_id)
     .bind(error_class)
@@ -590,6 +774,7 @@ pub async fn create_sync_error(
     .bind(detail)
     .bind(source_module)
     .bind(performed_by)
+    .bind(request_id)
     .execute(pool)
     .await?;
 
@@ -599,6 +784,7 @@ pub async fn create_sync_error(
 pub async fn queue_handoff(
     pool: &DbPool,
     payload: &shared::TmsHandoffPayload,
+    request_id: Option<&str>,
 ) -> Result<StloadsHandoffRecord, sqlx::Error> {
     let mut tx = pool.begin().await?;
     let raw_payload = serde_json::to_value(payload).unwrap_or(serde_json::Value::Null);
@@ -607,6 +793,7 @@ pub async fn queue_handoff(
         payload,
         HandoffStatus::Queued.as_legacy_label(),
         &raw_payload,
+        request_id,
     )
     .await?;
     insert_handoff_event_row(
@@ -617,6 +804,7 @@ pub async fn queue_handoff(
         payload.source_module.as_deref(),
         Some(&raw_payload),
         Some("accepted into queue"),
+        request_id,
     )
     .await?;
     if let Some(external_refs) = payload.external_refs.as_deref() {
@@ -632,6 +820,7 @@ pub async fn queue_handoff(
 pub async fn push_handoff(
     pool: &DbPool,
     payload: &shared::TmsHandoffPayload,
+    request_id: Option<&str>,
 ) -> Result<MaterializedHandoffResult, sqlx::Error> {
     let mut tx = pool.begin().await?;
     let raw_payload = serde_json::to_value(payload).unwrap_or(serde_json::Value::Null);
@@ -640,6 +829,7 @@ pub async fn push_handoff(
         payload,
         HandoffStatus::PushInProgress.as_legacy_label(),
         &raw_payload,
+        request_id,
     )
     .await?;
 
@@ -651,6 +841,7 @@ pub async fn push_handoff(
         payload.source_module.as_deref(),
         Some(&raw_payload),
         Some("materializing local load"),
+        request_id,
     )
     .await?;
 
@@ -684,6 +875,7 @@ pub async fn push_handoff(
         payload.source_module.as_deref(),
         Some(&raw_payload),
         Some("success"),
+        request_id,
     )
     .await?;
 
@@ -706,6 +898,7 @@ pub async fn requeue_handoff(
     handoff_id: i64,
     performed_by: Option<&str>,
     source_module: Option<&str>,
+    request_id: Option<&str>,
 ) -> Result<Option<MaterializedHandoffResult>, sqlx::Error> {
     let Some(existing_handoff) = find_handoff_by_id(pool, handoff_id).await? else {
         return Ok(None);
@@ -743,6 +936,7 @@ pub async fn requeue_handoff(
         source_module.or(payload.source_module.as_deref()),
         Some(&raw_payload),
         Some("retrying handoff publication"),
+        request_id,
     )
     .await?;
 
@@ -788,6 +982,7 @@ pub async fn requeue_handoff(
         source_module.or(payload.source_module.as_deref()),
         Some(&raw_payload),
         Some("success"),
+        request_id,
     )
     .await?;
 
@@ -811,6 +1006,7 @@ pub async fn withdraw_handoff(
     reason: Option<&str>,
     performed_by: Option<&str>,
     source_module: Option<&str>,
+    request_id: Option<&str>,
 ) -> Result<Option<StloadsHandoffRecord>, sqlx::Error> {
     let Some(existing_handoff) = find_handoff_by_id(pool, handoff_id).await? else {
         return Ok(None);
@@ -844,6 +1040,7 @@ pub async fn withdraw_handoff(
         source_module,
         None,
         reason,
+        request_id,
     )
     .await?;
 
@@ -858,6 +1055,7 @@ pub async fn withdraw_handoff(
         reason.unwrap_or("Withdrawn from Rust TMS route."),
         performed_by.or(source_module).unwrap_or("operator"),
         None,
+        request_id,
     )
     .await?;
 
@@ -871,6 +1069,7 @@ pub async fn close_handoff(
     reason: Option<&str>,
     performed_by: Option<&str>,
     source_module: Option<&str>,
+    request_id: Option<&str>,
 ) -> Result<Option<StloadsHandoffRecord>, sqlx::Error> {
     let Some(existing_handoff) = find_handoff_by_id(pool, handoff_id).await? else {
         return Ok(None);
@@ -878,10 +1077,10 @@ pub async fn close_handoff(
 
     let mut tx = pool.begin().await?;
 
-    if existing_handoff.status == HandoffStatus::Published.as_legacy_label() {
-        if let Some(load_id) = existing_handoff.load_id {
-            soft_delete_load_projection(&mut tx, load_id).await?;
-        }
+    if existing_handoff.status == HandoffStatus::Published.as_legacy_label()
+        && let Some(load_id) = existing_handoff.load_id
+    {
+        soft_delete_load_projection(&mut tx, load_id).await?;
     }
 
     sqlx::query(
@@ -906,6 +1105,7 @@ pub async fn close_handoff(
         source_module,
         None,
         reason,
+        request_id,
     )
     .await?;
 
@@ -920,6 +1120,7 @@ pub async fn close_handoff(
         reason.unwrap_or("Closed from Rust TMS route."),
         performed_by.or(source_module).unwrap_or("operator"),
         None,
+        request_id,
     )
     .await?;
 
@@ -930,6 +1131,7 @@ pub async fn close_handoff(
 pub async fn apply_status_webhook(
     pool: &DbPool,
     payload: &shared::TmsStatusWebhookRequest,
+    request_id: Option<&str>,
 ) -> Result<Option<TmsWebhookMutationResult>, sqlx::Error> {
     let Some(existing_handoff) =
         find_active_handoff_by_tms_load(pool, &payload.tms_load_id, &payload.tenant_id).await?
@@ -1018,10 +1220,10 @@ pub async fn apply_status_webhook(
             .clone()
             .unwrap_or_else(|| "Finance-complete webhook closed the STLOADS handoff.".into());
 
-        if existing_handoff.status == HandoffStatus::Published.as_legacy_label() {
-            if let Some(load_id) = existing_handoff.load_id {
-                soft_delete_load_projection(&mut tx, load_id).await?;
-            }
+        if existing_handoff.status == HandoffStatus::Published.as_legacy_label()
+            && let Some(load_id) = existing_handoff.load_id
+        {
+            soft_delete_load_projection(&mut tx, load_id).await?;
         }
     }
 
@@ -1057,6 +1259,7 @@ pub async fn apply_status_webhook(
         payload.source_module.as_deref(),
         Some(&webhook_payload),
         Some(detail.as_str()),
+        request_id,
     )
     .await?;
 
@@ -1075,6 +1278,7 @@ pub async fn apply_status_webhook(
             .or(payload.source_module.as_deref())
             .unwrap_or("webhook"),
         Some(&webhook_payload),
+        request_id,
     )
     .await?;
 
@@ -1122,6 +1326,7 @@ pub async fn process_retryable_handoffs(
             handoff_id,
             Some("rust_tms_retry_worker"),
             Some("rust_scheduler"),
+            None,
         )
         .await
         {
@@ -1177,6 +1382,7 @@ pub async fn run_reconciliation_scan(
             Some("Reconciliation scan: TMS reached a financial terminal status."),
             Some("rust_tms_reconciliation_worker"),
             Some("rust_scheduler"),
+            None,
         )
         .await?
         .is_some()
@@ -1204,6 +1410,7 @@ pub async fn run_reconciliation_scan(
             Some("Reconciliation scan: TMS cancelled but STLOADS was still published."),
             Some("rust_tms_reconciliation_worker"),
             Some("rust_scheduler"),
+            None,
         )
         .await?
         .is_some()
@@ -1247,6 +1454,7 @@ async fn record_handoff_retry_failure(
         Some(error),
         Some("rust_scheduler"),
         Some("rust_tms_retry_worker"),
+        None,
     )
     .await
 }
@@ -1290,6 +1498,7 @@ async fn flag_delivered_still_open(pool: &DbPool) -> Result<usize, sqlx::Error> 
             Some("All load legs are completed but the STLOADS handoff is still published. Consider closing or withdrawing."),
             Some("rust_scheduler"),
             Some("rust_tms_reconciliation_worker"),
+            None,
         )
         .await?;
     }
@@ -1327,6 +1536,7 @@ async fn flag_stale_handoffs(pool: &DbPool, stale_days: i64) -> Result<usize, sq
             Some("Published handoff has exceeded the stale webhook threshold. Investigate TMS status or close the handoff."),
             Some("rust_scheduler"),
             Some("rust_tms_reconciliation_worker"),
+            None,
         )
         .await?;
     }
@@ -1339,6 +1549,7 @@ async fn insert_handoff_row(
     payload: &shared::TmsHandoffPayload,
     status: &str,
     raw_payload: &serde_json::Value,
+    request_id: Option<&str>,
 ) -> Result<i64, sqlx::Error> {
     let pickup_window_start = parse_required_datetime(&payload.pickup_window_start)?;
     let pickup_window_end = parse_optional_datetime(payload.pickup_window_end.as_deref());
@@ -1347,7 +1558,7 @@ async fn insert_handoff_row(
 
     let handoff_id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO stloads_handoffs (
-            tms_load_id, tenant_id, external_handoff_id, status, party_type, freight_mode,
+            request_id, tms_load_id, tenant_id, external_handoff_id, status, party_type, freight_mode,
             equipment_type, commodity_description, weight, weight_unit, piece_count,
             temperature_data, container_data, securement_data, is_hazardous,
             pickup_city, pickup_state, pickup_zip, pickup_country, pickup_address,
@@ -1358,9 +1569,10 @@ async fn insert_handoff_row(
             compliance_passed, compliance_summary, required_documents_status, readiness,
             pushed_by, push_reason, source_module, queued_at, retry_count, last_push_result,
             payload_version, raw_payload, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, 0, $48, $49, $50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, 0, $49, $50, $51, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id",
     )
+    .bind(request_id)
     .bind(payload.tms_load_id.as_str())
     .bind(payload.tenant_id.as_str())
     .bind(payload.external_handoff_id.as_deref())
@@ -1439,15 +1651,36 @@ async fn materialize_load_for_handoff(
     let load_id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO loads (
             load_number, title, user_id, load_type_id, equipment_id, commodity_type_id,
-            weight_unit, weight, special_instructions, is_hazardous, is_temperature_controlled,
-            status, leg_count, created_at, updated_at
-         ) VALUES ($1, $2, NULL, NULL, NULL, NULL, $3, $4, $5, $6, $7, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            freight_mode, visibility, service_level, customer_reference, po_number,
+            pickup_appointment_ref, delivery_appointment_ref, appointment_window_start,
+            appointment_window_end, accessorial_flags, weight_unit, weight, temperature_data,
+            container_data, securement_data, special_instructions, is_hazardous, is_temperature_controlled,
+            lifecycle_status, published_at, status, leg_count, created_at, updated_at
+         ) VALUES ($1, $2, NULL, NULL, NULL, NULL, $3, 'contract', $4, $5, $6, $7, $8, $9, $10, $11,
+                   $12, $13, $14, $15, $16, $17, $18, $19, 'published', CURRENT_TIMESTAMP, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id",
     )
     .bind(load_number.as_str())
     .bind(load_title.as_str())
+    .bind(payload.freight_mode.as_str())
+    .bind(payload.tender_posture.as_deref())
+    .bind(payload.tms_load_id.as_str())
+    .bind(
+        payload
+            .external_handoff_id
+            .as_deref()
+            .or(Some(payload.tms_load_id.as_str())),
+    )
+    .bind(payload.pickup_appointment_ref.as_deref())
+    .bind(payload.dropoff_appointment_ref.as_deref())
+    .bind(pickup_date)
+    .bind(delivery_date)
+    .bind(payload.accessorial_flags.clone())
     .bind(payload.weight_unit.as_str())
     .bind(payload.weight)
+    .bind(payload.temperature_data.clone())
+    .bind(payload.container_data.clone())
+    .bind(payload.securement_data.clone())
     .bind(payload.pickup_instructions.as_deref())
     .bind(payload.is_hazardous.unwrap_or(false))
     .bind(payload.temperature_data.is_some())
@@ -1569,6 +1802,9 @@ async fn fetch_load_number(
         .map(|maybe_row| maybe_row.and_then(|row| row.load_number))
 }
 
+// Event rows mirror the webhook/audit payload shape; keeping the fields explicit
+// makes every inserted evidence column visible at each call site.
+#[allow(clippy::too_many_arguments)]
 async fn insert_handoff_event_row(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     handoff_id: i64,
@@ -1577,14 +1813,15 @@ async fn insert_handoff_event_row(
     source_module: Option<&str>,
     payload_snapshot: Option<&serde_json::Value>,
     result: Option<&str>,
+    request_id: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     let payload_snapshot = payload_snapshot.and_then(|value| serde_json::to_string(value).ok());
 
     sqlx::query(
         "INSERT INTO stloads_handoff_events (
             handoff_id, event_type, performed_by, source_module, payload_snapshot, result,
-            created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            request_id, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
     )
     .bind(handoff_id)
     .bind(event_type)
@@ -1592,6 +1829,7 @@ async fn insert_handoff_event_row(
     .bind(source_module)
     .bind(payload_snapshot.as_deref())
     .bind(result)
+    .bind(request_id)
     .execute(&mut **tx)
     .await?;
 
@@ -1620,6 +1858,9 @@ async fn insert_external_refs_rows(
     Ok(())
 }
 
+// Reconciliation logs intentionally carry before/after states for both systems
+// plus trigger metadata, because these rows are customer-support evidence.
+#[allow(clippy::too_many_arguments)]
 async fn insert_reconciliation_log_row(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     handoff_id: i64,
@@ -1631,12 +1872,13 @@ async fn insert_reconciliation_log_row(
     detail: &str,
     triggered_by: &str,
     webhook_payload: Option<&serde_json::Value>,
+    request_id: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO stloads_reconciliation_log (
             handoff_id, action, tms_status_from, tms_status_to, stloads_status_from,
-            stloads_status_to, detail, triggered_by, webhook_payload, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            stloads_status_to, detail, triggered_by, webhook_payload, request_id, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
     )
     .bind(handoff_id)
     .bind(action)
@@ -1647,6 +1889,7 @@ async fn insert_reconciliation_log_row(
     .bind(detail)
     .bind(triggered_by)
     .bind(webhook_payload.cloned())
+    .bind(request_id)
     .execute(&mut **tx)
     .await?;
 
@@ -1654,9 +1897,10 @@ async fn insert_reconciliation_log_row(
 }
 
 fn parse_required_datetime(value: &str) -> Result<NaiveDateTime, sqlx::Error> {
-    parse_optional_datetime(Some(value)).ok_or(sqlx::Error::Protocol(
-        format!("invalid datetime value: {}", value).into(),
-    ))
+    parse_optional_datetime(Some(value)).ok_or(sqlx::Error::Protocol(format!(
+        "invalid datetime value: {}",
+        value
+    )))
 }
 
 fn parse_optional_datetime(value: Option<&str>) -> Option<NaiveDateTime> {

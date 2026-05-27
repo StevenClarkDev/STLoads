@@ -1,0 +1,62 @@
+{
+  "info": {
+    "name": "STLoads Enterprise API 2026-05-26",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "2026-05-26"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://sandbox-api.stloads.com" },
+    { "key": "apiKey", "value": "stlp_demo.replace_me" },
+    { "key": "requestId", "value": "sandbox-request-1001" },
+    { "key": "idempotencyKey", "value": "sandbox-idempotency-1001" }
+  ],
+  "item": [
+    {
+      "name": "Partner Load API Post",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "x-stloads-api-key", "value": "{{apiKey}}" },
+          { "key": "x-request-id", "value": "{{requestId}}" },
+          { "key": "idempotency-key", "value": "{{idempotencyKey}}" },
+          { "key": "stloads-api-version", "value": "2026-05-26" }
+        ],
+        "url": "{{baseUrl}}/dispatch/loads/api-post",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"external_ref\":\"SANDBOX-LOAD-1001\",\"pickup_city\":\"Dallas\",\"dropoff_city\":\"Memphis\"}"
+        }
+      }
+    },
+    {
+      "name": "TMS Status Webhook",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "x-request-id", "value": "{{requestId}}" },
+          { "key": "stloads-api-version", "value": "2026-05-26" }
+        ],
+        "url": "{{baseUrl}}/tms/webhooks/status",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"event_id\":\"sandbox-status-1001\",\"tms_load_id\":\"TMS-SANDBOX-1001\",\"tenant_id\":\"demo-tenant\",\"status\":\"in_transit\"}"
+        }
+      }
+    },
+    {
+      "name": "EDI 204 Validation",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminSession}}" },
+          { "key": "stloads-api-version", "value": "2026-05-26" }
+        ],
+        "url": "{{baseUrl}}/admin/integrations/edi/messages/validate",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"transaction_code\":\"204\",\"direction\":\"inbound\",\"control_number\":\"CTRL2041001\",\"payload_excerpt\":\"shipper_reference pickup_stop delivery_stop equipment rate_or_terms\"}"
+        }
+      }
+    }
+  ]
+}

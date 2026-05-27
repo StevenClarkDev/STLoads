@@ -16,13 +16,13 @@ pub fn UserFrame(children: Children) -> impl IntoView {
     let quick_jump = RwSignal::new(String::new());
 
     let logout = move |_| {
-        let auth = auth.clone();
+        let auth = auth;
         let navigate = logout_navigate.clone();
         spawn_local(async move {
-            if let Ok(response) = session::sign_out(auth).await {
-                if response.success {
-                    navigate("/", Default::default());
-                }
+            if let Ok(response) = session::sign_out(auth).await
+                && response.success
+            {
+                navigate("/", Default::default());
             }
         });
     };
@@ -71,6 +71,7 @@ pub fn UserFrame(children: Children) -> impl IntoView {
 
     view! {
         <main class="php-app-shell user-frame">
+            <a class="skip-link" href="#main-content">"Skip to main content"</a>
             <div class="php-page-wrapper">
                 <header class="php-page-header">
                     <div class="php-header-left">
@@ -225,6 +226,13 @@ pub fn UserFrame(children: Children) -> impl IntoView {
                                     </span>
                                     <i class="fas fa-chevron-right"></i>
                                 </A>
+                                <A href="/notifications" attr:class=move || sidebar_link_class(pathname() == "/notifications")>
+                                    <span class="php-sidebar-link-main">
+                                        <i class="fas fa-bell"></i>
+                                        <span>"Notifications"</span>
+                                    </span>
+                                    <i class="fas fa-chevron-right"></i>
+                                </A>
                             </nav>
                         </section>
 
@@ -263,7 +271,7 @@ pub fn UserFrame(children: Children) -> impl IntoView {
                         </section>
                     </aside>
 
-                    <section class="php-page-body">{children()}</section>
+                    <section id="main-content" class="php-page-body" tabindex="-1">{children()}</section>
                 </div>
 
                 <footer class="php-footer">
@@ -308,6 +316,9 @@ fn user_quick_jump_path(
     }
     if query.contains("chat") || query.contains("message") {
         return Some("/chat".into());
+    }
+    if query.contains("notification") || query.contains("alert") {
+        return Some("/notifications".into());
     }
     if query.contains("profile") || query.contains("account") {
         return Some("/profile".into());

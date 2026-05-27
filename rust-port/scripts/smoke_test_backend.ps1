@@ -1,11 +1,11 @@
 param(
     [string]$BaseUrl = 'http://127.0.0.1:3001',
     [string]$AdminEmail = 'admin.smoke@stloads.test',
-    [string]$AdminPassword = 'AdminPass123!',
+    [string]$AdminPassword = $env:STLOADS_SMOKE_ADMIN_PASSWORD,
     [string]$ShipperEmail = 'shipper.smoke@stloads.test',
-    [string]$ShipperPassword = 'ShipperPass123!',
+    [string]$ShipperPassword = $env:STLOADS_SMOKE_SHIPPER_PASSWORD,
     [string]$CarrierEmail = 'carrier.smoke@stloads.test',
-    [string]$CarrierPassword = 'CarrierPass123!',
+    [string]$CarrierPassword = $env:STLOADS_SMOKE_CARRIER_PASSWORD,
     [long]$BookingLegId = 9311,
     [long]$OfferLegConversationId = 9401,
     [long]$OfferId = 9501,
@@ -21,6 +21,17 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $BaseUrl = $BaseUrl.TrimEnd('/')
+
+foreach ($requiredSecret in @(
+    @{ Name = 'STLOADS_SMOKE_ADMIN_PASSWORD'; Value = $AdminPassword },
+    @{ Name = 'STLOADS_SMOKE_SHIPPER_PASSWORD'; Value = $ShipperPassword },
+    @{ Name = 'STLOADS_SMOKE_CARRIER_PASSWORD'; Value = $CarrierPassword }
+)) {
+    if ([string]::IsNullOrWhiteSpace($requiredSecret.Value)) {
+        throw "$($requiredSecret.Name) is required for backend smoke tests."
+    }
+}
+
 $timestamp = Get-Date -Format 'yyyyMMddHHmmss'
 $newTmsLoadId = "TMS-SMOKE-$timestamp"
 $newExternalHandoffId = "smoke-handoff-$timestamp"

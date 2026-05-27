@@ -4,11 +4,12 @@ use axum::{
     http::HeaderMap,
     routing::{get, post},
 };
+use chrono::NaiveDateTime;
 use db::{
     dispatch::{LoadLegScopeRecord, find_load_leg_scope},
     marketplace::{
-        create_message, find_conversation_by_id, find_offer_by_id, mark_conversation_read,
-        review_offer,
+        counter_offer, create_message, ensure_rate_confirmation_ref, find_conversation_by_id,
+        find_offer_by_id, mark_conversation_read, review_offer,
     },
 };
 use domain::{
@@ -21,8 +22,9 @@ use domain::{
 use serde::{Deserialize, Serialize};
 use shared::{
     ApiResponse, ChatSendMessageRequest, ChatSendMessageResponse, ChatWorkspaceScreen,
-    ConversationReadResponse, OfferReviewDecision, OfferReviewRequest, OfferReviewResponse,
-    RealtimeEvent, RealtimeEventKind, RealtimeTopic,
+    ConversationReadResponse, OfferCounterRequest, OfferCounterResponse, OfferReviewDecision,
+    OfferReviewRequest, OfferReviewResponse, RateConfirmationResponse, RealtimeEvent,
+    RealtimeEventKind, RealtimeTopic,
 };
 
 use crate::{auth_session, realtime_bus::RoutedRealtimeEvent, screen_data, state::AppState};
@@ -48,6 +50,12 @@ pub fn router() -> Router<AppState> {
         .route("/offer-statuses", get(offer_statuses))
         .route("/chat-workspace", get(chat_workspace))
         .route("/offers/{offer_id}/review", post(review_offer_handler))
+        .route("/offers/{offer_id}/counter", post(counter_offer_handler))
+        .route(
+            "/offers/{offer_id}/rate-confirmation",
+            post(rate_confirmation_handler),
+        )
+        .route("/tenders/{offer_id}/decision", post(review_offer_handler))
         .route(
             "/conversations/{conversation_id}/messages",
             post(send_message_handler),
@@ -173,14 +181,18 @@ async fn review_offer_handler(
         }));
     }
 
-    if existing_offer.status() != Some(OfferStatus::Pending) {
+    if !existing_offer
+        .status()
+        .map(OfferStatus::is_reviewable)
+        .unwrap_or(false)
+    {
         return Json(ApiResponse::ok(OfferReviewResponse {
             success: false,
             offer_id,
             leg_id: existing_offer.load_leg_id,
             status_label: "Locked".into(),
             message:
-                "Only pending offers can be accepted or declined from this Rust marketplace route."
+                "Only pending or countered offers can be accepted or declined from this Rust marketplace route."
                     .into(),
         }));
     }
@@ -203,11 +215,10 @@ async fn review_offer_handler(
             if offer.carrier_id > 0 {
                 target_user_ids.push(offer.carrier_id as u64);
             }
-            if let Some(conversation_id) = offer.conversation_id {
-                if let Ok(Some(conversation)) = find_conversation_by_id(pool, conversation_id).await
-                {
-                    target_user_ids.extend(conversation_participant_user_ids(&conversation));
-                }
+            if let Some(conversation_id) = offer.conversation_id
+                && let Ok(Some(conversation)) = find_conversation_by_id(pool, conversation_id).await
+            {
+                target_user_ids.extend(conversation_participant_user_ids(&conversation));
             }
             target_user_ids.push(session.user.id.max(0) as u64);
             target_user_ids.sort_unstable();
@@ -215,6 +226,7 @@ async fn review_offer_handler(
 
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
+                    request_id: None,
                     kind: RealtimeEventKind::OfferReviewed,
                     leg_id: Some(offer.load_leg_id.max(0) as u64),
                     conversation_id: offer.conversation_id.map(|value| value.max(0) as u64),
@@ -260,6 +272,224 @@ async fn review_offer_handler(
             leg_id: 0,
             status_label: "Error".into(),
             message: format!("Offer review failed: {}", error),
+        })),
+    }
+}
+
+async fn counter_offer_handler(
+    State(state): State<AppState>,
+    Path(offer_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<OfferCounterRequest>,
+) -> Json<ApiResponse<OfferCounterResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(OfferCounterResponse {
+            success: false,
+            offer_id: 0,
+            source_offer_id: offer_id,
+            leg_id: 0,
+            status_label: "Unavailable".into(),
+            message: format!(
+                "Counteroffers are unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        }));
+    };
+    let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
+    else {
+        return Json(ApiResponse::ok(OfferCounterResponse {
+            success: false,
+            offer_id: 0,
+            source_offer_id: offer_id,
+            leg_id: 0,
+            status_label: "Unauthorized".into(),
+            message: "Sign in before creating marketplace counteroffers.".into(),
+        }));
+    };
+    if payload.amount <= 0.0 {
+        return Json(ApiResponse::ok(OfferCounterResponse {
+            success: false,
+            offer_id: 0,
+            source_offer_id: offer_id,
+            leg_id: 0,
+            status_label: "Invalid".into(),
+            message: "Counteroffer amount must be greater than zero.".into(),
+        }));
+    }
+
+    let existing_offer = match find_offer_by_id(pool, offer_id).await {
+        Ok(Some(offer)) => offer,
+        Ok(None) => {
+            return Json(ApiResponse::ok(OfferCounterResponse {
+                success: false,
+                offer_id: 0,
+                source_offer_id: offer_id,
+                leg_id: 0,
+                status_label: "Missing".into(),
+                message: "The requested offer was not found.".into(),
+            }));
+        }
+        Err(error) => {
+            return Json(ApiResponse::ok(OfferCounterResponse {
+                success: false,
+                offer_id: 0,
+                source_offer_id: offer_id,
+                leg_id: 0,
+                status_label: "Error".into(),
+                message: format!("Counteroffer lookup failed: {}", error),
+            }));
+        }
+    };
+
+    let load_scope = find_load_leg_scope(pool, existing_offer.load_leg_id)
+        .await
+        .ok()
+        .flatten();
+    let is_admin = session.user.primary_role() == Some(UserRole::Admin);
+    let is_load_owner = load_scope
+        .as_ref()
+        .and_then(|scope| scope.load_owner_user_id)
+        == Some(session.user.id);
+    if !is_admin && !is_load_owner {
+        return Json(ApiResponse::ok(OfferCounterResponse {
+            success: false,
+            offer_id: 0,
+            source_offer_id: offer_id,
+            leg_id: existing_offer.load_leg_id,
+            status_label: "Forbidden".into(),
+            message: "Only the load owner or an admin can create this counteroffer.".into(),
+        }));
+    }
+
+    let expires_at = payload.expires_at.as_deref().and_then(parse_offer_datetime);
+    let note = payload
+        .note
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    match counter_offer(
+        pool,
+        offer_id,
+        payload.amount,
+        expires_at,
+        note,
+        Some(session.user.id),
+    )
+    .await
+    {
+        Ok(Some(offer)) => Json(ApiResponse::ok(OfferCounterResponse {
+            success: true,
+            offer_id: offer.id,
+            source_offer_id: offer_id,
+            leg_id: offer.load_leg_id,
+            status_label: offer
+                .status()
+                .map(|status| status.label().to_string())
+                .unwrap_or_else(|| "Countered".into()),
+            message: "Counteroffer created and the prior offer was superseded transactionally."
+                .into(),
+        })),
+        Ok(None) => Json(ApiResponse::ok(OfferCounterResponse {
+            success: false,
+            offer_id: 0,
+            source_offer_id: offer_id,
+            leg_id: 0,
+            status_label: "Missing".into(),
+            message: "The requested offer was not found.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(OfferCounterResponse {
+            success: false,
+            offer_id: 0,
+            source_offer_id: offer_id,
+            leg_id: existing_offer.load_leg_id,
+            status_label: "Error".into(),
+            message: format!("Counteroffer failed: {}", error),
+        })),
+    }
+}
+
+async fn rate_confirmation_handler(
+    State(state): State<AppState>,
+    Path(offer_id): Path<i64>,
+    headers: HeaderMap,
+) -> Json<ApiResponse<RateConfirmationResponse>> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(RateConfirmationResponse {
+            success: false,
+            offer_id,
+            leg_id: 0,
+            confirmation_ref: None,
+            message: format!(
+                "Rate confirmation is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        }));
+    };
+    let Ok(Some(session)) = auth_session::resolve_session_from_headers(&state, &headers).await
+    else {
+        return Json(ApiResponse::ok(RateConfirmationResponse {
+            success: false,
+            offer_id,
+            leg_id: 0,
+            confirmation_ref: None,
+            message: "Sign in before generating rate confirmations.".into(),
+        }));
+    };
+    let existing_offer = match find_offer_by_id(pool, offer_id).await {
+        Ok(Some(offer)) => offer,
+        _ => {
+            return Json(ApiResponse::ok(RateConfirmationResponse {
+                success: false,
+                offer_id,
+                leg_id: 0,
+                confirmation_ref: None,
+                message: "The requested offer was not found.".into(),
+            }));
+        }
+    };
+    let load_scope = find_load_leg_scope(pool, existing_offer.load_leg_id)
+        .await
+        .ok()
+        .flatten();
+    let is_admin = session.user.primary_role() == Some(UserRole::Admin);
+    let is_load_owner = load_scope
+        .as_ref()
+        .and_then(|scope| scope.load_owner_user_id)
+        == Some(session.user.id);
+    if !is_admin && !is_load_owner {
+        return Json(ApiResponse::ok(RateConfirmationResponse {
+            success: false,
+            offer_id,
+            leg_id: existing_offer.load_leg_id,
+            confirmation_ref: None,
+            message: "Only the load owner or an admin can generate this rate confirmation.".into(),
+        }));
+    }
+
+    match ensure_rate_confirmation_ref(pool, offer_id).await {
+        Ok(Some((offer, confirmation_ref))) => Json(ApiResponse::ok(RateConfirmationResponse {
+            success: true,
+            offer_id,
+            leg_id: offer.load_leg_id,
+            confirmation_ref: Some(confirmation_ref.clone()),
+            message: format!("Rate confirmation {} is ready.", confirmation_ref),
+        })),
+        Ok(None) => Json(ApiResponse::ok(RateConfirmationResponse {
+            success: false,
+            offer_id,
+            leg_id: 0,
+            confirmation_ref: None,
+            message: "The requested offer was not found.".into(),
+        })),
+        Err(error) => Json(ApiResponse::ok(RateConfirmationResponse {
+            success: false,
+            offer_id,
+            leg_id: existing_offer.load_leg_id,
+            confirmation_ref: None,
+            message: format!("Rate confirmation failed: {}", error),
         })),
     }
 }
@@ -349,6 +579,7 @@ async fn send_message_handler(
 
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
+                    request_id: None,
                     kind: RealtimeEventKind::MessageSent,
                     leg_id: Some(conversation.load_leg_id.max(0) as u64),
                     conversation_id: Some(conversation_id.max(0) as u64),
@@ -458,6 +689,7 @@ async fn mark_conversation_read_handler(
 
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
+                    request_id: None,
                     kind: RealtimeEventKind::ConversationRead,
                     leg_id: Some(conversation.load_leg_id.max(0) as u64),
                     conversation_id: Some(conversation.id.max(0) as u64),
@@ -499,16 +731,16 @@ fn collect_scope_user_ids(scope: Option<&LoadLegScopeRecord>) -> Vec<u64> {
     let mut user_ids = Vec::new();
 
     if let Some(scope) = scope {
-        if let Some(owner_id) = scope.load_owner_user_id {
-            if owner_id > 0 {
-                user_ids.push(owner_id as u64);
-            }
+        if let Some(owner_id) = scope.load_owner_user_id
+            && owner_id > 0
+        {
+            user_ids.push(owner_id as u64);
         }
 
-        if let Some(booked_carrier_id) = scope.booked_carrier_id {
-            if booked_carrier_id > 0 {
-                user_ids.push(booked_carrier_id as u64);
-            }
+        if let Some(booked_carrier_id) = scope.booked_carrier_id
+            && booked_carrier_id > 0
+        {
+            user_ids.push(booked_carrier_id as u64);
         }
     }
 
@@ -529,4 +761,21 @@ fn conversation_participant_user_ids(
     }
 
     user_ids
+}
+
+fn parse_offer_datetime(value: &str) -> Option<NaiveDateTime> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M:%S")
+        .or_else(|_| NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M"))
+        .or_else(|_| NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S"))
+        .or_else(|_| {
+            chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d")
+                .map(|date| date.and_hms_opt(23, 59, 59))
+                .map(Option::unwrap)
+        })
+        .ok()
 }

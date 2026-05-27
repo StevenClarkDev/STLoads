@@ -15,34 +15,54 @@ use db::auth::{
     count_users_grouped_by_role, create_kyc_document, create_registered_user, delete_kyc_document,
     delete_personal_access_tokens_for_user, find_kyc_document_by_id, find_user_by_email,
     find_user_by_id, find_user_detail_by_user_id, list_kyc_documents_by_user_id, refresh_user_otp,
-    store_password_reset_token, update_kyc_document, update_self_profile,
-    upsert_user_onboarding_details, verify_kyc_document_blockchain,
+    revoke_all_access_artifacts_for_user, store_password_reset_token, update_kyc_document,
+    update_self_profile, upsert_user_onboarding_details, verify_kyc_document_blockchain,
+};
+use db::enterprise_identity::{
+    ScimDeprovisionInput, ScimTokenRecord, ScimUpsertUserInput, deprovision_scim_user,
+    discover_sso_for_email, find_scim_token_by_hash, upsert_scim_user,
+};
+use db::legal_agreements::{
+    AcceptLegalAgreementInput, LegalAgreementAcceptanceRecord, LegalAgreementTemplateRecord,
+    accept_latest_legal_agreement, legal_acceptance_summary,
 };
 use domain::auth::{
     AccountStatus, AccountStatusDescriptor, AuthModuleContract, PermissionDescriptor,
     RoleDescriptor, RolePermissionContract, UserRole, account_status_descriptors,
     auth_module_contract, permission_descriptors, role_descriptors, role_permission_contracts,
 };
+use jsonwebtoken::{
+    Algorithm, DecodingKey, TokenData, Validation, decode, decode_header, jwk::JwkSet,
+};
+use serde::Deserialize;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use shared::{
-    ApiResponse, AuthOnboardingDraft, AuthOnboardingScreen, AuthSessionState,
-    ChangePasswordRequest, ChangePasswordResponse, DeleteKycDocumentResponse,
-    ForgotPasswordRequest, ForgotPasswordResponse, KycDocumentItem, LoginRequest, LoginResponse,
-    LogoutResponse, MfaRecoveryCodesResponse, MfaVerifyRequest, MfaVerifyResponse, OtpPurpose,
+    AcceptLegalAgreementRequest, AcceptLegalAgreementResponse, ApiResponse, AuthOnboardingDraft,
+    AuthOnboardingScreen, AuthSessionState, CarrierCapacityProfile, ChangePasswordRequest,
+    ChangePasswordResponse, DeleteKycDocumentResponse, EnterpriseSsoDiscoveryRequest,
+    EnterpriseSsoDiscoveryResponse, EnterpriseSsoLoginResponse, EnterpriseSsoOidcCallbackRequest,
+    ForgotPasswordRequest, ForgotPasswordResponse, KycDocumentItem, LegalAgreementAcceptanceItem,
+    LegalAgreementScreen, LegalAgreementTemplateItem, LoginRequest, LoginResponse, LogoutResponse,
+    MfaRecoveryCodesResponse, MfaVerifyRequest, MfaVerifyResponse, OtpPurpose,
     PortalRoleCountsResponse, RealtimeEvent, RealtimeEventKind, RegisterRequest, RegisterResponse,
-    ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest, ResetPasswordResponse,
-    SelfProfileDraft, SelfProfileFact, SelfProfileScreen, SubmitOnboardingRequest,
-    SubmitOnboardingResponse, UpdateSelfProfileRequest, UpdateSelfProfileResponse,
+    RequiredDocumentChecklistItem, ResendOtpRequest, ResendOtpResponse, ResetPasswordRequest,
+    ResetPasswordResponse, ScimDeprovisionRequest, ScimDeprovisionResponse, ScimUpsertUserRequest,
+    ScimUpsertUserResponse, SelfProfileDraft, SelfProfileFact, SelfProfileScreen,
+    SubmitOnboardingRequest, SubmitOnboardingResponse, UpdateCarrierCapacityRequest,
+    UpdateCarrierCapacityResponse, UpdateSelfProfileRequest, UpdateSelfProfileResponse,
     UpsertKycDocumentRequest, UpsertKycDocumentResponse, VerifyKycDocumentRequest,
     VerifyKycDocumentResponse, VerifyOtpRequest, VerifyOtpResponse,
 };
+use sqlx::Row;
 use std::time::Duration as StdDuration;
 
 use tracing::{info, warn};
+use uuid::Uuid;
 
 use crate::{
     auth_session,
+    document_validation::validate_uploaded_document,
     email::MailOutcome,
     rate_limit::{LockoutPolicy, RateLimitPolicy, rate_limit_identity},
     realtime_bus::RoutedRealtimeEvent,
@@ -56,6 +76,230 @@ struct AuthOverview {
     account_statuses: Vec<AccountStatusDescriptor>,
     permissions: usize,
     role_permission_sets: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct NotificationCenterScreen {
+    unread_count: u64,
+    notifications: Vec<NotificationEventRow>,
+    preferences: Vec<NotificationPreferenceRow>,
+    provider_decisions: Vec<NotificationProviderDecisionRow>,
+    coverage_rules: Vec<NotificationCoverageRuleRow>,
+}
+
+#[derive(Debug, Serialize)]
+struct NotificationEventRow {
+    id: u64,
+    event_key: String,
+    category: String,
+    priority: String,
+    subject: String,
+    body: String,
+    entity_type: Option<String>,
+    entity_id: Option<u64>,
+    action_href: Option<String>,
+    channels: Vec<String>,
+    delivery_status: String,
+    read_at: Option<String>,
+    created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+struct NotificationPreferenceRow {
+    id: u64,
+    event_key: String,
+    email_enabled: bool,
+    in_app_enabled: bool,
+    sms_enabled: bool,
+    push_enabled: bool,
+    quiet_hours_start: Option<String>,
+    quiet_hours_end: Option<String>,
+    timezone: String,
+    escalation_minutes: Option<i32>,
+}
+
+#[derive(Debug, Serialize)]
+struct NotificationProviderDecisionRow {
+    channel: String,
+    provider_name: String,
+    decision_status: String,
+    opt_in_required: bool,
+    opt_out_required: bool,
+    quiet_hours_required: bool,
+    emergency_exception_allowed: bool,
+    provider_audit_logs_required: bool,
+    compliance_notes: String,
+}
+
+#[derive(Debug, Serialize)]
+struct NotificationCoverageRuleRow {
+    event_key: String,
+    category: String,
+    default_priority: String,
+    default_channels: Vec<String>,
+    responsible_party: String,
+    entity_type: Option<String>,
+    escalation_minutes: Option<i32>,
+    active: bool,
+    notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpsertNotificationPreferenceRequest {
+    event_key: String,
+    email_enabled: bool,
+    in_app_enabled: bool,
+    sms_enabled: bool,
+    push_enabled: bool,
+    quiet_hours_start: Option<String>,
+    quiet_hours_end: Option<String>,
+    timezone: Option<String>,
+    escalation_minutes: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MarkNotificationReadRequest {
+    notification_id: Option<u64>,
+    mark_all: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct NotificationMutationResponse {
+    success: bool,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CommunicationGovernanceScreen {
+    sender_identities: Vec<SenderIdentityRow>,
+    delivery_events: Vec<DeliveryEventRow>,
+    suppression_entries: Vec<SuppressionEntryRow>,
+    template_governance: Vec<MessageTemplateGovernanceRow>,
+    monitoring_rules: Vec<MessageMonitoringRuleRow>,
+    branding_policies: Vec<TenantBrandingPolicyRow>,
+    brand_assets: Vec<TenantBrandAssetRow>,
+    custom_domains: Vec<TenantCustomDomainRow>,
+    branded_template_rules: Vec<TenantBrandedTemplateRuleRow>,
+}
+
+#[derive(Debug, Serialize)]
+struct SenderIdentityRow {
+    id: u64,
+    environment_key: String,
+    sender_domain: String,
+    from_email: String,
+    from_name: String,
+    spf_status: String,
+    dkim_status: String,
+    dmarc_status: String,
+    identity_status: String,
+    verified_at: Option<String>,
+    notes: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct DeliveryEventRow {
+    id: u64,
+    channel: String,
+    event_type: String,
+    provider_message_id: Option<String>,
+    recipient: String,
+    reason: Option<String>,
+    occurred_at: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SuppressionEntryRow {
+    id: u64,
+    channel: String,
+    recipient: String,
+    suppression_reason: String,
+    status: String,
+    expires_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct MessageTemplateGovernanceRow {
+    id: u64,
+    template_key: String,
+    channel: String,
+    locale: String,
+    version: i32,
+    owner_team: String,
+    approval_status: String,
+    high_risk: bool,
+    test_send_required: bool,
+    notes: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct MessageMonitoringRuleRow {
+    rule_key: String,
+    event_key: Option<String>,
+    template_key: Option<String>,
+    category: String,
+    priority: String,
+    required_sender_identity: bool,
+    fallback_channel: String,
+    escalation_minutes: i32,
+    active: bool,
+    notes: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TenantBrandingPolicyRow {
+    organization_id: u64,
+    portal_branding_enabled: bool,
+    document_branding_enabled: bool,
+    email_branding_enabled: bool,
+    custom_domain_enabled: bool,
+    white_label_status: String,
+    unsupported_message: String,
+    fallback_brand_name: String,
+    cache_version: i32,
+}
+
+#[derive(Debug, Serialize)]
+struct TenantBrandAssetRow {
+    id: u64,
+    asset_type: String,
+    asset_url: String,
+    mime_type: String,
+    file_size_bytes: i64,
+    review_status: String,
+    cache_key: String,
+    notes: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TenantCustomDomainRow {
+    id: u64,
+    domain: String,
+    purpose: String,
+    verification_status: String,
+    dns_txt_name: String,
+    dns_txt_value: String,
+    tls_status: String,
+    rollback_status: String,
+    last_checked_at: Option<String>,
+    notes: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TenantBrandedTemplateRuleRow {
+    id: u64,
+    template_key: String,
+    template_surface: String,
+    branding_status: String,
+    fallback_allowed: bool,
+    notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MessageTemplateTestSendRequest {
+    template_key: String,
+    channel: String,
+    recipient: String,
 }
 
 fn log_auth_failure(action: &str, email: &str, reason: &str) {
@@ -100,6 +344,12 @@ pub fn router() -> Router<crate::state::AppState> {
         .route("/rbac-contract", get(rbac_contract))
         .route("/public-role-counts", get(public_role_counts))
         .route("/session", get(session))
+        .route("/legal-agreements", get(legal_agreements_screen))
+        .route("/legal-agreements/accept", post(accept_legal_agreement))
+        .route("/sso/discovery", post(enterprise_sso_discovery))
+        .route("/sso/oidc/callback", post(enterprise_sso_oidc_callback))
+        .route("/scim/users", post(scim_upsert_user))
+        .route("/scim/deprovision", post(scim_deprovision))
         .route("/login", post(login))
         .route("/mfa/verify", post(verify_mfa))
         .route(
@@ -116,7 +366,22 @@ pub fn router() -> Router<crate::state::AppState> {
         .route("/onboarding", post(submit_onboarding))
         .route("/profile-screen", get(profile_screen))
         .route("/profile", post(update_profile))
+        .route("/carrier-capacity", post(update_carrier_capacity))
         .route("/change-password", post(change_password))
+        .route("/notifications", get(notification_center_screen))
+        .route("/notifications/read", post(mark_notification_read))
+        .route(
+            "/communication-governance",
+            get(communication_governance_screen),
+        )
+        .route(
+            "/message-templates/test-send",
+            post(record_message_template_test_send),
+        )
+        .route(
+            "/notification-preferences",
+            post(upsert_notification_preference),
+        )
         .route(
             "/profile/documents/upload",
             post(upload_profile_kyc_document_handler)
@@ -230,6 +495,129 @@ async fn session(
     Json(ApiResponse::ok(session))
 }
 
+async fn enterprise_sso_discovery(
+    State(state): State<AppState>,
+    Json(payload): Json<EnterpriseSsoDiscoveryRequest>,
+) -> Json<ApiResponse<EnterpriseSsoDiscoveryResponse>> {
+    let response = enterprise_sso_discovery_response(&state, &payload.email).await;
+    Json(ApiResponse::ok(response))
+}
+
+async fn enterprise_sso_oidc_callback(
+    State(state): State<AppState>,
+    Json(payload): Json<EnterpriseSsoOidcCallbackRequest>,
+) -> Result<Json<ApiResponse<EnterpriseSsoLoginResponse>>, StatusCode> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(EnterpriseSsoLoginResponse {
+            success: false,
+            token: None,
+            session: None,
+            created_user: false,
+            message: format!(
+                "Enterprise SSO is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        })));
+    };
+
+    let email = payload.email.trim().to_lowercase();
+    let Some(discovery) = discover_sso_for_email(pool, &email)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+    if discovery.provider_type.as_deref() != Some("oidc")
+        || discovery.provider_status.as_deref() != Some("active")
+        || !discovery.domain_verified
+        || !discovery.login_routing_enabled
+    {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    let issuer = discovery
+        .issuer
+        .as_deref()
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let client_id = discovery
+        .client_id
+        .as_deref()
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let jwks_url = discovery
+        .jwks_url
+        .as_deref()
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let token_data = validate_oidc_id_token(jwks_url, issuer, client_id, &payload.id_token)
+        .await
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+    if token_data.claims.email.to_ascii_lowercase() != email {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    if token_data.claims.email_verified == Some(false) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    let (user, created_user) = match find_user_by_email(pool, &email)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        Some(user) => {
+            revoke_all_access_artifacts_for_user(pool, user.id)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            (user, false)
+        }
+        None if discovery.jit_enabled => {
+            let role = role_from_organization_role_key(discovery.default_role_key.as_deref());
+            let input = ScimUpsertUserInput {
+                organization_id: discovery.organization_id,
+                external_id: token_data.claims.sub.clone(),
+                email: email.clone(),
+                name: token_data
+                    .claims
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| email.clone()),
+                password_hash: hash(format!("sso-{}", Uuid::new_v4()), 12)
+                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+                role_id: role.legacy_id(),
+                role_key: discovery
+                    .default_role_key
+                    .clone()
+                    .unwrap_or_else(|| "member".into()),
+                active: true,
+                reason: Some("OIDC JIT login".into()),
+                payload: serde_json::json!({
+                    "provider_id": discovery.provider_id,
+                    "issuer": issuer,
+                    "subject": token_data.claims.sub,
+                }),
+            };
+            let outcome = upsert_scim_user(pool, &input)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let user = find_user_by_id(pool, outcome.user_id)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+            (user, true)
+        }
+        None => return Err(StatusCode::UNAUTHORIZED),
+    };
+
+    let token = auth_session::issue_session_token(&state, &user)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let session = auth_session::build_session_state(&state, &user).await;
+    Ok(Json(ApiResponse::ok(EnterpriseSsoLoginResponse {
+        success: true,
+        token: Some(token),
+        session: Some(session),
+        created_user,
+        message: "Enterprise OIDC login completed with verified identity claims.".into(),
+    })))
+}
+
 async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -297,6 +685,24 @@ async fn login(
             dev_mfa_code: None,
         }));
     };
+
+    let sso_discovery = enterprise_sso_discovery_response(&state, &email).await;
+    if sso_discovery.sso_required && !sso_discovery.password_allowed {
+        log_auth_failure("login", &email, "enterprise SSO required");
+        return Json(ApiResponse::ok(LoginResponse {
+            success: false,
+            token: None,
+            session: auth_session::unauthenticated_session_state(
+                "This organization requires enterprise SSO.",
+            ),
+            message: sso_discovery.message,
+            mfa_required: false,
+            mfa_challenge_id: None,
+            mfa_expires_at: None,
+            next_step: sso_discovery.sso_url,
+            dev_mfa_code: None,
+        }));
+    }
 
     let Some(user) = find_user_by_email(pool, &email).await.unwrap_or(None) else {
         log_auth_failure("login", &email, "user not found");
@@ -415,13 +821,171 @@ async fn login(
     }
 }
 
+async fn scim_deprovision(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<ScimDeprovisionRequest>,
+) -> Result<Json<ApiResponse<ScimDeprovisionResponse>>, StatusCode> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(ScimDeprovisionResponse {
+            success: false,
+            organization_id: None,
+            user_id: None,
+            revoked_sessions: 0,
+            membership_rows_changed: 0,
+            user_rows_changed: 0,
+            event_id: None,
+            message: format!(
+                "SCIM deprovisioning is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        })));
+    };
+
+    let token = authorize_scim_token(pool, &headers).await?;
+    let user_id = payload.user_id.and_then(|value| i64::try_from(value).ok());
+    let input = ScimDeprovisionInput {
+        organization_id: token.organization_id,
+        external_id: payload
+            .external_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        email: payload
+            .email
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        user_id,
+        reason: payload
+            .reason
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        payload: serde_json::to_value(&payload).unwrap_or_else(|_| serde_json::json!({})),
+    };
+
+    if input.external_id.is_none() && input.email.is_none() && input.user_id.is_none() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let outcome = deprovision_scim_user(pool, &input)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let revoked_sessions = if let Some(user_id) = outcome.user_id {
+        revoke_all_access_artifacts_for_user(pool, user_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    } else {
+        0
+    };
+
+    Ok(Json(ApiResponse::ok(ScimDeprovisionResponse {
+        success: outcome.outcome == "accepted",
+        organization_id: Some(outcome.organization_id.max(0) as u64),
+        user_id: outcome.user_id.map(|value| value.max(0) as u64),
+        revoked_sessions,
+        membership_rows_changed: outcome.membership_rows_changed,
+        user_rows_changed: outcome.user_rows_changed,
+        event_id: Some(outcome.event_id.max(0) as u64),
+        message: if outcome.outcome == "accepted" {
+            "SCIM deprovisioning applied and active Rust sessions were revoked.".into()
+        } else {
+            "SCIM deprovisioning request recorded; no matching user was found.".into()
+        },
+    })))
+}
+
+async fn scim_upsert_user(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<ScimUpsertUserRequest>,
+) -> Result<Json<ApiResponse<ScimUpsertUserResponse>>, StatusCode> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Ok(Json(ApiResponse::ok(ScimUpsertUserResponse {
+            success: false,
+            organization_id: None,
+            user_id: None,
+            created: false,
+            reactivated: false,
+            revoked_sessions: 0,
+            event_id: None,
+            message: format!(
+                "SCIM user provisioning is unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+        })));
+    };
+
+    let token = authorize_scim_token(pool, &headers).await?;
+    let email = payload.email.trim().to_lowercase();
+    let name = payload.name.trim();
+    let external_id = payload.external_id.trim();
+    if !email.contains('@') || name.len() < 2 || external_id.len() < 2 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let role = payload
+        .role_key
+        .as_deref()
+        .and_then(parse_role_key)
+        .unwrap_or(UserRole::Carrier);
+    let password_hash = hash(format!("scim-{}", Uuid::new_v4()), 12)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let input = ScimUpsertUserInput {
+        organization_id: token.organization_id,
+        external_id: external_id.to_string(),
+        email,
+        name: name.to_string(),
+        password_hash,
+        role_id: role.legacy_id(),
+        role_key: organization_role_key_for_user_role(role).into(),
+        active: payload.active,
+        reason: payload
+            .reason
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        payload: serde_json::to_value(&payload).unwrap_or_else(|_| serde_json::json!({})),
+    };
+
+    let outcome = upsert_scim_user(pool, &input)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let revoked_sessions = revoke_all_access_artifacts_for_user(pool, outcome.user_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(ApiResponse::ok(ScimUpsertUserResponse {
+        success: true,
+        organization_id: Some(outcome.organization_id.max(0) as u64),
+        user_id: Some(outcome.user_id.max(0) as u64),
+        created: outcome.created,
+        reactivated: outcome.reactivated,
+        revoked_sessions,
+        event_id: Some(outcome.event_id.max(0) as u64),
+        message: if outcome.created {
+            "SCIM user provisioned and linked.".into()
+        } else if outcome.reactivated {
+            "SCIM user reactivated and active Rust sessions were rotated.".into()
+        } else {
+            "SCIM user updated and active Rust sessions were rotated.".into()
+        },
+    })))
+}
+
 async fn verify_mfa(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<MfaVerifyRequest>,
 ) -> Json<ApiResponse<MfaVerifyResponse>> {
     let email = payload.email.trim().to_lowercase();
-    let rate_identity = rate_limit_identity(&headers, &format!("mfa:{email}"));
+    let rate_identity = rate_limit_identity(&headers, format!("mfa:{email}"));
     let rate_decision = state
         .check_rate_limit(auth_flow_policy("verify_mfa"), &rate_identity)
         .await;
@@ -634,6 +1198,7 @@ async fn logout(
             info!(action = "logout", actor_user_id, "auth flow succeeded");
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
+                    request_id: None,
                     kind: RealtimeEventKind::SessionInvalidated,
                     leg_id: None,
                     conversation_id: None,
@@ -1583,6 +2148,145 @@ async fn onboarding_screen(
     )))
 }
 
+async fn legal_agreements_screen(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Json<ApiResponse<LegalAgreementScreen>> {
+    let Some(resolved) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(LegalAgreementScreen {
+            title: "Legal Agreements".into(),
+            missing_required: Vec::new(),
+            acceptance_proofs: Vec::new(),
+            notes: vec!["Sign in before reviewing required legal agreements.".into()],
+        }));
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(LegalAgreementScreen {
+            title: "Legal Agreements".into(),
+            missing_required: Vec::new(),
+            acceptance_proofs: Vec::new(),
+            notes: vec![format!(
+                "Legal agreements are unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            )],
+        }));
+    };
+
+    Json(ApiResponse::ok(
+        legal_agreement_screen_for_user(pool, &resolved.user)
+            .await
+            .unwrap_or_else(|error| LegalAgreementScreen {
+                title: "Legal Agreements".into(),
+                missing_required: Vec::new(),
+                acceptance_proofs: Vec::new(),
+                notes: vec![format!("Legal agreement lookup failed: {}", error)],
+            }),
+    ))
+}
+
+async fn accept_legal_agreement(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<AcceptLegalAgreementRequest>,
+) -> Json<ApiResponse<AcceptLegalAgreementResponse>> {
+    let Some(resolved) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(AcceptLegalAgreementResponse {
+            success: false,
+            message: "Sign in before accepting legal agreements.".into(),
+            screen: LegalAgreementScreen {
+                title: "Legal Agreements".into(),
+                missing_required: Vec::new(),
+                acceptance_proofs: Vec::new(),
+                notes: Vec::new(),
+            },
+        }));
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(AcceptLegalAgreementResponse {
+            success: false,
+            message: "Legal agreement acceptance is unavailable while the database is offline."
+                .into(),
+            screen: LegalAgreementScreen {
+                title: "Legal Agreements".into(),
+                missing_required: Vec::new(),
+                acceptance_proofs: Vec::new(),
+                notes: Vec::new(),
+            },
+        }));
+    };
+
+    let agreement_key = payload.agreement_key.trim();
+    if agreement_key.is_empty() {
+        let screen = legal_agreement_screen_for_user(pool, &resolved.user)
+            .await
+            .unwrap_or_else(|_| LegalAgreementScreen {
+                title: "Legal Agreements".into(),
+                missing_required: Vec::new(),
+                acceptance_proofs: Vec::new(),
+                notes: Vec::new(),
+            });
+        return Json(ApiResponse::ok(AcceptLegalAgreementResponse {
+            success: false,
+            message: "Choose a legal agreement before accepting.".into(),
+            screen,
+        }));
+    }
+
+    let role_key_value = resolved.user.primary_role().map(role_key);
+    let result = accept_latest_legal_agreement(
+        pool,
+        &AcceptLegalAgreementInput {
+            agreement_key,
+            signer_user_id: resolved.user.id,
+            organization_id: resolved.user.organization_id,
+            role_key: role_key_value,
+            signer_name: &resolved.user.name,
+            signer_email: &resolved.user.email,
+            ip_address: header_value(&headers, "x-forwarded-for"),
+            user_agent: header_value(&headers, "user-agent"),
+            request_id: header_value(&headers, crate::app::REQUEST_ID_HEADER),
+            accept_for_organization: payload.accept_for_organization,
+        },
+    )
+    .await;
+
+    let screen = legal_agreement_screen_for_user(pool, &resolved.user)
+        .await
+        .unwrap_or_else(|_| LegalAgreementScreen {
+            title: "Legal Agreements".into(),
+            missing_required: Vec::new(),
+            acceptance_proofs: Vec::new(),
+            notes: Vec::new(),
+        });
+
+    match result {
+        Ok(acceptance) => Json(ApiResponse::ok(AcceptLegalAgreementResponse {
+            success: true,
+            message: format!(
+                "Accepted {} version {} with audit evidence.",
+                acceptance.agreement_key, acceptance.version
+            ),
+            screen,
+        })),
+        Err(error) => Json(ApiResponse::ok(AcceptLegalAgreementResponse {
+            success: false,
+            message: format!("Legal agreement acceptance failed: {}", error),
+            screen,
+        })),
+    }
+}
+
 async fn submit_onboarding(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1656,6 +2360,65 @@ async fn submit_onboarding(
             next_step: "/auth/onboarding".into(),
             message: validation_message,
         }));
+    }
+
+    let documents = list_kyc_documents_by_user_id(pool, resolved.user.id)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|document| build_kyc_document_item(document, true))
+        .collect::<Vec<_>>();
+    let missing_documents = kyc_required_document_checklist(role, &documents)
+        .into_iter()
+        .filter(|item| item.is_required && !item.is_satisfied)
+        .map(|item| item.label)
+        .collect::<Vec<_>>();
+    if !missing_documents.is_empty() {
+        return Json(ApiResponse::ok(SubmitOnboardingResponse {
+            success: false,
+            session: Some(resolved.session),
+            next_step: "/auth/onboarding".into(),
+            message: format!(
+                "Upload required onboarding documents before submitting: {}.",
+                missing_documents.join(", ")
+            ),
+        }));
+    }
+
+    let role_key_value = role.map(role_key);
+    match legal_acceptance_summary(
+        pool,
+        resolved.user.id,
+        resolved.user.organization_id,
+        role_key_value,
+    )
+    .await
+    {
+        Ok((missing, _)) if !missing.is_empty() => {
+            let names = missing
+                .iter()
+                .map(|agreement| agreement.title.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Json(ApiResponse::ok(SubmitOnboardingResponse {
+                success: false,
+                session: Some(resolved.session),
+                next_step: "/auth/legal-agreements".into(),
+                message: format!(
+                    "Accept required legal agreements before submitting onboarding: {}.",
+                    names
+                ),
+            }));
+        }
+        Ok(_) => {}
+        Err(error) => {
+            return Json(ApiResponse::ok(SubmitOnboardingResponse {
+                success: false,
+                session: Some(resolved.session),
+                next_step: "/auth/legal-agreements".into(),
+                message: format!("Legal agreement check failed: {}", error),
+            }));
+        }
     }
 
     let input = UpsertUserOnboardingInput {
@@ -1734,7 +2497,12 @@ async fn profile_screen(
             draft: self_profile_draft_from_user(&resolved.user, None),
             personal_facts: self_profile_personal_facts(&resolved.user),
             company_facts: self_profile_company_facts(&resolved.user, None),
+            carrier_capacity: None,
             documents: Vec::new(),
+            required_documents: kyc_required_document_checklist(
+                resolved.user.primary_role(),
+                &Vec::new(),
+            ),
             notes: vec![format!(
                 "Profile data is read-only right now because the database is {} on {}.",
                 state.database_state(),
@@ -1753,12 +2521,630 @@ async fn profile_screen(
         .into_iter()
         .map(|document| build_kyc_document_item(document, true))
         .collect::<Vec<_>>();
+    let carrier_capacity = if resolved.user.primary_role() == Some(UserRole::Carrier) {
+        carrier_capacity_profile(pool, resolved.user.id)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
 
     Json(ApiResponse::ok(profile_screen_from_user(
         &resolved.user,
         details,
+        carrier_capacity,
         documents,
     )))
+}
+
+async fn notification_center_screen(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Json<ApiResponse<NotificationCenterScreen>> {
+    let Some(resolved) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(NotificationCenterScreen {
+            unread_count: 0,
+            notifications: Vec::new(),
+            preferences: Vec::new(),
+            provider_decisions: Vec::new(),
+            coverage_rules: Vec::new(),
+        }));
+    };
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(NotificationCenterScreen {
+            unread_count: 0,
+            notifications: Vec::new(),
+            preferences: Vec::new(),
+            provider_decisions: Vec::new(),
+            coverage_rules: Vec::new(),
+        }));
+    };
+
+    let user_id = resolved.user.id;
+    let organization_id = auth_session::session_organization_id(&resolved);
+    let notifications = sqlx::query(
+        "SELECT id, event_key, category, priority, subject, body, entity_type, entity_id,
+                action_href, channels, delivery_status, read_at, created_at
+         FROM notification_events
+         WHERE recipient_user_id = $1
+         ORDER BY read_at NULLS FIRST, created_at DESC
+         LIMIT 80",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| NotificationEventRow {
+        id: row.get::<i64, _>("id").max(0) as u64,
+        event_key: row.get("event_key"),
+        category: row.get("category"),
+        priority: row.get("priority"),
+        subject: row.get("subject"),
+        body: row.get("body"),
+        entity_type: row.get("entity_type"),
+        entity_id: row
+            .get::<Option<i64>, _>("entity_id")
+            .map(|value| value.max(0) as u64),
+        action_href: row.get("action_href"),
+        channels: row.get::<Vec<String>, _>("channels"),
+        delivery_status: row.get("delivery_status"),
+        read_at: row
+            .get::<Option<chrono::NaiveDateTime>, _>("read_at")
+            .map(|value| value.to_string()),
+        created_at: row
+            .get::<chrono::NaiveDateTime, _>("created_at")
+            .to_string(),
+    })
+    .collect::<Vec<_>>();
+
+    let unread_count = notifications
+        .iter()
+        .filter(|notification| notification.read_at.is_none())
+        .count() as u64;
+
+    let preferences = sqlx::query(
+        "SELECT id, event_key, email_enabled, in_app_enabled, sms_enabled, push_enabled,
+                quiet_hours_start::TEXT AS quiet_hours_start,
+                quiet_hours_end::TEXT AS quiet_hours_end,
+                timezone, escalation_minutes
+         FROM notification_preferences
+         WHERE (organization_id IS NULL OR organization_id = $1)
+           AND (user_id IS NULL OR user_id = $2)
+         ORDER BY user_id NULLS LAST, event_key ASC",
+    )
+    .bind(organization_id)
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| NotificationPreferenceRow {
+        id: row.get::<i64, _>("id").max(0) as u64,
+        event_key: row.get("event_key"),
+        email_enabled: row.get("email_enabled"),
+        in_app_enabled: row.get("in_app_enabled"),
+        sms_enabled: row.get("sms_enabled"),
+        push_enabled: row.get("push_enabled"),
+        quiet_hours_start: row.get("quiet_hours_start"),
+        quiet_hours_end: row.get("quiet_hours_end"),
+        timezone: row.get("timezone"),
+        escalation_minutes: row.get("escalation_minutes"),
+    })
+    .collect();
+
+    let provider_decisions = sqlx::query(
+        "SELECT channel, provider_name, decision_status, opt_in_required, opt_out_required,
+                quiet_hours_required, emergency_exception_allowed,
+                provider_audit_logs_required, compliance_notes
+         FROM notification_provider_decisions
+         ORDER BY channel",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| NotificationProviderDecisionRow {
+        channel: row.get("channel"),
+        provider_name: row.get("provider_name"),
+        decision_status: row.get("decision_status"),
+        opt_in_required: row.get("opt_in_required"),
+        opt_out_required: row.get("opt_out_required"),
+        quiet_hours_required: row.get("quiet_hours_required"),
+        emergency_exception_allowed: row.get("emergency_exception_allowed"),
+        provider_audit_logs_required: row.get("provider_audit_logs_required"),
+        compliance_notes: row.get("compliance_notes"),
+    })
+    .collect();
+
+    let coverage_rules = sqlx::query(
+        "SELECT event_key, category, default_priority, default_channels, responsible_party,
+                entity_type, escalation_minutes, active, notes
+         FROM notification_coverage_rules
+         ORDER BY category, event_key",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| NotificationCoverageRuleRow {
+        event_key: row.get("event_key"),
+        category: row.get("category"),
+        default_priority: row.get("default_priority"),
+        default_channels: row.get::<Vec<String>, _>("default_channels"),
+        responsible_party: row.get("responsible_party"),
+        entity_type: row.get("entity_type"),
+        escalation_minutes: row.get("escalation_minutes"),
+        active: row.get("active"),
+        notes: row.get("notes"),
+    })
+    .collect();
+
+    Json(ApiResponse::ok(NotificationCenterScreen {
+        unread_count,
+        notifications,
+        preferences,
+        provider_decisions,
+        coverage_rules,
+    }))
+}
+
+async fn mark_notification_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MarkNotificationReadRequest>,
+) -> Json<ApiResponse<NotificationMutationResponse>> {
+    let Some(resolved) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(NotificationMutationResponse {
+            success: false,
+            message: "Sign in before updating notifications.".into(),
+        }));
+    };
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(NotificationMutationResponse {
+            success: false,
+            message: "Notification center requires the database connection.".into(),
+        }));
+    };
+
+    let result = if payload.mark_all.unwrap_or(false) {
+        sqlx::query(
+            "UPDATE notification_events
+             SET read_at = COALESCE(read_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP
+             WHERE recipient_user_id = $1 AND read_at IS NULL",
+        )
+        .bind(resolved.user.id)
+        .execute(pool)
+        .await
+    } else if let Some(notification_id) = payload.notification_id {
+        sqlx::query(
+            "UPDATE notification_events
+             SET read_at = COALESCE(read_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1 AND recipient_user_id = $2",
+        )
+        .bind(notification_id as i64)
+        .bind(resolved.user.id)
+        .execute(pool)
+        .await
+    } else {
+        return Json(ApiResponse::ok(NotificationMutationResponse {
+            success: false,
+            message: "Choose a notification or mark all.".into(),
+        }));
+    };
+
+    Json(ApiResponse::ok(NotificationMutationResponse {
+        success: result.is_ok(),
+        message: result
+            .map(|result| format!("{} notification(s) marked read.", result.rows_affected()))
+            .unwrap_or_else(|error| format!("Notification update failed: {}", error)),
+    }))
+}
+
+async fn upsert_notification_preference(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpsertNotificationPreferenceRequest>,
+) -> Json<ApiResponse<NotificationMutationResponse>> {
+    let Some(resolved) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(NotificationMutationResponse {
+            success: false,
+            message: "Sign in before saving notification preferences.".into(),
+        }));
+    };
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(NotificationMutationResponse {
+            success: false,
+            message: "Notification preferences require the database connection.".into(),
+        }));
+    };
+
+    let event_key = payload.event_key.trim();
+    if event_key.is_empty() {
+        return Json(ApiResponse::ok(NotificationMutationResponse {
+            success: false,
+            message: "Choose a notification event key before saving preferences.".into(),
+        }));
+    }
+
+    let timezone = payload
+        .timezone
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("UTC");
+    let result = sqlx::query(
+        "INSERT INTO notification_preferences (
+             organization_id, user_id, event_key, email_enabled, in_app_enabled,
+             sms_enabled, push_enabled, quiet_hours_start, quiet_hours_end,
+             timezone, escalation_minutes, created_at, updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::TIME, $9::TIME, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         ON CONFLICT (COALESCE(organization_id, 0), COALESCE(user_id, 0), event_key)
+         DO UPDATE SET
+             email_enabled = EXCLUDED.email_enabled,
+             in_app_enabled = EXCLUDED.in_app_enabled,
+             sms_enabled = EXCLUDED.sms_enabled,
+             push_enabled = EXCLUDED.push_enabled,
+             quiet_hours_start = EXCLUDED.quiet_hours_start,
+             quiet_hours_end = EXCLUDED.quiet_hours_end,
+             timezone = EXCLUDED.timezone,
+             escalation_minutes = EXCLUDED.escalation_minutes,
+             updated_at = CURRENT_TIMESTAMP",
+    )
+    .bind(auth_session::session_organization_id(&resolved))
+    .bind(resolved.user.id)
+    .bind(event_key)
+    .bind(payload.email_enabled)
+    .bind(payload.in_app_enabled)
+    .bind(payload.sms_enabled)
+    .bind(payload.push_enabled)
+    .bind(payload.quiet_hours_start.as_deref().filter(|value| !value.trim().is_empty()))
+    .bind(payload.quiet_hours_end.as_deref().filter(|value| !value.trim().is_empty()))
+    .bind(timezone)
+    .bind(payload.escalation_minutes)
+    .execute(pool)
+    .await;
+
+    Json(ApiResponse::ok(NotificationMutationResponse {
+        success: result.is_ok(),
+        message: result
+            .map(|_| "Notification preference saved.".into())
+            .unwrap_or_else(|error| format!("Notification preference failed: {}", error)),
+    }))
+}
+
+async fn communication_governance_screen(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Json<ApiResponse<CommunicationGovernanceScreen>> {
+    let empty = || CommunicationGovernanceScreen {
+        sender_identities: Vec::new(),
+        delivery_events: Vec::new(),
+        suppression_entries: Vec::new(),
+        template_governance: Vec::new(),
+        monitoring_rules: Vec::new(),
+        branding_policies: Vec::new(),
+        brand_assets: Vec::new(),
+        custom_domains: Vec::new(),
+        branded_template_rules: Vec::new(),
+    };
+
+    let Some(resolved) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(empty()));
+    };
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(empty()));
+    };
+    let organization_id = auth_session::session_organization_id(&resolved);
+
+    let sender_identities = sqlx::query(
+        "SELECT id, environment_key, sender_domain, from_email, from_name,
+                spf_status, dkim_status, dmarc_status, identity_status, verified_at, notes
+         FROM message_sender_identities
+         WHERE organization_id IS NULL OR organization_id = $1
+         ORDER BY environment_key, organization_id NULLS FIRST, from_email",
+    )
+    .bind(organization_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| SenderIdentityRow {
+        id: row.get::<i64, _>("id").max(0) as u64,
+        environment_key: row.get("environment_key"),
+        sender_domain: row.get("sender_domain"),
+        from_email: row.get("from_email"),
+        from_name: row.get("from_name"),
+        spf_status: row.get("spf_status"),
+        dkim_status: row.get("dkim_status"),
+        dmarc_status: row.get("dmarc_status"),
+        identity_status: row.get("identity_status"),
+        verified_at: row
+            .get::<Option<chrono::NaiveDateTime>, _>("verified_at")
+            .map(|value| value.to_string()),
+        notes: row.get("notes"),
+    })
+    .collect();
+
+    let delivery_events = sqlx::query(
+        "SELECT id, channel, event_type, provider_message_id, recipient, reason, occurred_at
+         FROM message_delivery_events
+         WHERE organization_id IS NULL OR organization_id = $1
+         ORDER BY occurred_at DESC
+         LIMIT 80",
+    )
+    .bind(organization_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| DeliveryEventRow {
+        id: row.get::<i64, _>("id").max(0) as u64,
+        channel: row.get("channel"),
+        event_type: row.get("event_type"),
+        provider_message_id: row.get("provider_message_id"),
+        recipient: row.get("recipient"),
+        reason: row.get("reason"),
+        occurred_at: row
+            .get::<chrono::NaiveDateTime, _>("occurred_at")
+            .to_string(),
+    })
+    .collect();
+
+    let suppression_entries = sqlx::query(
+        "SELECT id, channel, recipient, suppression_reason, status, expires_at
+         FROM message_suppression_entries
+         WHERE organization_id IS NULL OR organization_id = $1
+         ORDER BY created_at DESC
+         LIMIT 80",
+    )
+    .bind(organization_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| SuppressionEntryRow {
+        id: row.get::<i64, _>("id").max(0) as u64,
+        channel: row.get("channel"),
+        recipient: row.get("recipient"),
+        suppression_reason: row.get("suppression_reason"),
+        status: row.get("status"),
+        expires_at: row
+            .get::<Option<chrono::NaiveDateTime>, _>("expires_at")
+            .map(|value| value.to_string()),
+    })
+    .collect();
+
+    let template_governance = sqlx::query(
+        "SELECT id, template_key, channel, locale, version, owner_team, approval_status,
+                high_risk, test_send_required, notes
+         FROM message_template_governance
+         ORDER BY high_risk DESC, template_key, channel, version DESC",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| MessageTemplateGovernanceRow {
+        id: row.get::<i64, _>("id").max(0) as u64,
+        template_key: row.get("template_key"),
+        channel: row.get("channel"),
+        locale: row.get("locale"),
+        version: row.get("version"),
+        owner_team: row.get("owner_team"),
+        approval_status: row.get("approval_status"),
+        high_risk: row.get("high_risk"),
+        test_send_required: row.get("test_send_required"),
+        notes: row.get("notes"),
+    })
+    .collect();
+
+    let monitoring_rules = sqlx::query(
+        "SELECT rule_key, event_key, template_key, category, priority, required_sender_identity,
+                fallback_channel, escalation_minutes, active, notes
+         FROM message_monitoring_rules
+         ORDER BY priority DESC, category, rule_key",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| MessageMonitoringRuleRow {
+        rule_key: row.get("rule_key"),
+        event_key: row.get("event_key"),
+        template_key: row.get("template_key"),
+        category: row.get("category"),
+        priority: row.get("priority"),
+        required_sender_identity: row.get("required_sender_identity"),
+        fallback_channel: row.get("fallback_channel"),
+        escalation_minutes: row.get("escalation_minutes"),
+        active: row.get("active"),
+        notes: row.get("notes"),
+    })
+    .collect();
+
+    let branding_policies = sqlx::query(
+        "SELECT organization_id, portal_branding_enabled, document_branding_enabled,
+                email_branding_enabled, custom_domain_enabled, white_label_status,
+                unsupported_message, fallback_brand_name, cache_version
+         FROM tenant_branding_policies
+         WHERE organization_id = $1
+         ORDER BY updated_at DESC",
+    )
+    .bind(organization_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| TenantBrandingPolicyRow {
+        organization_id: row.get::<i64, _>("organization_id").max(0) as u64,
+        portal_branding_enabled: row.get("portal_branding_enabled"),
+        document_branding_enabled: row.get("document_branding_enabled"),
+        email_branding_enabled: row.get("email_branding_enabled"),
+        custom_domain_enabled: row.get("custom_domain_enabled"),
+        white_label_status: row.get("white_label_status"),
+        unsupported_message: row.get("unsupported_message"),
+        fallback_brand_name: row.get("fallback_brand_name"),
+        cache_version: row.get("cache_version"),
+    })
+    .collect();
+
+    let brand_assets = sqlx::query(
+        "SELECT id, asset_type, asset_url, mime_type, file_size_bytes, review_status, cache_key, notes
+         FROM tenant_brand_assets
+         WHERE organization_id = $1
+         ORDER BY review_status, asset_type, updated_at DESC",
+    )
+    .bind(organization_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| TenantBrandAssetRow {
+        id: row.get::<i64, _>("id").max(0) as u64,
+        asset_type: row.get("asset_type"),
+        asset_url: row.get("asset_url"),
+        mime_type: row.get("mime_type"),
+        file_size_bytes: row.get("file_size_bytes"),
+        review_status: row.get("review_status"),
+        cache_key: row.get("cache_key"),
+        notes: row.get("notes"),
+    })
+    .collect();
+
+    let custom_domains = sqlx::query(
+        "SELECT id, domain, purpose, verification_status, dns_txt_name, dns_txt_value,
+                tls_status, rollback_status, last_checked_at, notes
+         FROM tenant_custom_domains
+         WHERE organization_id = $1
+         ORDER BY verification_status, purpose, domain",
+    )
+    .bind(organization_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| TenantCustomDomainRow {
+        id: row.get::<i64, _>("id").max(0) as u64,
+        domain: row.get("domain"),
+        purpose: row.get("purpose"),
+        verification_status: row.get("verification_status"),
+        dns_txt_name: row.get("dns_txt_name"),
+        dns_txt_value: row.get("dns_txt_value"),
+        tls_status: row.get("tls_status"),
+        rollback_status: row.get("rollback_status"),
+        last_checked_at: row
+            .get::<Option<chrono::NaiveDateTime>, _>("last_checked_at")
+            .map(|value| value.to_string()),
+        notes: row.get("notes"),
+    })
+    .collect();
+
+    let branded_template_rules = sqlx::query(
+        "SELECT id, template_key, template_surface, branding_status, fallback_allowed, notes
+         FROM tenant_branded_template_rules
+         WHERE organization_id = $1
+         ORDER BY template_surface, template_key",
+    )
+    .bind(organization_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| TenantBrandedTemplateRuleRow {
+        id: row.get::<i64, _>("id").max(0) as u64,
+        template_key: row.get("template_key"),
+        template_surface: row.get("template_surface"),
+        branding_status: row.get("branding_status"),
+        fallback_allowed: row.get("fallback_allowed"),
+        notes: row.get("notes"),
+    })
+    .collect();
+
+    Json(ApiResponse::ok(CommunicationGovernanceScreen {
+        sender_identities,
+        delivery_events,
+        suppression_entries,
+        template_governance,
+        monitoring_rules,
+        branding_policies,
+        brand_assets,
+        custom_domains,
+        branded_template_rules,
+    }))
+}
+
+async fn record_message_template_test_send(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<MessageTemplateTestSendRequest>,
+) -> Json<ApiResponse<NotificationMutationResponse>> {
+    let Some(resolved) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(NotificationMutationResponse {
+            success: false,
+            message: "Sign in before recording a template test-send.".into(),
+        }));
+    };
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(NotificationMutationResponse {
+            success: false,
+            message: "Template test-send requires the database connection.".into(),
+        }));
+    };
+
+    let template_key = payload.template_key.trim();
+    let channel = payload.channel.trim();
+    let recipient = payload.recipient.trim();
+    if template_key.is_empty() || channel.is_empty() || recipient.is_empty() {
+        return Json(ApiResponse::ok(NotificationMutationResponse {
+            success: false,
+            message: "Template key, channel, and recipient are required.".into(),
+        }));
+    }
+
+    let result = sqlx::query(
+        "INSERT INTO message_delivery_events (
+             organization_id, channel, event_type, recipient, reason, metadata
+         )
+         VALUES ($1, $2, 'test_send', $3, $4, jsonb_build_object('template_key', $5, 'requested_by_user_id', $6))",
+    )
+    .bind(auth_session::session_organization_id(&resolved))
+    .bind(channel)
+    .bind(recipient)
+    .bind("Template governance test-send recorded from the authenticated portal.")
+    .bind(template_key)
+    .bind(resolved.user.id)
+    .execute(pool)
+    .await;
+
+    Json(ApiResponse::ok(NotificationMutationResponse {
+        success: result.is_ok(),
+        message: result
+            .map(|_| "Template test-send recorded for deliverability review.".into())
+            .unwrap_or_else(|error| format!("Template test-send failed: {}", error)),
+    }))
 }
 
 async fn update_profile(
@@ -1801,14 +3187,13 @@ async fn update_profile(
     if let Some(existing_user) = find_user_by_email(pool, payload.email.trim())
         .await
         .unwrap_or(None)
+        && existing_user.id != resolved.user.id
     {
-        if existing_user.id != resolved.user.id {
-            return Json(ApiResponse::ok(UpdateSelfProfileResponse {
-                success: false,
-                message: "Another account already uses that email address.".into(),
-                session: Some(resolved.session),
-            }));
-        }
+        return Json(ApiResponse::ok(UpdateSelfProfileResponse {
+            success: false,
+            message: "Another account already uses that email address.".into(),
+            session: Some(resolved.session),
+        }));
     }
 
     let password_hash = match (
@@ -1897,6 +3282,129 @@ async fn update_profile(
             success: false,
             message: format!("Profile update failed: {}", error),
             session: Some(resolved.session),
+        })),
+    }
+}
+
+async fn update_carrier_capacity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdateCarrierCapacityRequest>,
+) -> Json<ApiResponse<UpdateCarrierCapacityResponse>> {
+    let Some(resolved) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Json(ApiResponse::ok(UpdateCarrierCapacityResponse {
+            success: false,
+            message: "Sign in before editing carrier capacity.".into(),
+            capacity: None,
+        }));
+    };
+
+    if resolved.user.primary_role() != Some(UserRole::Carrier) {
+        return Json(ApiResponse::ok(UpdateCarrierCapacityResponse {
+            success: false,
+            message: "Only carrier accounts can maintain carrier capacity.".into(),
+            capacity: None,
+        }));
+    }
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Json(ApiResponse::ok(UpdateCarrierCapacityResponse {
+            success: false,
+            message: format!(
+                "Carrier capacity updates are unavailable because the database is {} on {}.",
+                state.database_state(),
+                state.config.deployment_target
+            ),
+            capacity: None,
+        }));
+    };
+
+    let availability_status = normalize_capacity_value(&payload.availability_status)
+        .unwrap_or_else(|| "available".into());
+    if !matches!(
+        availability_status.as_str(),
+        "available" | "limited" | "unavailable" | "seasonal" | "paused"
+    ) {
+        return Json(ApiResponse::ok(UpdateCarrierCapacityResponse {
+            success: false,
+            message: "Availability must be available, limited, unavailable, seasonal, or paused."
+                .into(),
+            capacity: None,
+        }));
+    }
+
+    let equipment_types = normalize_capacity_list(&payload.equipment_types);
+    let lane_preferences = normalize_capacity_list(&payload.lane_preferences);
+    let operating_regions = normalize_capacity_list(&payload.operating_regions);
+    let preferred_commodities = normalize_capacity_list(&payload.preferred_commodities);
+    let service_levels = normalize_capacity_list(&payload.service_levels);
+    let certifications = normalize_capacity_list(&payload.certifications);
+    let capacity_notes = optional_owned(&payload.capacity_notes);
+    if equipment_types.is_empty() || operating_regions.is_empty() {
+        return Json(ApiResponse::ok(UpdateCarrierCapacityResponse {
+            success: false,
+            message: "Carrier capacity requires at least one equipment type and operating region."
+                .into(),
+            capacity: None,
+        }));
+    }
+
+    let result = sqlx::query(
+        "INSERT INTO carrier_capacity_profiles (
+            organization_id, carrier_user_id, equipment_types, lane_preferences,
+            operating_regions, preferred_commodities, service_levels, certifications,
+            availability_status, available_power_units, insurance_limit_usd,
+            capacity_notes, last_updated_by_user_id, created_at, updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         ON CONFLICT (carrier_user_id)
+         DO UPDATE SET
+            organization_id = EXCLUDED.organization_id,
+            equipment_types = EXCLUDED.equipment_types,
+            lane_preferences = EXCLUDED.lane_preferences,
+            operating_regions = EXCLUDED.operating_regions,
+            preferred_commodities = EXCLUDED.preferred_commodities,
+            service_levels = EXCLUDED.service_levels,
+            certifications = EXCLUDED.certifications,
+            availability_status = EXCLUDED.availability_status,
+            available_power_units = EXCLUDED.available_power_units,
+            insurance_limit_usd = EXCLUDED.insurance_limit_usd,
+            capacity_notes = EXCLUDED.capacity_notes,
+            last_updated_by_user_id = EXCLUDED.last_updated_by_user_id,
+            updated_at = CURRENT_TIMESTAMP",
+    )
+    .bind(resolved.user.organization_id)
+    .bind(resolved.user.id)
+    .bind(&equipment_types)
+    .bind(&lane_preferences)
+    .bind(&operating_regions)
+    .bind(&preferred_commodities)
+    .bind(&service_levels)
+    .bind(&certifications)
+    .bind(&availability_status)
+    .bind(payload.available_power_units as i32)
+    .bind(payload.insurance_limit_usd.max(0.0))
+    .bind(capacity_notes)
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(_) => Json(ApiResponse::ok(UpdateCarrierCapacityResponse {
+            success: true,
+            message: "Carrier capacity profile saved.".into(),
+            capacity: carrier_capacity_profile(pool, resolved.user.id)
+                .await
+                .ok()
+                .flatten(),
+        })),
+        Err(error) => Json(ApiResponse::ok(UpdateCarrierCapacityResponse {
+            success: false,
+            message: format!("Carrier capacity save failed: {}", error),
+            capacity: None,
         })),
     }
 }
@@ -2006,6 +3514,250 @@ fn parse_role_key(value: &str) -> Option<UserRole> {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct OidcIdTokenClaims {
+    sub: String,
+    iss: String,
+    aud: OidcAudience,
+    #[serde(rename = "exp")]
+    _exp: usize,
+    email: String,
+    email_verified: Option<bool>,
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum OidcAudience {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl OidcAudience {
+    fn contains(&self, expected: &str) -> bool {
+        match self {
+            Self::One(value) => value == expected,
+            Self::Many(values) => values.iter().any(|value| value == expected),
+        }
+    }
+}
+
+async fn validate_oidc_id_token(
+    jwks_url: &str,
+    issuer: &str,
+    client_id: &str,
+    id_token: &str,
+) -> Result<TokenData<OidcIdTokenClaims>, String> {
+    let header =
+        decode_header(id_token).map_err(|error| format!("invalid OIDC header: {error}"))?;
+    let kid = header
+        .kid
+        .ok_or_else(|| "OIDC token missing kid".to_string())?;
+    let jwks = reqwest::get(jwks_url)
+        .await
+        .map_err(|error| format!("failed to fetch JWKS: {error}"))?
+        .json::<JwkSet>()
+        .await
+        .map_err(|error| format!("failed to parse JWKS: {error}"))?;
+    let jwk = jwks
+        .find(&kid)
+        .ok_or_else(|| "matching JWK not found".to_string())?;
+    let decoding_key = DecodingKey::from_jwk(jwk)
+        .map_err(|error| format!("failed to build decoding key: {error}"))?;
+    let mut validation = Validation::new(header.alg);
+    if !matches!(
+        header.alg,
+        Algorithm::RS256
+            | Algorithm::RS384
+            | Algorithm::RS512
+            | Algorithm::ES256
+            | Algorithm::ES384
+    ) {
+        return Err("unsupported OIDC signing algorithm".into());
+    }
+    validation.set_issuer(&[issuer]);
+    validation.set_audience(&[client_id]);
+    let token_data = decode::<OidcIdTokenClaims>(id_token, &decoding_key, &validation)
+        .map_err(|error| format!("OIDC token validation failed: {error}"))?;
+    if token_data.claims.iss != issuer || !token_data.claims.aud.contains(client_id) {
+        return Err("OIDC issuer or audience mismatch".into());
+    }
+    Ok(token_data)
+}
+
+async fn enterprise_sso_discovery_response(
+    state: &AppState,
+    email: &str,
+) -> EnterpriseSsoDiscoveryResponse {
+    let email = email.trim().to_lowercase();
+    let email_domain = email
+        .split('@')
+        .nth(1)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    let Some(pool) = state.pool.as_ref() else {
+        return EnterpriseSsoDiscoveryResponse {
+            email_domain,
+            organization_id: None,
+            organization_name: None,
+            sso_required: false,
+            password_allowed: true,
+            provider_type: None,
+            provider_display_name: None,
+            sso_url: None,
+            jit_enabled: false,
+            default_role_key: None,
+            message: "Enterprise SSO discovery is unavailable because the database is offline."
+                .into(),
+        };
+    };
+
+    match discover_sso_for_email(pool, &email).await {
+        Ok(Some(record)) => {
+            let active_provider = record.provider_status.as_deref() == Some("active");
+            let sso_required =
+                record.domain_verified && record.login_routing_enabled && active_provider;
+            EnterpriseSsoDiscoveryResponse {
+                email_domain: Some(record.domain),
+                organization_id: Some(record.organization_id.max(0) as u64),
+                organization_name: Some(record.organization_name),
+                sso_required,
+                password_allowed: !sso_required,
+                provider_type: record.provider_type,
+                provider_display_name: record.provider_display_name,
+                sso_url: record.sso_url,
+                jit_enabled: record.jit_enabled,
+                default_role_key: record.default_role_key,
+                message: if sso_required {
+                    "This organization uses enterprise SSO; continue through the identity provider."
+                        .into()
+                } else if record.domain_verified {
+                    "This domain is verified, but password login remains allowed until SSO routing is active."
+                        .into()
+                } else {
+                    "This domain is registered but not yet verified for enterprise SSO.".into()
+                },
+            }
+        }
+        Ok(None) => EnterpriseSsoDiscoveryResponse {
+            email_domain,
+            organization_id: None,
+            organization_name: None,
+            sso_required: false,
+            password_allowed: true,
+            provider_type: None,
+            provider_display_name: None,
+            sso_url: None,
+            jit_enabled: false,
+            default_role_key: None,
+            message: "No enterprise SSO routing matched this email domain.".into(),
+        },
+        Err(error) => EnterpriseSsoDiscoveryResponse {
+            email_domain,
+            organization_id: None,
+            organization_name: None,
+            sso_required: false,
+            password_allowed: true,
+            provider_type: None,
+            provider_display_name: None,
+            sso_url: None,
+            jit_enabled: false,
+            default_role_key: None,
+            message: format!("Enterprise SSO discovery failed: {}", error),
+        },
+    }
+}
+
+async fn authorize_scim_token(
+    pool: &db::DbPool,
+    headers: &HeaderMap,
+) -> Result<ScimTokenRecord, StatusCode> {
+    let token = auth_session::bearer_token_from_headers(headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let parsed = parse_scim_token(&token).ok_or(StatusCode::UNAUTHORIZED)?;
+    let token_hash = hash_scim_secret(parsed.1);
+    find_scim_token_by_hash(pool, parsed.0, &token_hash)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::UNAUTHORIZED)
+}
+
+fn parse_scim_token(token: &str) -> Option<(&str, &str)> {
+    let stripped = token.strip_prefix("scim_")?;
+    let (prefix, secret) = stripped.split_once('.')?;
+    if prefix.is_empty() || secret.is_empty() {
+        return None;
+    }
+    Some((prefix, secret))
+}
+
+fn hash_scim_secret(secret: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(secret.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn header_value<'a>(headers: &'a HeaderMap, key: &str) -> Option<&'a str> {
+    headers
+        .get(key)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+async fn legal_agreement_screen_for_user(
+    pool: &db::DbPool,
+    user: &db::auth::UserRecord,
+) -> Result<LegalAgreementScreen, sqlx::Error> {
+    let role_key_value = user.primary_role().map(role_key);
+    let (missing, proofs) =
+        legal_acceptance_summary(pool, user.id, user.organization_id, role_key_value).await?;
+    Ok(LegalAgreementScreen {
+        title: "Legal Agreements".into(),
+        missing_required: missing
+            .into_iter()
+            .map(legal_template_item)
+            .collect::<Vec<_>>(),
+        acceptance_proofs: proofs
+            .into_iter()
+            .map(legal_acceptance_item)
+            .collect::<Vec<_>>(),
+        notes: vec![
+            "Required agreements are versioned and acceptance is stored with signer, timestamp, IP, user agent, evidence snapshot, and audit event.".into(),
+            "Updated agreement versions automatically appear as missing until accepted.".into(),
+        ],
+    })
+}
+
+fn legal_template_item(template: LegalAgreementTemplateRecord) -> LegalAgreementTemplateItem {
+    LegalAgreementTemplateItem {
+        id: template.id.max(0) as u64,
+        agreement_key: template.agreement_key,
+        version: template.version,
+        title: template.title,
+        document_uri: template.document_uri,
+        required_role_key: template.required_role_key,
+        requires_user_acceptance: template.requires_user_acceptance,
+        requires_organization_acceptance: template.requires_organization_acceptance,
+        effective_at: template.effective_at.to_string(),
+    }
+}
+
+fn legal_acceptance_item(
+    acceptance: LegalAgreementAcceptanceRecord,
+) -> LegalAgreementAcceptanceItem {
+    LegalAgreementAcceptanceItem {
+        id: acceptance.id.max(0) as u64,
+        agreement_key: acceptance.agreement_key,
+        version: acceptance.version,
+        signer_name: acceptance.signer_name,
+        signer_email: acceptance.signer_email,
+        accepted_at: acceptance.accepted_at.to_string(),
+        audit_event_id: acceptance.audit_event_id.map(|value| value.max(0) as u64),
+    }
+}
+
 fn role_key(role: UserRole) -> &'static str {
     match role {
         UserRole::Admin => "admin",
@@ -2013,6 +3765,25 @@ fn role_key(role: UserRole) -> &'static str {
         UserRole::Carrier => "carrier",
         UserRole::Broker => "broker",
         UserRole::FreightForwarder => "freight_forwarder",
+    }
+}
+
+fn organization_role_key_for_user_role(role: UserRole) -> &'static str {
+    match role {
+        UserRole::Admin => "admin",
+        _ => "member",
+    }
+}
+
+fn role_from_organization_role_key(role_key: Option<&str>) -> UserRole {
+    match role_key
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "admin" | "owner" => UserRole::Admin,
+        _ => UserRole::Carrier,
     }
 }
 
@@ -2035,7 +3806,9 @@ fn unauthenticated_profile_screen() -> SelfProfileScreen {
         },
         personal_facts: Vec::new(),
         company_facts: Vec::new(),
+        carrier_capacity: None,
         documents: Vec::new(),
+        required_documents: Vec::new(),
         notes: vec!["Sign in first so the Rust profile can load your account.".into()],
     }
 }
@@ -2043,10 +3816,13 @@ fn unauthenticated_profile_screen() -> SelfProfileScreen {
 fn profile_screen_from_user(
     user: &db::auth::UserRecord,
     details: Option<db::auth::UserDetailRecord>,
+    carrier_capacity: Option<CarrierCapacityProfile>,
     documents: Vec<KycDocumentItem>,
 ) -> SelfProfileScreen {
     let role = user.primary_role();
     let role_key_value = role.map(role_key).unwrap_or("unknown").to_string();
+    let required_documents = kyc_required_document_checklist(role, &documents);
+
     SelfProfileScreen {
         title: "My Profile".into(),
         role_key: role_key_value,
@@ -2060,7 +3836,9 @@ fn profile_screen_from_user(
         draft: self_profile_draft_from_user(user, details.as_ref()),
         personal_facts: self_profile_personal_facts(user),
         company_facts: self_profile_company_facts(user, details.as_ref()),
+        carrier_capacity,
         documents,
+        required_documents,
         notes: vec![
             "This Rust profile replaces the old read-only and edit profile Blade pages with one self-serve workspace.".into(),
             "Admins can still inspect the deeper compliance view from the Rust admin directory when needed.".into(),
@@ -2135,6 +3913,117 @@ fn self_profile_company_facts(
     push_self_profile_fact(&mut facts, "MC/CBSA/USDOT", user.mc_cbsa_usdot_no.clone());
     push_self_profile_fact(&mut facts, "UCR/HCC", user.ucr_hcc_no.clone());
     facts
+}
+
+async fn carrier_capacity_profile(
+    pool: &db::DbPool,
+    carrier_user_id: i64,
+) -> Result<Option<CarrierCapacityProfile>, sqlx::Error> {
+    let row = sqlx::query_as::<
+        _,
+        (
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+            String,
+            i32,
+            f64,
+            Option<String>,
+        ),
+    >(
+        "SELECT equipment_types, lane_preferences, operating_regions,
+                preferred_commodities, service_levels, certifications,
+                availability_status, available_power_units, insurance_limit_usd,
+                capacity_notes
+         FROM carrier_capacity_profiles
+         WHERE carrier_user_id = $1",
+    )
+    .bind(carrier_user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(
+        |(
+            equipment_types,
+            lane_preferences,
+            operating_regions,
+            preferred_commodities,
+            service_levels,
+            certifications,
+            availability_status,
+            available_power_units,
+            insurance_limit_usd,
+            capacity_notes,
+        )| {
+            let readiness_label = carrier_capacity_readiness(
+                &equipment_types,
+                &operating_regions,
+                &availability_status,
+                available_power_units,
+                insurance_limit_usd,
+            );
+            CarrierCapacityProfile {
+                equipment_types,
+                lane_preferences,
+                operating_regions,
+                preferred_commodities,
+                service_levels,
+                certifications,
+                availability_status,
+                available_power_units: available_power_units.max(0) as u32,
+                insurance_limit_usd,
+                capacity_notes,
+                readiness_label,
+            }
+        },
+    ))
+}
+
+fn normalize_capacity_list(values: &[String]) -> Vec<String> {
+    values
+        .iter()
+        .filter_map(|value| normalize_capacity_value(value))
+        .fold(Vec::<String>::new(), |mut items, value| {
+            if !items.iter().any(|item| item == &value) {
+                items.push(value);
+            }
+            items
+        })
+}
+
+fn normalize_capacity_value(value: &str) -> Option<String> {
+    let normalized = value.trim().to_ascii_lowercase().replace([' ', '-'], "_");
+    (!normalized.is_empty()
+        && normalized.len() <= 96
+        && normalized
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_'))
+    .then_some(normalized)
+}
+
+fn carrier_capacity_readiness(
+    equipment_types: &[String],
+    operating_regions: &[String],
+    availability_status: &str,
+    available_power_units: i32,
+    insurance_limit_usd: f64,
+) -> String {
+    if availability_status == "unavailable" || availability_status == "paused" {
+        return "Not eligible: unavailable".into();
+    }
+    if equipment_types.is_empty() || operating_regions.is_empty() {
+        return "Not eligible: missing equipment or geography".into();
+    }
+    if available_power_units <= 0 {
+        return "Limited: no available power units".into();
+    }
+    if insurance_limit_usd <= 0.0 {
+        return "Limited: insurance limit missing".into();
+    }
+    "Eligible for capacity matching".into()
 }
 
 fn push_self_profile_fact(facts: &mut Vec<SelfProfileFact>, label: &str, value: Option<String>) {
@@ -2377,6 +4266,7 @@ fn unauthenticated_onboarding_screen() -> AuthOnboardingScreen {
         requires_otp: true,
         draft: empty_onboarding_draft(),
         documents: Vec::new(),
+        required_documents: Vec::new(),
         required_fields: vec!["company_name".into(), "company_address".into()],
         notes: vec!["Sign in first so the Rust onboarding flow can load your account.".into()],
     }
@@ -2428,6 +4318,12 @@ fn onboarding_screen_from_user(
             .and_then(|item| item.customs_license.clone()),
     };
 
+    let document_items = documents
+        .into_iter()
+        .map(|document| build_kyc_document_item(document, true))
+        .collect::<Vec<_>>();
+    let required_documents = kyc_required_document_checklist(role, &document_items);
+
     AuthOnboardingScreen {
         title: "Rust Onboarding".into(),
         subtitle: "Complete the company profile that follows OTP verification before the account enters review.".into(),
@@ -2440,10 +4336,8 @@ fn onboarding_screen_from_user(
         can_submit,
         requires_otp: user.email_verified_at.is_none(),
         draft,
-        documents: documents
-            .into_iter()
-            .map(|document| build_kyc_document_item(document, true))
-            .collect(),
+        documents: document_items,
+        required_documents,
         required_fields,
         notes,
     }
@@ -2597,8 +4491,8 @@ fn build_kyc_document_item(
             document
                 .mock_blockchain_tx
                 .as_ref()
-                .map(|_| "Anchored to blockchain".to_string())
-                .unwrap_or_else(|| "Blockchain requested".into()),
+                .map(|_| "SHA-256 hash stored".to_string())
+                .unwrap_or_else(|| "Hash verification requested".into()),
         )
     } else {
         None
@@ -2634,6 +4528,12 @@ fn build_kyc_document_item(
             .file_size
             .and_then(|value| if value >= 0 { Some(value as u64) } else { None }),
         uploaded_at_label: format_profile_datetime(&document.created_at),
+        current_version: document.current_version.max(1) as u32,
+        version_count: document.version_count.max(1) as u64,
+        version_history_label: document_version_label(
+            document.current_version,
+            document.version_count,
+        ),
         download_path: Some(kyc_document_download_path(document.id.max(0) as u64)),
         can_view_file: true,
         blockchain_label,
@@ -2641,9 +4541,99 @@ fn build_kyc_document_item(
         blockchain_hash_preview,
         blockchain_hash: document.hash.clone(),
         can_edit,
-        can_verify_blockchain: can_edit && !document.hash.is_some(),
+        can_verify_blockchain: can_edit && document.hash.is_none(),
         can_delete: can_edit,
     }
+}
+
+fn document_version_label(current_version: i32, version_count: i64) -> String {
+    let current = current_version.max(1);
+    let count = version_count.max(1);
+    if count == 1 {
+        format!("v{} (original)", current)
+    } else {
+        format!("v{} of {}", current, count)
+    }
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+fn kyc_required_document_checklist(
+    role: Option<UserRole>,
+    documents: &[KycDocumentItem],
+) -> Vec<RequiredDocumentChecklistItem> {
+    let requirements: Vec<(&str, &str, &str)> = match role {
+        Some(UserRole::Carrier) => vec![
+            (
+                "operating_authority",
+                "Operating authority",
+                "Carrier onboarding",
+            ),
+            (
+                "insurance_certificate",
+                "Insurance certificate",
+                "Carrier onboarding",
+            ),
+            ("w9", "W-9 tax form", "Carrier onboarding"),
+        ],
+        Some(UserRole::Broker) => vec![
+            (
+                "broker_authority",
+                "Broker operating authority",
+                "Broker onboarding",
+            ),
+            (
+                "insurance_certificate",
+                "Insurance certificate",
+                "Broker onboarding",
+            ),
+        ],
+        Some(UserRole::Shipper) => Vec::new(),
+        _ => Vec::new(),
+    };
+
+    requirements
+        .into_iter()
+        .map(|(key, label, scope)| {
+            let is_satisfied = documents
+                .iter()
+                .any(|document| document_matches_required_key(document, key, label));
+            RequiredDocumentChecklistItem {
+                key: key.into(),
+                label: label.into(),
+                requirement_scope: scope.into(),
+                lifecycle_state: "submit_onboarding".into(),
+                is_required: true,
+                is_satisfied,
+                status_label: if is_satisfied { "Ready" } else { "Missing" }.into(),
+                status_tone: if is_satisfied { "success" } else { "warning" }.into(),
+                blocking_message: (!is_satisfied).then(|| {
+                    format!(
+                        "{} is required before onboarding review can be completed.",
+                        label
+                    )
+                }),
+            }
+        })
+        .collect()
+}
+
+fn document_matches_required_key(document: &KycDocumentItem, key: &str, label: &str) -> bool {
+    let haystack = format!(
+        "{} {} {} {}",
+        document.document_name,
+        document.document_type,
+        document.file_label,
+        document.original_name.clone().unwrap_or_default()
+    )
+    .to_ascii_lowercase()
+    .replace(['-', ' '], "_");
+    let normalized_label = label.to_ascii_lowercase().replace(['-', ' '], "_");
+    haystack.contains(key) || haystack.contains(&normalized_label)
 }
 
 fn validate_kyc_document_type(value: &str) -> Option<String> {
@@ -2663,7 +4653,7 @@ fn validate_profile_kyc_payload(
     }
 
     let Some(document_type) = validate_kyc_document_type(&payload.document_type) else {
-        return Err("Choose either standard or blockchain for this KYC row.".into());
+        return Err("Choose either standard or content hash for this KYC row.".into());
     };
 
     Ok(UpsertKycDocumentRequest {
@@ -2713,7 +4703,7 @@ async fn upload_profile_kyc_document_handler(
     let Some(document_type) = validate_kyc_document_type(&parsed.document_type) else {
         return text_response(
             StatusCode::BAD_REQUEST,
-            "Choose either standard or blockchain before uploading a profile document.",
+            "Choose either standard or content hash before uploading a profile document.",
         );
     };
 
@@ -2788,11 +4778,13 @@ async fn upload_profile_kyc_document_handler(
     record = updated;
 
     if document_type == "blockchain" {
+        let content_sha256 = sha256_hex(&parsed.bytes);
         record = match verify_kyc_document_blockchain(
             pool,
             record.id,
             resolved.user.id,
-            Some("Anchored immediately after Rust profile upload."),
+            &content_sha256,
+            Some("Content hash calculated immediately after Rust profile upload."),
             pending_review,
         )
         .await
@@ -2801,13 +4793,13 @@ async fn upload_profile_kyc_document_handler(
             Ok(None) => {
                 return text_response(
                     StatusCode::NOT_FOUND,
-                    "The uploaded KYC document disappeared before blockchain anchoring completed.",
+                    "The uploaded KYC document disappeared before content hash verification completed.",
                 );
             }
             Err(error) => {
                 return text_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    &format!("Profile KYC blockchain anchoring failed: {}", error),
+                    &format!("Profile KYC content hash verification failed: {}", error),
                 );
             }
         };
@@ -2951,7 +4943,7 @@ async fn replace_profile_kyc_document_handler(
     let Some(document_type) = validate_kyc_document_type(&parsed.document_type) else {
         return text_response(
             StatusCode::BAD_REQUEST,
-            "Choose either standard or blockchain before replacing this profile file.",
+            "Choose either standard or content hash before replacing this profile file.",
         );
     };
 
@@ -2968,21 +4960,6 @@ async fn replace_profile_kyc_document_handler(
             );
         }
     };
-
-    if let Err(error) = state
-        .document_storage
-        .delete_document(
-            normalize_storage_provider(&existing.file_path),
-            &existing.file_path,
-        )
-        .await
-    {
-        tracing::warn!(
-            document_id,
-            error = %error,
-            "old profile KYC file could not be removed after replacement"
-        );
-    }
 
     let mut record = match update_kyc_document(
         pool,
@@ -3016,11 +4993,13 @@ async fn replace_profile_kyc_document_handler(
     };
 
     if document_type == "blockchain" {
+        let content_sha256 = sha256_hex(&parsed.bytes);
         record = match verify_kyc_document_blockchain(
             pool,
             record.id,
             resolved.user.id,
-            Some("Anchored immediately after file replacement in the Rust profile."),
+            &content_sha256,
+            Some("Content hash calculated immediately after file replacement in the Rust profile."),
             AccountStatus::PendingReview.legacy_code(),
         )
         .await
@@ -3029,13 +5008,13 @@ async fn replace_profile_kyc_document_handler(
             Ok(None) => {
                 return text_response(
                     StatusCode::NOT_FOUND,
-                    "The replaced KYC document disappeared before blockchain anchoring completed.",
+                    "The replaced KYC document disappeared before content hash verification completed.",
                 );
             }
             Err(error) => {
                 return text_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    &format!("Profile KYC blockchain anchoring failed: {}", error),
+                    &format!("Profile KYC content hash verification failed: {}", error),
                 );
             }
         };
@@ -3079,15 +5058,50 @@ async fn verify_profile_kyc_document_handler(
             document_id: document_id.max(0) as u64,
             hash: None,
             message:
-                "Profile KYC blockchain actions are unavailable because the database connection is disabled."
+                "Profile KYC content hash actions are unavailable because the database connection is disabled."
                     .into(),
         }));
     };
+
+    let Some(existing) = find_kyc_document_by_id(pool, document_id)
+        .await
+        .ok()
+        .flatten()
+        .filter(|document| document.user_id == resolved.user.id)
+    else {
+        return Json(ApiResponse::ok(VerifyKycDocumentResponse {
+            success: false,
+            document_id: document_id.max(0) as u64,
+            hash: None,
+            message: "That KYC row could not be found for this signed-in profile.".into(),
+        }));
+    };
+
+    let bytes = match state
+        .document_storage
+        .read_document(state.document_storage.backend(), &existing.file_path)
+        .await
+    {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return Json(ApiResponse::ok(VerifyKycDocumentResponse {
+                success: false,
+                document_id: document_id.max(0) as u64,
+                hash: None,
+                message: format!(
+                    "Profile document content could not be read for hashing: {}",
+                    error
+                ),
+            }));
+        }
+    };
+    let content_sha256 = sha256_hex(&bytes);
 
     match verify_kyc_document_blockchain(
         pool,
         document_id,
         resolved.user.id,
+        &content_sha256,
         payload.note.as_deref(),
         AccountStatus::PendingReview.legacy_code(),
     )
@@ -3100,7 +5114,7 @@ async fn verify_profile_kyc_document_handler(
                 document_id: record.id.max(0) as u64,
                 hash: record.hash,
                 message: format!(
-                    "Profile document {} is now anchored to the Rust blockchain stub and pending review again.",
+                    "Profile document {} now has a verified SHA-256 content hash and is pending review again.",
                     record.document_name
                 ),
             }))
@@ -3115,7 +5129,7 @@ async fn verify_profile_kyc_document_handler(
             success: false,
             document_id: document_id.max(0) as u64,
             hash: None,
-            message: format!("Profile blockchain verification failed: {}", error),
+            message: format!("Profile content hash verification failed: {}", error),
         })),
     }
 }
@@ -3231,6 +5245,7 @@ async fn delete_profile_kyc_document_handler(
 fn publish_profile_document_realtime(state: &AppState, actor_name: &str, actor_user_id: i64) {
     state.publish_realtime(
         RoutedRealtimeEvent::new(RealtimeEvent {
+            request_id: None,
             kind: RealtimeEventKind::AdminDashboardUpdated,
             leg_id: None,
             conversation_id: None,
@@ -3340,6 +5355,7 @@ async fn upload_kyc_document_handler(
 
     state.publish_realtime(
         RoutedRealtimeEvent::new(RealtimeEvent {
+            request_id: None,
             kind: RealtimeEventKind::AdminDashboardUpdated,
             leg_id: None,
             conversation_id: None,
@@ -3508,20 +5524,17 @@ async fn parse_kyc_document_upload(
         .ok_or_else(|| "Choose a KYC document type before uploading a file.".to_string())?;
     let bytes =
         bytes.ok_or_else(|| "Choose a file before uploading a KYC document.".to_string())?;
-    if bytes.is_empty() {
-        return Err("Uploaded KYC files cannot be empty.".into());
-    }
+    let original_name = original_name
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "document.bin".into());
+    let verdict = validate_uploaded_document(&original_name, mime_type.as_deref(), &bytes)?;
 
     Ok(ParsedKycDocumentUpload {
         document_name,
         document_type,
-        original_name: original_name
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "document.bin".into()),
-        mime_type: mime_type
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty()),
+        original_name,
+        mime_type: verdict.normalized_mime_type,
         bytes,
     })
 }
@@ -3584,10 +5597,147 @@ fn text_response(status: StatusCode, message: &str) -> Response {
 mod tests {
     use super::*;
     use crate::test_support::{
-        fetch_password_reset_token, insert_user_with_role_status, prepare_pool, test_state,
+        auth_headers_for_user, fetch_password_reset_token, insert_user_with_role_status,
+        prepare_pool, test_state,
     };
     use serial_test::serial;
-    use shared::{ForgotPasswordRequest, LoginRequest, RegisterRequest};
+    use shared::{
+        EnterpriseSsoDiscoveryRequest, EnterpriseSsoOidcCallbackRequest, ForgotPasswordRequest,
+        LoginRequest, RegisterRequest, ScimDeprovisionRequest, ScimUpsertUserRequest,
+        UpdateCarrierCapacityRequest,
+    };
+
+    #[test]
+    fn sha256_hex_uses_file_bytes_not_mock_tokens() {
+        assert_eq!(
+            sha256_hex(b"stloads document bytes"),
+            "2c236321204a3754c2f4ebd233c071f0118706b551d811b7c852e3a393c294db"
+        );
+    }
+
+    #[test]
+    fn carrier_required_document_checklist_reports_missing_and_ready_documents() {
+        let missing = kyc_required_document_checklist(Some(UserRole::Carrier), &[]);
+        assert_eq!(missing.len(), 3);
+        assert!(missing.iter().all(|item| !item.is_satisfied));
+        assert!(
+            missing
+                .iter()
+                .any(|item| item.key == "operating_authority" && item.blocking_message.is_some())
+        );
+
+        let documents = vec![
+            test_kyc_document_item("Operating authority", "operating-authority.pdf"),
+            test_kyc_document_item("Insurance certificate", "coi.pdf"),
+            test_kyc_document_item("W-9 tax form", "w9.pdf"),
+        ];
+        let ready = kyc_required_document_checklist(Some(UserRole::Carrier), &documents);
+        assert!(ready.iter().all(|item| item.is_satisfied));
+        assert!(ready.iter().all(|item| item.status_tone == "success"));
+    }
+
+    #[test]
+    fn carrier_capacity_readiness_reports_matching_eligibility() {
+        assert_eq!(
+            carrier_capacity_readiness(
+                &["dry_van".into()],
+                &["tx".into()],
+                "available",
+                2,
+                1_000_000.0,
+            ),
+            "Eligible for capacity matching"
+        );
+        assert!(
+            carrier_capacity_readiness(&[], &["tx".into()], "available", 2, 1_000_000.0)
+                .contains("missing equipment")
+        );
+        assert!(
+            carrier_capacity_readiness(
+                &["dry_van".into()],
+                &["tx".into()],
+                "paused",
+                2,
+                1_000_000.0
+            )
+            .contains("unavailable")
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn carrier_capacity_profile_can_be_saved_and_loaded()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let carrier = insert_user_with_role_status(
+            &pool,
+            "Capacity Carrier",
+            "capacity-carrier@example.com",
+            UserRole::Carrier,
+            AccountStatus::Approved,
+        )
+        .await?;
+        let headers = auth_headers_for_user(&state, &carrier).await?;
+
+        let response = update_carrier_capacity(
+            State(state.clone()),
+            headers.clone(),
+            Json(UpdateCarrierCapacityRequest {
+                equipment_types: vec!["Dry Van".into(), "dry-van".into(), "Reefer".into()],
+                lane_preferences: vec!["Dallas to Chicago".into()],
+                operating_regions: vec!["TX".into(), "Midwest".into()],
+                preferred_commodities: vec!["consumer goods".into()],
+                service_levels: vec!["standard".into()],
+                certifications: vec!["hazmat".into()],
+                availability_status: "available".into(),
+                available_power_units: 3,
+                insurance_limit_usd: 1_000_000.0,
+                capacity_notes: Some("Weekday capacity only.".into()),
+            }),
+        )
+        .await
+        .0
+        .data;
+        assert!(response.success, "{}", response.message);
+        let capacity = response.capacity.expect("capacity payload");
+        assert_eq!(capacity.equipment_types, vec!["dry_van", "reefer"]);
+        assert_eq!(capacity.readiness_label, "Eligible for capacity matching");
+
+        let screen = profile_screen(State(state), headers).await.0.data;
+        let screen_capacity = screen.carrier_capacity.expect("screen capacity");
+        assert_eq!(screen_capacity.available_power_units, 3);
+        assert_eq!(screen_capacity.insurance_limit_usd, 1_000_000.0);
+
+        Ok(())
+    }
+
+    fn test_kyc_document_item(document_name: &str, file_label: &str) -> KycDocumentItem {
+        KycDocumentItem {
+            id: 1,
+            document_name: document_name.into(),
+            document_type: "standard".into(),
+            file_label: file_label.into(),
+            original_name: Some(file_label.into()),
+            mime_type: Some("application/pdf".into()),
+            file_size_bytes: Some(100),
+            uploaded_at_label: "May 25, 2026 00:00".into(),
+            download_path: None,
+            can_view_file: true,
+            blockchain_label: None,
+            blockchain_tone: None,
+            blockchain_hash_preview: None,
+            blockchain_hash: None,
+            can_edit: true,
+            can_verify_blockchain: false,
+            can_delete: true,
+            current_version: 1,
+            version_count: 1,
+            version_history_label: "v1 (original)".into(),
+        }
+    }
 
     #[tokio::test]
     #[serial]
@@ -3789,6 +5939,376 @@ mod tests {
                 .any(|permission| permission == "mfa_verified")
         );
         assert_eq!(verify_response.recovery_codes.len(), 8);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn enterprise_sso_discovery_blocks_password_login_when_routing_is_active()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let organization_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO organizations (name, slug, account_type, status, support_tier, created_at, updated_at)
+             VALUES ('SSO Customer', 'sso-customer', 'customer', 'active', 'enterprise', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO organization_domains (
+                organization_id, domain, verification_status, verification_token, verified_at, login_routing_enabled, created_at, updated_at
+             )
+             VALUES ($1, 'sso.example.com', 'verified', 'verify-sso-example', CURRENT_TIMESTAMP, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .bind(organization_id)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO enterprise_identity_providers (
+                organization_id, provider_type, status, display_name, sso_url, jit_enabled, default_role_key, created_at, updated_at
+             )
+             VALUES ($1, 'oidc', 'active', 'Example IdP', 'https://idp.example.com/login', TRUE, 'member', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .bind(organization_id)
+        .execute(&pool)
+        .await?;
+        let user = insert_user_with_role_status(
+            &pool,
+            "SSO Routed User",
+            "driver@sso.example.com",
+            UserRole::Carrier,
+            AccountStatus::Approved,
+        )
+        .await?;
+        sqlx::query("UPDATE users SET organization_id = $1 WHERE id = $2")
+            .bind(organization_id)
+            .bind(user.id)
+            .execute(&pool)
+            .await?;
+
+        let discovery = enterprise_sso_discovery(
+            State(state.clone()),
+            Json(EnterpriseSsoDiscoveryRequest {
+                email: user.email.clone(),
+            }),
+        )
+        .await
+        .0
+        .data;
+        assert!(discovery.sso_required);
+        assert!(!discovery.password_allowed);
+        assert_eq!(discovery.provider_type.as_deref(), Some("oidc"));
+
+        let login_response = login(
+            State(state),
+            HeaderMap::new(),
+            Json(LoginRequest {
+                email: user.email,
+                password: "Password123!".into(),
+            }),
+        )
+        .await
+        .0
+        .data;
+        assert!(!login_response.success);
+        assert_eq!(
+            login_response.next_step.as_deref(),
+            Some("https://idp.example.com/login")
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn enterprise_sso_oidc_callback_rejects_unconfigured_domain()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool);
+
+        let response = enterprise_sso_oidc_callback(
+            State(state),
+            Json(EnterpriseSsoOidcCallbackRequest {
+                email: "nobody@unconfigured.example".into(),
+                id_token: "not-a-jwt".into(),
+            }),
+        )
+        .await;
+
+        assert!(matches!(response, Err(StatusCode::UNAUTHORIZED)));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn scim_deprovision_revokes_active_sessions() -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let user = insert_user_with_role_status(
+            &pool,
+            "SCIM User",
+            "scim-user@example.com",
+            UserRole::Carrier,
+            AccountStatus::Approved,
+        )
+        .await?;
+        let session_token = auth_session::issue_session_token(&state, &user).await?;
+        assert!(
+            auth_session::resolve_session_from_token(&state, &session_token)
+                .await?
+                .is_some()
+        );
+        sqlx::query(
+            "INSERT INTO sessions (id, user_id, payload, last_activity)
+             VALUES ('legacy-session-scim', $1, '{}', 1)",
+        )
+        .bind(user.id)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO password_reset_tokens (email, token, created_at)
+             VALUES ($1, 'reset-before-scim', CURRENT_TIMESTAMP)
+             ON CONFLICT (email) DO UPDATE SET token = EXCLUDED.token",
+        )
+        .bind(&user.email)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO mfa_challenges (id, user_id, email, purpose, code_hash, expires_at, created_at, updated_at)
+             VALUES ($1, $2, $3, 'login', 'hash-before-scim', CURRENT_TIMESTAMP + INTERVAL '5 minutes', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(user.id)
+        .bind(&user.email)
+        .execute(&pool)
+        .await?;
+        sqlx::query("UPDATE users SET remember_token = 'legacy-remember' WHERE id = $1")
+            .bind(user.id)
+            .execute(&pool)
+            .await?;
+
+        let token_prefix = "testscim";
+        let token_secret = "secret-value";
+        sqlx::query(
+            "INSERT INTO scim_tokens (
+                organization_id, token_prefix, token_hash, label, status, created_at
+             )
+             VALUES (1, $1, $2, 'Test SCIM token', 'active', CURRENT_TIMESTAMP)",
+        )
+        .bind(token_prefix)
+        .bind(hash_scim_secret(token_secret))
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO scim_user_links (
+                organization_id, user_id, external_id, active, created_at, updated_at
+             )
+             VALUES (1, $1, 'external-scim-user', TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .bind(user.id)
+        .execute(&pool)
+        .await?;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer scim_{}.{}", token_prefix, token_secret))?,
+        );
+        let response = scim_deprovision(
+            State(state.clone()),
+            headers,
+            Json(ScimDeprovisionRequest {
+                external_id: Some("external-scim-user".into()),
+                email: None,
+                user_id: None,
+                reason: Some("Removed in identity provider".into()),
+            }),
+        )
+        .await
+        .map_err(|status| format!("SCIM deprovision failed with status {status}"))?
+        .0
+        .data;
+
+        assert!(response.success);
+        assert_eq!(response.user_id, Some(user.id.max(0) as u64));
+        assert_eq!(response.revoked_sessions, 5);
+        assert!(
+            auth_session::resolve_session_from_token(&state, &session_token)
+                .await?
+                .is_none()
+        );
+
+        let membership_status = sqlx::query_scalar::<_, String>(
+            "SELECT status
+             FROM organization_memberships
+             WHERE organization_id = 1
+               AND user_id = $1",
+        )
+        .bind(user.id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(membership_status, "deprovisioned");
+        let remaining_artifacts = sqlx::query_scalar::<_, i64>(
+            "SELECT
+                (SELECT COUNT(*) FROM personal_access_tokens WHERE tokenable_id = $1)
+              + (SELECT COUNT(*) FROM sessions WHERE user_id = $1)
+              + (SELECT COUNT(*) FROM password_reset_tokens WHERE email = $2)
+              + (SELECT COUNT(*) FROM mfa_challenges WHERE user_id = $1)
+              + (SELECT COUNT(*) FROM users WHERE id = $1 AND remember_token IS NOT NULL)",
+        )
+        .bind(user.id)
+        .bind(&user.email)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(remaining_artifacts, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn scim_upsert_provisions_updates_and_reactivates_users()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(pool) = prepare_pool().await? else {
+            return Ok(());
+        };
+        let state = test_state(pool.clone());
+        let token_prefix = "upsertscim";
+        let token_secret = "secret-value";
+        sqlx::query(
+            "INSERT INTO scim_tokens (
+                organization_id, token_prefix, token_hash, label, status, created_at
+             )
+             VALUES (1, $1, $2, 'Upsert SCIM token', 'active', CURRENT_TIMESTAMP)",
+        )
+        .bind(token_prefix)
+        .bind(hash_scim_secret(token_secret))
+        .execute(&pool)
+        .await?;
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer scim_{}.{}", token_prefix, token_secret))?,
+        );
+
+        let created = scim_upsert_user(
+            State(state.clone()),
+            headers.clone(),
+            Json(ScimUpsertUserRequest {
+                external_id: "worker-100".into(),
+                email: "worker-100@example.com".into(),
+                name: "Worker One Hundred".into(),
+                role_key: Some("carrier".into()),
+                active: true,
+                reason: Some("Initial IdP assignment".into()),
+            }),
+        )
+        .await
+        .map_err(|status| format!("SCIM provision failed with status {status}"))?
+        .0
+        .data;
+        assert!(created.success);
+        assert!(created.created);
+        let user_id = created.user_id.expect("created user id") as i64;
+
+        let user = find_user_by_id(&pool, user_id)
+            .await?
+            .expect("created user");
+        let session_token = auth_session::issue_session_token(&state, &user).await?;
+        assert!(
+            auth_session::resolve_session_from_token(&state, &session_token)
+                .await?
+                .is_some()
+        );
+
+        let updated = scim_upsert_user(
+            State(state.clone()),
+            headers.clone(),
+            Json(ScimUpsertUserRequest {
+                external_id: "worker-100".into(),
+                email: "worker-100@example.com".into(),
+                name: "Worker 100 Updated".into(),
+                role_key: Some("broker".into()),
+                active: true,
+                reason: Some("Role changed in IdP".into()),
+            }),
+        )
+        .await
+        .map_err(|status| format!("SCIM update failed with status {status}"))?
+        .0
+        .data;
+        assert!(updated.success);
+        assert!(!updated.created);
+        assert_eq!(updated.revoked_sessions, 1);
+        assert!(
+            auth_session::resolve_session_from_token(&state, &session_token)
+                .await?
+                .is_none()
+        );
+
+        let deactivated = scim_upsert_user(
+            State(state.clone()),
+            headers.clone(),
+            Json(ScimUpsertUserRequest {
+                external_id: "worker-100".into(),
+                email: "worker-100@example.com".into(),
+                name: "Worker 100 Updated".into(),
+                role_key: Some("broker".into()),
+                active: false,
+                reason: Some("Temporarily removed".into()),
+            }),
+        )
+        .await
+        .map_err(|status| format!("SCIM deactivate failed with status {status}"))?
+        .0
+        .data;
+        assert!(deactivated.success);
+
+        let membership_status = sqlx::query_scalar::<_, String>(
+            "SELECT status FROM organization_memberships WHERE organization_id = 1 AND user_id = $1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(membership_status, "deprovisioned");
+
+        let reactivated = scim_upsert_user(
+            State(state),
+            headers,
+            Json(ScimUpsertUserRequest {
+                external_id: "worker-100".into(),
+                email: "worker-100@example.com".into(),
+                name: "Worker 100 Updated".into(),
+                role_key: Some("broker".into()),
+                active: true,
+                reason: Some("Restored in IdP".into()),
+            }),
+        )
+        .await
+        .map_err(|status| format!("SCIM reactivate failed with status {status}"))?
+        .0
+        .data;
+        assert!(reactivated.success);
+        assert!(reactivated.reactivated);
+
+        let event_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*)
+             FROM scim_events
+             WHERE organization_id = 1
+               AND external_id = 'worker-100'
+               AND action IN ('provision', 'update', 'reactivate')",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(event_count, 4);
 
         Ok(())
     }

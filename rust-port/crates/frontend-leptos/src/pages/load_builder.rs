@@ -5,386 +5,19 @@ use leptos_router::{
 };
 
 use crate::{
-    api, google_places, runtime_config,
+    api, google_places,
     session::{self, use_auth},
 };
-use shared::{CreateLoadLegRequest, CreateLoadRequest, LoadBuilderScreen};
+use shared::LoadBuilderScreen;
 
-#[derive(Debug, Clone, PartialEq)]
-struct LoadLegDraft {
-    pickup_location_address: String,
-    pickup_city: String,
-    pickup_country: String,
-    pickup_place_id: String,
-    pickup_latitude: String,
-    pickup_longitude: String,
-    delivery_location_address: String,
-    delivery_city: String,
-    delivery_country: String,
-    delivery_place_id: String,
-    delivery_latitude: String,
-    delivery_longitude: String,
-    pickup_date: String,
-    delivery_date: String,
-    bid_status: String,
-    price: String,
-}
-
-fn default_bid_status(options: &[String]) -> String {
-    options.first().cloned().unwrap_or_else(|| "Fixed".into())
-}
-
-fn default_weight_unit(options: &[String]) -> String {
-    options.first().cloned().unwrap_or_else(|| "LBS".into())
-}
-
-fn default_leg(screen: &LoadBuilderScreen) -> LoadLegDraft {
-    LoadLegDraft {
-        pickup_location_address: String::new(),
-        pickup_city: String::new(),
-        pickup_country: String::new(),
-        pickup_place_id: String::new(),
-        pickup_latitude: String::new(),
-        pickup_longitude: String::new(),
-        delivery_location_address: String::new(),
-        delivery_city: String::new(),
-        delivery_country: String::new(),
-        delivery_place_id: String::new(),
-        delivery_latitude: String::new(),
-        delivery_longitude: String::new(),
-        pickup_date: String::new(),
-        delivery_date: String::new(),
-        bid_status: default_bid_status(&screen.bid_status_options),
-        price: String::new(),
-    }
-}
-
-fn first_option_id<T>(items: &[T], id: impl Fn(&T) -> u64) -> String {
-    items
-        .first()
-        .map(|item| id(item).to_string())
-        .unwrap_or_default()
-}
-
-fn parse_required_u64(label: &str, value: &str) -> Result<u64, String> {
-    value
-        .trim()
-        .parse::<u64>()
-        .map_err(|_| format!("Select a valid {} before saving the load.", label))
-}
-
-fn parse_positive_f64(label: &str, value: &str) -> Result<f64, String> {
-    let parsed = value
-        .trim()
-        .parse::<f64>()
-        .map_err(|_| format!("Enter a valid {}.", label))?;
-    if parsed > 0.0 {
-        Ok(parsed)
-    } else {
-        Err(format!("{} must be greater than zero.", label))
-    }
-}
-
-fn parse_non_negative_f64(label: &str, value: &str) -> Result<f64, String> {
-    let parsed = value
-        .trim()
-        .parse::<f64>()
-        .map_err(|_| format!("Enter a valid {}.", label))?;
-    if parsed >= 0.0 {
-        Ok(parsed)
-    } else {
-        Err(format!("{} cannot be negative.", label))
-    }
-}
-
-fn parse_optional_f64(value: &str) -> Result<Option<f64>, String> {
-    if value.trim().is_empty() {
-        Ok(None)
-    } else {
-        value
-            .trim()
-            .parse::<f64>()
-            .map(Some)
-            .map_err(|_| "Google location coordinates could not be parsed.".into())
-    }
-}
-
-fn build_create_load_request(
-    title: &str,
-    load_type_id: &str,
-    equipment_id: &str,
-    commodity_type_id: &str,
-    weight_unit: &str,
-    weight: &str,
-    special_instructions: &str,
-    is_hazardous: bool,
-    is_temperature_controlled: bool,
-    legs: &[LoadLegDraft],
-) -> Result<CreateLoadRequest, String> {
-    let title = title.trim().to_string();
-    if title.is_empty() {
-        return Err("Enter a load title before saving.".into());
-    }
-
-    if legs.is_empty() {
-        return Err("Add at least one leg before saving the load.".into());
-    }
-
-    let legs = legs
-        .iter()
-        .enumerate()
-        .map(|(index, leg)| {
-            let pickup_location_address = leg.pickup_location_address.trim().to_string();
-            if pickup_location_address.is_empty() {
-                return Err(format!(
-                    "Use Google autocomplete or enter a pickup address for leg {}.",
-                    index + 1
-                ));
-            }
-
-            let delivery_location_address = leg.delivery_location_address.trim().to_string();
-            if delivery_location_address.is_empty() {
-                return Err(format!(
-                    "Use Google autocomplete or enter a delivery address for leg {}.",
-                    index + 1
-                ));
-            }
-
-            if pickup_location_address.eq_ignore_ascii_case(&delivery_location_address) {
-                return Err(format!(
-                    "Leg {} must use different pickup and delivery addresses.",
-                    index + 1
-                ));
-            }
-
-            let pickup_date = leg.pickup_date.trim().to_string();
-            if pickup_date.is_empty() {
-                return Err(format!("Enter a pickup date for leg {}.", index + 1));
-            }
-
-            let delivery_date = leg.delivery_date.trim().to_string();
-            if delivery_date.is_empty() {
-                return Err(format!("Enter a delivery date for leg {}.", index + 1));
-            }
-
-            let bid_status = leg.bid_status.trim().to_string();
-            if !matches!(bid_status.as_str(), "Fixed" | "Open") {
-                return Err(format!(
-                    "Leg {} must use Fixed or Open bid status.",
-                    index + 1
-                ));
-            }
-
-            Ok(CreateLoadLegRequest {
-                pickup_location_id: None,
-                pickup_location_address: Some(pickup_location_address),
-                pickup_city: (!leg.pickup_city.trim().is_empty())
-                    .then_some(leg.pickup_city.trim().to_string()),
-                pickup_country: (!leg.pickup_country.trim().is_empty())
-                    .then_some(leg.pickup_country.trim().to_string()),
-                pickup_place_id: (!leg.pickup_place_id.trim().is_empty())
-                    .then_some(leg.pickup_place_id.trim().to_string()),
-                pickup_latitude: parse_optional_f64(&leg.pickup_latitude)?,
-                pickup_longitude: parse_optional_f64(&leg.pickup_longitude)?,
-                delivery_location_id: None,
-                delivery_location_address: Some(delivery_location_address),
-                delivery_city: (!leg.delivery_city.trim().is_empty())
-                    .then_some(leg.delivery_city.trim().to_string()),
-                delivery_country: (!leg.delivery_country.trim().is_empty())
-                    .then_some(leg.delivery_country.trim().to_string()),
-                delivery_place_id: (!leg.delivery_place_id.trim().is_empty())
-                    .then_some(leg.delivery_place_id.trim().to_string()),
-                delivery_latitude: parse_optional_f64(&leg.delivery_latitude)?,
-                delivery_longitude: parse_optional_f64(&leg.delivery_longitude)?,
-                pickup_date,
-                delivery_date,
-                bid_status,
-                price: parse_non_negative_f64(&format!("price for leg {}", index + 1), &leg.price)?,
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(CreateLoadRequest {
-        title,
-        load_type_id: parse_required_u64("load type", load_type_id)?,
-        equipment_id: parse_required_u64("equipment", equipment_id)?,
-        commodity_type_id: parse_required_u64("commodity type", commodity_type_id)?,
-        weight_unit: weight_unit.trim().to_string(),
-        weight: parse_positive_f64("weight", weight)?,
-        special_instructions: if special_instructions.trim().is_empty() {
-            None
-        } else {
-            Some(special_instructions.trim().to_string())
-        },
-        is_hazardous,
-        is_temperature_controlled,
-        legs,
-    })
-}
-
-fn initialize_form(
-    screen: &LoadBuilderScreen,
-    title: RwSignal<String>,
-    load_type_id: RwSignal<String>,
-    equipment_id: RwSignal<String>,
-    commodity_type_id: RwSignal<String>,
-    weight_unit: RwSignal<String>,
-    weight: RwSignal<String>,
-    special_instructions: RwSignal<String>,
-    is_hazardous: RwSignal<bool>,
-    is_temperature_controlled: RwSignal<bool>,
-    legs: RwSignal<Vec<LoadLegDraft>>,
-) {
-    if let Some(draft) = screen.draft.as_ref() {
-        title.set(draft.title.clone());
-        load_type_id.set(
-            draft
-                .load_type_id
-                .map(|value| value.to_string())
-                .unwrap_or_else(|| first_option_id(&screen.load_type_options, |option| option.id)),
-        );
-        equipment_id.set(
-            draft
-                .equipment_id
-                .map(|value| value.to_string())
-                .unwrap_or_else(|| first_option_id(&screen.equipment_options, |option| option.id)),
-        );
-        commodity_type_id.set(
-            draft
-                .commodity_type_id
-                .map(|value| value.to_string())
-                .unwrap_or_else(|| {
-                    first_option_id(&screen.commodity_type_options, |option| option.id)
-                }),
-        );
-        weight_unit.set(
-            draft
-                .weight_unit
-                .clone()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| default_weight_unit(&screen.weight_units)),
-        );
-        weight.set(
-            draft
-                .weight
-                .map(|value| format!("{:.2}", value))
-                .unwrap_or_default(),
-        );
-        special_instructions.set(draft.special_instructions.clone().unwrap_or_default());
-        is_hazardous.set(draft.is_hazardous);
-        is_temperature_controlled.set(draft.is_temperature_controlled);
-        legs.set(if draft.legs.is_empty() {
-            vec![default_leg(screen)]
-        } else {
-            draft
-                .legs
-                .iter()
-                .map(|leg| LoadLegDraft {
-                    pickup_location_address: leg.pickup_location_address.clone(),
-                    pickup_city: leg.pickup_city.clone().unwrap_or_default(),
-                    pickup_country: leg.pickup_country.clone().unwrap_or_default(),
-                    pickup_place_id: leg.pickup_place_id.clone().unwrap_or_default(),
-                    pickup_latitude: leg
-                        .pickup_latitude
-                        .map(|value| value.to_string())
-                        .unwrap_or_default(),
-                    pickup_longitude: leg
-                        .pickup_longitude
-                        .map(|value| value.to_string())
-                        .unwrap_or_default(),
-                    delivery_location_address: leg.delivery_location_address.clone(),
-                    delivery_city: leg.delivery_city.clone().unwrap_or_default(),
-                    delivery_country: leg.delivery_country.clone().unwrap_or_default(),
-                    delivery_place_id: leg.delivery_place_id.clone().unwrap_or_default(),
-                    delivery_latitude: leg
-                        .delivery_latitude
-                        .map(|value| value.to_string())
-                        .unwrap_or_default(),
-                    delivery_longitude: leg
-                        .delivery_longitude
-                        .map(|value| value.to_string())
-                        .unwrap_or_default(),
-                    pickup_date: leg.pickup_date.clone(),
-                    delivery_date: leg.delivery_date.clone(),
-                    bid_status: if leg.bid_status.trim().is_empty() {
-                        default_bid_status(&screen.bid_status_options)
-                    } else {
-                        leg.bid_status.clone()
-                    },
-                    price: leg
-                        .price
-                        .map(|value| format!("{:.2}", value))
-                        .unwrap_or_default(),
-                })
-                .collect()
-        });
-        return;
-    }
-
-    title.set(String::new());
-    load_type_id.set(first_option_id(&screen.load_type_options, |option| {
-        option.id
-    }));
-    equipment_id.set(first_option_id(&screen.equipment_options, |option| {
-        option.id
-    }));
-    commodity_type_id.set(first_option_id(&screen.commodity_type_options, |option| {
-        option.id
-    }));
-    weight_unit.set(default_weight_unit(&screen.weight_units));
-    weight.set(String::new());
-    special_instructions.set(String::new());
-    is_hazardous.set(false);
-    is_temperature_controlled.set(false);
-    legs.set(vec![default_leg(screen)]);
-}
-
-fn google_maps_api_key() -> Option<String> {
-    runtime_config::google_maps_api_key().or_else(|| {
-        option_env!("GOOGLE_MAPS_API_KEY")
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-    })
-}
-
-fn pickup_address_input_id(index: usize) -> String {
-    format!("load-leg-{}-pickup-address", index)
-}
-fn pickup_city_input_id(index: usize) -> String {
-    format!("load-leg-{}-pickup-city", index)
-}
-fn pickup_country_input_id(index: usize) -> String {
-    format!("load-leg-{}-pickup-country", index)
-}
-fn pickup_place_id_input_id(index: usize) -> String {
-    format!("load-leg-{}-pickup-place-id", index)
-}
-fn pickup_latitude_input_id(index: usize) -> String {
-    format!("load-leg-{}-pickup-latitude", index)
-}
-fn pickup_longitude_input_id(index: usize) -> String {
-    format!("load-leg-{}-pickup-longitude", index)
-}
-fn delivery_address_input_id(index: usize) -> String {
-    format!("load-leg-{}-delivery-address", index)
-}
-fn delivery_city_input_id(index: usize) -> String {
-    format!("load-leg-{}-delivery-city", index)
-}
-fn delivery_country_input_id(index: usize) -> String {
-    format!("load-leg-{}-delivery-country", index)
-}
-fn delivery_place_id_input_id(index: usize) -> String {
-    format!("load-leg-{}-delivery-place-id", index)
-}
-fn delivery_latitude_input_id(index: usize) -> String {
-    format!("load-leg-{}-delivery-latitude", index)
-}
-fn delivery_longitude_input_id(index: usize) -> String {
-    format!("load-leg-{}-delivery-longitude", index)
-}
-
+use super::load_builder_helpers::{
+    FIELD_INPUT_STYLE, FIELD_LABEL_STYLE, FIELD_SELECT_STYLE, FIELD_TEXTAREA_STYLE, LoadLegDraft,
+    build_create_load_request, default_leg, delivery_address_input_id, delivery_city_input_id,
+    delivery_country_input_id, delivery_latitude_input_id, delivery_longitude_input_id,
+    delivery_place_id_input_id, google_maps_api_key, initialize_form, pickup_address_input_id,
+    pickup_city_input_id, pickup_country_input_id, pickup_latitude_input_id,
+    pickup_longitude_input_id, pickup_place_id_input_id,
+};
 #[component]
 pub fn LoadBuilderPage() -> impl IntoView {
     let navigate = use_navigate();
@@ -402,8 +35,24 @@ pub fn LoadBuilderPage() -> impl IntoView {
     let load_type_id = RwSignal::new(String::new());
     let equipment_id = RwSignal::new(String::new());
     let commodity_type_id = RwSignal::new(String::new());
+    let freight_mode = RwSignal::new("FTL".to_string());
+    let visibility = RwSignal::new("public".to_string());
+    let service_level = RwSignal::new(String::new());
+    let customer_reference = RwSignal::new(String::new());
+    let po_number = RwSignal::new(String::new());
+    let pickup_appointment_ref = RwSignal::new(String::new());
+    let delivery_appointment_ref = RwSignal::new(String::new());
+    let facility_contact_name = RwSignal::new(String::new());
+    let facility_contact_phone = RwSignal::new(String::new());
+    let facility_contact_email = RwSignal::new(String::new());
+    let appointment_window_start = RwSignal::new(String::new());
+    let appointment_window_end = RwSignal::new(String::new());
+    let accessorial_flags = RwSignal::new(String::new());
     let weight_unit = RwSignal::new("LBS".to_string());
     let weight = RwSignal::new(String::new());
+    let temperature_data = RwSignal::new(String::new());
+    let container_data = RwSignal::new(String::new());
+    let securement_data = RwSignal::new(String::new());
     let special_instructions = RwSignal::new(String::new());
     let is_hazardous = RwSignal::new(false);
     let is_temperature_controlled = RwSignal::new(false);
@@ -452,7 +101,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
         }
 
         is_loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::fetch_load_builder_screen(editing_load_id).await {
@@ -464,8 +113,24 @@ pub fn LoadBuilderPage() -> impl IntoView {
                         load_type_id,
                         equipment_id,
                         commodity_type_id,
+                        freight_mode,
+                        visibility,
+                        service_level,
+                        customer_reference,
+                        po_number,
+                        pickup_appointment_ref,
+                        delivery_appointment_ref,
+                        facility_contact_name,
+                        facility_contact_phone,
+                        facility_contact_email,
+                        appointment_window_start,
+                        appointment_window_end,
+                        accessorial_flags,
                         weight_unit,
                         weight,
+                        temperature_data,
+                        container_data,
+                        securement_data,
                         special_instructions,
                         is_hazardous,
                         is_temperature_controlled,
@@ -574,8 +239,24 @@ pub fn LoadBuilderPage() -> impl IntoView {
             &load_type_id.get(),
             &equipment_id.get(),
             &commodity_type_id.get(),
+            &freight_mode.get(),
+            &visibility.get(),
+            &service_level.get(),
+            &customer_reference.get(),
+            &po_number.get(),
+            &pickup_appointment_ref.get(),
+            &delivery_appointment_ref.get(),
+            &facility_contact_name.get(),
+            &facility_contact_phone.get(),
+            &facility_contact_email.get(),
+            &appointment_window_start.get(),
+            &appointment_window_end.get(),
+            &accessorial_flags.get(),
             &weight_unit.get(),
             &weight.get(),
+            &temperature_data.get(),
+            &container_data.get(),
+            &securement_data.get(),
             &special_instructions.get(),
             is_hazardous.get(),
             is_temperature_controlled.get(),
@@ -590,7 +271,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
 
         is_submitting.set(true);
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
         let navigate = navigate.clone();
 
         spawn_local(async move {
@@ -612,8 +293,24 @@ pub fn LoadBuilderPage() -> impl IntoView {
                                 load_type_id,
                                 equipment_id,
                                 commodity_type_id,
+                                freight_mode,
+                                visibility,
+                                service_level,
+                                customer_reference,
+                                po_number,
+                                pickup_appointment_ref,
+                                delivery_appointment_ref,
+                                facility_contact_name,
+                                facility_contact_phone,
+                                facility_contact_email,
+                                appointment_window_start,
+                                appointment_window_end,
+                                accessorial_flags,
                                 weight_unit,
                                 weight,
+                                temperature_data,
+                                container_data,
+                                securement_data,
                                 special_instructions,
                                 is_hazardous,
                                 is_temperature_controlled,
@@ -640,7 +337,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
     view! {
         <article style="display:grid;gap:1.25rem;max-width:1100px;">
             <section style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                <div style="display:grid;gap:0.35rem;">
+                <div style=FIELD_LABEL_STYLE>
                     <h2>{move || screen.get().map(|value| value.title).unwrap_or_else(|| "Create Load".into())}</h2>
                     <p>{move || screen.get().map(|value| value.subtitle).unwrap_or_else(|| "Rust builder for Google-address load creation.".into())}</p>
                 </div>
@@ -673,44 +370,116 @@ pub fn LoadBuilderPage() -> impl IntoView {
                             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;align-items:start;">
                                 <label style="display:grid;gap:0.35rem;grid-column:span 2;">
                                     <span>"Load title"</span>
-                                    <input type="text" prop:value=move || title.get() on:input=move |ev| title.set(event_target_value(&ev)) placeholder="Dallas to Joliet produce reload" style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;" />
+                                    <input type="text" prop:value=move || title.get() on:input=move |ev| title.set(event_target_value(&ev)) placeholder="Dallas to Joliet produce reload" style=FIELD_INPUT_STYLE />
                                 </label>
 
-                                <label style="display:grid;gap:0.35rem;">
+                                <label style=FIELD_LABEL_STYLE>
                                     <span>"Load type"</span>
-                                    <select prop:value=move || load_type_id.get() on:change=move |ev| load_type_id.set(event_target_value(&ev)) style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;background:white;">
+                                    <select prop:value=move || load_type_id.get() on:change=move |ev| load_type_id.set(event_target_value(&ev)) style=FIELD_SELECT_STYLE>
                                         <option value="">"Select load type"</option>
                                         {move || screen.get().map(|value| value.load_type_options.into_iter().map(|option| view! { <option value={option.id.to_string()}>{option.label}</option> }).collect_view())}
                                     </select>
                                 </label>
 
-                                <label style="display:grid;gap:0.35rem;">
+                                <label style=FIELD_LABEL_STYLE>
                                     <span>"Equipment"</span>
-                                    <select prop:value=move || equipment_id.get() on:change=move |ev| equipment_id.set(event_target_value(&ev)) style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;background:white;">
+                                    <select prop:value=move || equipment_id.get() on:change=move |ev| equipment_id.set(event_target_value(&ev)) style=FIELD_SELECT_STYLE>
                                         <option value="">"Select equipment"</option>
                                         {move || screen.get().map(|value| value.equipment_options.into_iter().map(|option| view! { <option value={option.id.to_string()}>{option.label}</option> }).collect_view())}
                                     </select>
                                 </label>
 
-                                <label style="display:grid;gap:0.35rem;">
+                                <label style=FIELD_LABEL_STYLE>
                                     <span>"Commodity type"</span>
-                                    <select prop:value=move || commodity_type_id.get() on:change=move |ev| commodity_type_id.set(event_target_value(&ev)) style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;background:white;">
+                                    <select prop:value=move || commodity_type_id.get() on:change=move |ev| commodity_type_id.set(event_target_value(&ev)) style=FIELD_SELECT_STYLE>
                                         <option value="">"Select commodity type"</option>
                                         {move || screen.get().map(|value| value.commodity_type_options.into_iter().map(|option| view! { <option value={option.id.to_string()}>{option.label}</option> }).collect_view())}
                                     </select>
                                 </label>
 
-                                <label style="display:grid;gap:0.35rem;">
+                                <label style=FIELD_LABEL_STYLE>
+                                    <span>"Freight mode"</span>
+                                    <select prop:value=move || freight_mode.get() on:change=move |ev| freight_mode.set(event_target_value(&ev)) style=FIELD_SELECT_STYLE>
+                                        <option value="FTL">"FTL"</option>
+                                        <option value="LTL">"LTL"</option>
+                                        <option value="intermodal">"Intermodal"</option>
+                                        <option value="drayage">"Drayage"</option>
+                                        <option value="cross_border" disabled=true>"Cross-border deferred"</option>
+                                        <option value="freight_forwarding" disabled=true>"Freight forwarding deferred"</option>
+                                        <option value="mixed_mode" disabled=true>"Mixed mode deferred"</option>
+                                    </select>
+                                </label>
+
+                                <label style=FIELD_LABEL_STYLE>
+                                    <span>"Visibility"</span>
+                                    <select prop:value=move || visibility.get() on:change=move |ev| visibility.set(event_target_value(&ev)) style=FIELD_SELECT_STYLE>
+                                        <option value="public">"Public"</option>
+                                        <option value="private">"Private"</option>
+                                        <option value="contract">"Contract"</option>
+                                        <option value="internal">"Internal only"</option>
+                                    </select>
+                                </label>
+
+                                <label style=FIELD_LABEL_STYLE>
+                                    <span>"Service level"</span>
+                                    <input type="text" prop:value=move || service_level.get() on:input=move |ev| service_level.set(event_target_value(&ev)) placeholder="Standard, expedited, team, guaranteed" style=FIELD_INPUT_STYLE />
+                                </label>
+
+                                <label style=FIELD_LABEL_STYLE>
+                                    <span>"Customer reference"</span>
+                                    <input type="text" prop:value=move || customer_reference.get() on:input=move |ev| customer_reference.set(event_target_value(&ev)) placeholder="Customer load or tender ID" style=FIELD_INPUT_STYLE />
+                                </label>
+
+                                <label style=FIELD_LABEL_STYLE>
+                                    <span>"PO number"</span>
+                                    <input type="text" prop:value=move || po_number.get() on:input=move |ev| po_number.set(event_target_value(&ev)) placeholder="PO, sales order, or shipper ref" style=FIELD_INPUT_STYLE />
+                                </label>
+
+                                <label style=FIELD_LABEL_STYLE>
                                     <span>"Weight unit"</span>
-                                    <select prop:value=move || weight_unit.get() on:change=move |ev| weight_unit.set(event_target_value(&ev)) style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;background:white;">
+                                    <select prop:value=move || weight_unit.get() on:change=move |ev| weight_unit.set(event_target_value(&ev)) style=FIELD_SELECT_STYLE>
                                         {move || screen.get().map(|value| value.weight_units.into_iter().map(|unit| view! { <option value={unit.clone()}>{unit.clone()}</option> }).collect_view())}
                                     </select>
                                 </label>
 
-                                <label style="display:grid;gap:0.35rem;">
+                                <label style=FIELD_LABEL_STYLE>
                                     <span>"Weight"</span>
-                                    <input type="number" step="0.01" min="0" prop:value=move || weight.get() on:input=move |ev| weight.set(event_target_value(&ev)) placeholder="42000" style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;" />
+                                    <input type="number" step="0.01" min="0" prop:value=move || weight.get() on:input=move |ev| weight.set(event_target_value(&ev)) placeholder="42000" style=FIELD_INPUT_STYLE />
                                 </label>
+                            </section>
+
+                            <section style="display:grid;gap:0.85rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;padding:1rem;">
+                                <strong>"Appointments and facility contact"</strong>
+                                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;align-items:start;">
+                                    <label style=FIELD_LABEL_STYLE>
+                                        <span>"Pickup appointment ref"</span>
+                                        <input type="text" prop:value=move || pickup_appointment_ref.get() on:input=move |ev| pickup_appointment_ref.set(event_target_value(&ev)) placeholder="Pickup confirmation" style=FIELD_INPUT_STYLE />
+                                    </label>
+                                    <label style=FIELD_LABEL_STYLE>
+                                        <span>"Delivery appointment ref"</span>
+                                        <input type="text" prop:value=move || delivery_appointment_ref.get() on:input=move |ev| delivery_appointment_ref.set(event_target_value(&ev)) placeholder="Delivery confirmation" style=FIELD_INPUT_STYLE />
+                                    </label>
+                                    <label style=FIELD_LABEL_STYLE>
+                                        <span>"Window start"</span>
+                                        <input type="datetime-local" prop:value=move || appointment_window_start.get() on:input=move |ev| appointment_window_start.set(event_target_value(&ev)) style=FIELD_INPUT_STYLE />
+                                    </label>
+                                    <label style=FIELD_LABEL_STYLE>
+                                        <span>"Window end"</span>
+                                        <input type="datetime-local" prop:value=move || appointment_window_end.get() on:input=move |ev| appointment_window_end.set(event_target_value(&ev)) style=FIELD_INPUT_STYLE />
+                                    </label>
+                                    <label style=FIELD_LABEL_STYLE>
+                                        <span>"Contact name"</span>
+                                        <input type="text" prop:value=move || facility_contact_name.get() on:input=move |ev| facility_contact_name.set(event_target_value(&ev)) placeholder="Dock or facility contact" style=FIELD_INPUT_STYLE />
+                                    </label>
+                                    <label style=FIELD_LABEL_STYLE>
+                                        <span>"Contact phone"</span>
+                                        <input type="tel" prop:value=move || facility_contact_phone.get() on:input=move |ev| facility_contact_phone.set(event_target_value(&ev)) placeholder="+1 555 0100" style=FIELD_INPUT_STYLE />
+                                    </label>
+                                    <label style=FIELD_LABEL_STYLE>
+                                        <span>"Contact email"</span>
+                                        <input type="email" prop:value=move || facility_contact_email.get() on:input=move |ev| facility_contact_email.set(event_target_value(&ev)) placeholder="shipping@example.com" style=FIELD_INPUT_STYLE />
+                                    </label>
+                                </div>
                             </section>
 
                             <section style="display:grid;gap:0.85rem;border:1px solid #e5e7eb;border-radius:1rem;background:#ffffff;padding:1rem;">
@@ -725,7 +494,25 @@ pub fn LoadBuilderPage() -> impl IntoView {
                                         <span>"Temperature controlled"</span>
                                     </label>
                                 </div>
-                                <label style="display:grid;gap:0.35rem;">
+                                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;align-items:start;">
+                                    <label style=FIELD_LABEL_STYLE>
+                                        <span>"Accessorials"</span>
+                                        <textarea prop:value=move || accessorial_flags.get() on:input=move |ev| accessorial_flags.set(event_target_value(&ev)) placeholder="Detention, lumper, liftgate, inside delivery, or JSON" style=FIELD_TEXTAREA_STYLE></textarea>
+                                    </label>
+                                    <label style=FIELD_LABEL_STYLE>
+                                        <span>"Temperature details"</span>
+                                        <textarea prop:value=move || temperature_data.get() on:input=move |ev| temperature_data.set(event_target_value(&ev)) placeholder="34-38 F continuous, pre-cool, pulp checks, or JSON" style=FIELD_TEXTAREA_STYLE></textarea>
+                                    </label>
+                                    <label style=FIELD_LABEL_STYLE>
+                                        <span>"Container details"</span>
+                                        <textarea prop:value=move || container_data.get() on:input=move |ev| container_data.set(event_target_value(&ev)) placeholder="Container size, chassis, seal, genset, or JSON" style=FIELD_TEXTAREA_STYLE></textarea>
+                                    </label>
+                                    <label style=FIELD_LABEL_STYLE>
+                                        <span>"Securement details"</span>
+                                        <textarea prop:value=move || securement_data.get() on:input=move |ev| securement_data.set(event_target_value(&ev)) placeholder="Straps, chains, tarps, dunnage, edge protectors, or JSON" style=FIELD_TEXTAREA_STYLE></textarea>
+                                    </label>
+                                </div>
+                                <label style=FIELD_LABEL_STYLE>
                                     <span>"Special instructions"</span>
                                     <textarea prop:value=move || special_instructions.get() on:input=move |ev| special_instructions.set(event_target_value(&ev)) placeholder="Appointment notes, lumper details, securement reminders, or customer-specific instructions." style="min-height:120px;padding:0.9rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;resize:vertical;"></textarea>
                                 </label>
@@ -786,7 +573,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
                                                                     item.pickup_location_address = value.clone();
                                                                 }
                                                             });
-                                                        } placeholder="Search pickup address with Google" style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;" />
+                                                        } placeholder="Search pickup address with Google" style=FIELD_INPUT_STYLE />
                                                     </label>
 
                                                     <label style="display:grid;gap:0.35rem;grid-column:span 2;">
@@ -798,7 +585,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
                                                                     item.delivery_location_address = value.clone();
                                                                 }
                                                             });
-                                                        } placeholder="Search delivery address with Google" style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;" />
+                                                        } placeholder="Search delivery address with Google" style=FIELD_INPUT_STYLE />
                                                     </label>
 
                                                     <input id=pickup_city_id type="hidden" prop:value=leg.pickup_city.clone() on:input=move |ev| {
@@ -893,7 +680,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
                                                         </div>
                                                     </div>
 
-                                                    <label style="display:grid;gap:0.35rem;">
+                                                    <label style=FIELD_LABEL_STYLE>
                                                         <span>"Pickup date"</span>
                                                         <input type="date" prop:value=leg.pickup_date.clone() on:input=move |ev| {
                                                             let value = event_target_value(&ev);
@@ -902,10 +689,10 @@ pub fn LoadBuilderPage() -> impl IntoView {
                                                                     item.pickup_date = value.clone();
                                                                 }
                                                             });
-                                                        } style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;" />
+                                                        } style=FIELD_INPUT_STYLE />
                                                     </label>
 
-                                                    <label style="display:grid;gap:0.35rem;">
+                                                    <label style=FIELD_LABEL_STYLE>
                                                         <span>"Delivery date"</span>
                                                         <input type="date" prop:value=leg.delivery_date.clone() on:input=move |ev| {
                                                             let value = event_target_value(&ev);
@@ -914,10 +701,10 @@ pub fn LoadBuilderPage() -> impl IntoView {
                                                                     item.delivery_date = value.clone();
                                                                 }
                                                             });
-                                                        } style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;" />
+                                                        } style=FIELD_INPUT_STYLE />
                                                     </label>
 
-                                                    <label style="display:grid;gap:0.35rem;">
+                                                    <label style=FIELD_LABEL_STYLE>
                                                         <span>"Bid status"</span>
                                                         <select prop:value=leg.bid_status.clone() on:change=move |ev| {
                                                             let value = event_target_value(&ev);
@@ -926,12 +713,12 @@ pub fn LoadBuilderPage() -> impl IntoView {
                                                                     item.bid_status = value.clone();
                                                                 }
                                                             });
-                                                        } style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;background:white;">
+                                                        } style=FIELD_SELECT_STYLE>
                                                             {move || screen.get().map(|value| value.bid_status_options.into_iter().map(|status| view! { <option value={status.clone()}>{status.clone()}</option> }).collect_view())}
                                                         </select>
                                                     </label>
 
-                                                    <label style="display:grid;gap:0.35rem;">
+                                                    <label style=FIELD_LABEL_STYLE>
                                                         <span>"Price"</span>
                                                         <input type="number" step="0.01" min="0" prop:value=leg.price.clone() on:input=move |ev| {
                                                             let value = event_target_value(&ev);
@@ -940,7 +727,7 @@ pub fn LoadBuilderPage() -> impl IntoView {
                                                                     item.price = value.clone();
                                                                 }
                                                             });
-                                                        } placeholder="2450" style="padding:0.8rem 1rem;border:1px solid #d1d5db;border-radius:0.85rem;" />
+                                                        } placeholder="2450" style=FIELD_INPUT_STYLE />
                                                     </label>
                                                 </div>
                                             </section>

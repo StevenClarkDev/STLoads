@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::RequiredDocumentChecklistItem;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthSessionUser {
     pub id: u64,
@@ -38,6 +40,172 @@ pub struct LoginResponse {
     pub mfa_expires_at: Option<String>,
     pub next_step: Option<String>,
     pub dev_mfa_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnterpriseSsoDiscoveryRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnterpriseSsoDiscoveryResponse {
+    pub email_domain: Option<String>,
+    pub organization_id: Option<u64>,
+    pub organization_name: Option<String>,
+    pub sso_required: bool,
+    pub password_allowed: bool,
+    pub provider_type: Option<String>,
+    pub provider_display_name: Option<String>,
+    pub sso_url: Option<String>,
+    pub jit_enabled: bool,
+    pub default_role_key: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnterpriseSsoOidcCallbackRequest {
+    pub email: String,
+    pub id_token: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnterpriseSsoLoginResponse {
+    pub success: bool,
+    pub token: Option<String>,
+    pub session: Option<AuthSessionState>,
+    pub created_user: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScimDeprovisionRequest {
+    pub external_id: Option<String>,
+    pub email: Option<String>,
+    pub user_id: Option<u64>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScimDeprovisionResponse {
+    pub success: bool,
+    pub organization_id: Option<u64>,
+    pub user_id: Option<u64>,
+    pub revoked_sessions: u64,
+    pub membership_rows_changed: u64,
+    pub user_rows_changed: u64,
+    pub event_id: Option<u64>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScimUpsertUserRequest {
+    pub external_id: String,
+    pub email: String,
+    pub name: String,
+    pub role_key: Option<String>,
+    pub active: bool,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScimUpsertUserResponse {
+    pub success: bool,
+    pub organization_id: Option<u64>,
+    pub user_id: Option<u64>,
+    pub created: bool,
+    pub reactivated: bool,
+    pub revoked_sessions: u64,
+    pub event_id: Option<u64>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminIdentityScreen {
+    pub title: String,
+    pub target_organization_id: u64,
+    pub domains: Vec<AdminIdentityDomainRow>,
+    pub providers: Vec<AdminIdentityProviderRow>,
+    pub scim_events: Vec<AdminIdentityScimEventRow>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminIdentityDomainRow {
+    pub id: u64,
+    pub domain: String,
+    pub verification_status: String,
+    pub verification_token: String,
+    pub login_routing_enabled: bool,
+    pub verified_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminIdentityProviderRow {
+    pub id: u64,
+    pub provider_type: String,
+    pub status: String,
+    pub display_name: String,
+    pub issuer: Option<String>,
+    pub sso_url: Option<String>,
+    pub jwks_url: Option<String>,
+    pub metadata_url: Option<String>,
+    pub client_id: Option<String>,
+    pub jit_enabled: bool,
+    pub default_role_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminIdentityScimEventRow {
+    pub id: u64,
+    pub action: String,
+    pub outcome: String,
+    pub external_id: Option<String>,
+    pub user_id: Option<u64>,
+    pub reason: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminUpsertIdentityDomainRequest {
+    pub target_organization_id: Option<u64>,
+    pub domain: String,
+    pub login_routing_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminVerifyIdentityDomainRequest {
+    pub target_organization_id: Option<u64>,
+    pub domain: String,
+    pub verification_token: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminCheckIdentityDomainDnsRequest {
+    pub target_organization_id: Option<u64>,
+    pub domain: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminUpsertIdentityProviderRequest {
+    pub target_organization_id: Option<u64>,
+    pub provider_id: Option<u64>,
+    pub provider_type: String,
+    pub status: String,
+    pub display_name: String,
+    pub issuer: Option<String>,
+    pub sso_url: Option<String>,
+    pub jwks_url: Option<String>,
+    pub metadata_url: Option<String>,
+    pub client_id: Option<String>,
+    pub jit_enabled: bool,
+    pub default_role_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminIdentityMutationResponse {
+    pub success: bool,
+    pub message: String,
+    pub screen: AdminIdentityScreen,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,6 +378,7 @@ pub struct AuthOnboardingScreen {
     pub requires_otp: bool,
     pub draft: AuthOnboardingDraft,
     pub documents: Vec<KycDocumentItem>,
+    pub required_documents: Vec<RequiredDocumentChecklistItem>,
     pub required_fields: Vec<String>,
     pub notes: Vec<String>,
 }
@@ -239,6 +408,51 @@ pub struct SubmitOnboardingResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LegalAgreementTemplateItem {
+    pub id: u64,
+    pub agreement_key: String,
+    pub version: String,
+    pub title: String,
+    pub document_uri: Option<String>,
+    pub required_role_key: Option<String>,
+    pub requires_user_acceptance: bool,
+    pub requires_organization_acceptance: bool,
+    pub effective_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LegalAgreementAcceptanceItem {
+    pub id: u64,
+    pub agreement_key: String,
+    pub version: String,
+    pub signer_name: String,
+    pub signer_email: String,
+    pub accepted_at: String,
+    pub audit_event_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LegalAgreementScreen {
+    pub title: String,
+    pub missing_required: Vec<LegalAgreementTemplateItem>,
+    pub acceptance_proofs: Vec<LegalAgreementAcceptanceItem>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptLegalAgreementRequest {
+    pub agreement_key: String,
+    pub accept_for_organization: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptLegalAgreementResponse {
+    pub success: bool,
+    pub message: String,
+    pub screen: LegalAgreementScreen,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KycDocumentItem {
     pub id: u64,
     pub document_name: String,
@@ -257,6 +471,9 @@ pub struct KycDocumentItem {
     pub can_edit: bool,
     pub can_verify_blockchain: bool,
     pub can_delete: bool,
+    pub current_version: u32,
+    pub version_count: u64,
+    pub version_history_label: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -472,6 +689,210 @@ pub struct AdminBreakGlassResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSupportSearchScreen {
+    pub title: String,
+    pub query: String,
+    pub target_organization_id: Option<u64>,
+    pub result_count: u64,
+    pub results: Vec<AdminSupportSearchResult>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSupportSearchResult {
+    pub category: String,
+    pub id: u64,
+    pub label: String,
+    pub detail: String,
+    pub organization_id: Option<u64>,
+    pub href: Option<String>,
+    pub facts: Vec<AdminSupportSearchFact>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSupportSearchFact {
+    pub label: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AdminAuditSearchFilters {
+    pub q: Option<String>,
+    pub target_organization_id: Option<u64>,
+    pub actor_user_id: Option<u64>,
+    pub entity_type: Option<String>,
+    pub entity_id: Option<String>,
+    pub action: Option<String>,
+    pub request_id: Option<String>,
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAuditSearchScreen {
+    pub title: String,
+    pub target_organization_id: u64,
+    pub filters: AdminAuditSearchFilters,
+    pub result_count: u64,
+    pub rows: Vec<AdminAuditEventRow>,
+    pub export_path: String,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAuditEventRow {
+    pub id: u64,
+    pub actor_user_id: Option<u64>,
+    pub actor_label: String,
+    pub organization_id: Option<u64>,
+    pub target_organization_id: Option<u64>,
+    pub entity_type: String,
+    pub entity_id: Option<String>,
+    pub action: String,
+    pub reason: Option<String>,
+    pub ticket_ref: Option<String>,
+    pub request_id: Option<String>,
+    pub source: String,
+    pub metadata_preview: Option<String>,
+    pub before_after_label: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAuditExportResponse {
+    pub filename: String,
+    pub content_type: String,
+    pub row_count: u64,
+    pub csv: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSupportTimelineRequest {
+    pub target_organization_id: Option<u64>,
+    pub entity_type: String,
+    pub entity_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminCreateSupportNoteRequest {
+    pub target_organization_id: Option<u64>,
+    pub entity_type: String,
+    pub entity_id: Option<String>,
+    pub visibility: String,
+    pub ticket_ref: Option<String>,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSupportTimelineScreen {
+    pub title: String,
+    pub target_organization_id: u64,
+    pub entity_type: String,
+    pub entity_id: Option<String>,
+    pub entries: Vec<AdminSupportTimelineEntry>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSupportTimelineEntry {
+    pub source: String,
+    pub action: String,
+    pub actor_user_id: Option<u64>,
+    pub visibility: String,
+    pub ticket_ref: Option<String>,
+    pub summary: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminCreateSupportNoteResponse {
+    pub success: bool,
+    pub note_id: Option<u64>,
+    pub message: String,
+    pub timeline: AdminSupportTimelineScreen,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSupportCaseRow {
+    pub id: u64,
+    pub case_number: String,
+    pub organization_id: u64,
+    pub title: String,
+    pub severity: String,
+    pub status: String,
+    pub channel: String,
+    pub category: String,
+    pub owner_team: String,
+    pub breach_state: String,
+    pub first_response_due_at: String,
+    pub next_update_due_at: String,
+    pub resolution_due_at: String,
+    pub related_entity_type: Option<String>,
+    pub related_entity_id: Option<String>,
+    pub customer_impact: String,
+    pub resolution_reason: Option<String>,
+    pub feedback_score: Option<i32>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSupportCaseScreen {
+    pub title: String,
+    pub target_organization_id: u64,
+    pub open_count: u64,
+    pub breach_risk_count: u64,
+    pub breached_count: u64,
+    pub rows: Vec<AdminSupportCaseRow>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminCreateSupportCaseRequest {
+    pub target_organization_id: Option<u64>,
+    pub reporter_user_id: Option<u64>,
+    pub affected_user_id: Option<u64>,
+    pub related_entity_type: Option<String>,
+    pub related_entity_id: Option<String>,
+    pub channel: String,
+    pub severity: String,
+    pub category: String,
+    pub owner_team: String,
+    pub title: String,
+    pub description: String,
+    pub customer_impact: String,
+    pub customer_update: Option<String>,
+    pub internal_note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminUpdateSupportCaseRequest {
+    pub status: Option<String>,
+    pub severity: Option<String>,
+    pub owner_team: Option<String>,
+    pub owner_user_id: Option<u64>,
+    pub escalation_owner_user_id: Option<u64>,
+    pub customer_update: Option<String>,
+    pub internal_note: Option<String>,
+    pub resolution_reason: Option<String>,
+    pub root_cause_category: Option<String>,
+    pub follow_up_action: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSupportCaseFeedbackRequest {
+    pub feedback_score: i32,
+    pub feedback_comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSupportCaseMutationResponse {
+    pub success: bool,
+    pub message: String,
+    pub case_row: Option<AdminSupportCaseRow>,
+    pub screen: AdminSupportCaseScreen,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelfProfileDraft {
     pub name: String,
     pub email: String,
@@ -491,6 +912,21 @@ pub struct SelfProfileFact {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CarrierCapacityProfile {
+    pub equipment_types: Vec<String>,
+    pub lane_preferences: Vec<String>,
+    pub operating_regions: Vec<String>,
+    pub preferred_commodities: Vec<String>,
+    pub service_levels: Vec<String>,
+    pub certifications: Vec<String>,
+    pub availability_status: String,
+    pub available_power_units: u32,
+    pub insurance_limit_usd: f64,
+    pub capacity_notes: Option<String>,
+    pub readiness_label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelfProfileScreen {
     pub title: String,
     pub role_key: String,
@@ -499,8 +935,31 @@ pub struct SelfProfileScreen {
     pub draft: SelfProfileDraft,
     pub personal_facts: Vec<SelfProfileFact>,
     pub company_facts: Vec<SelfProfileFact>,
+    pub carrier_capacity: Option<CarrierCapacityProfile>,
     pub documents: Vec<KycDocumentItem>,
+    pub required_documents: Vec<RequiredDocumentChecklistItem>,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCarrierCapacityRequest {
+    pub equipment_types: Vec<String>,
+    pub lane_preferences: Vec<String>,
+    pub operating_regions: Vec<String>,
+    pub preferred_commodities: Vec<String>,
+    pub service_levels: Vec<String>,
+    pub certifications: Vec<String>,
+    pub availability_status: String,
+    pub available_power_units: u32,
+    pub insurance_limit_usd: f64,
+    pub capacity_notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCarrierCapacityResponse {
+    pub success: bool,
+    pub message: String,
+    pub capacity: Option<CarrierCapacityProfile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -582,4 +1041,103 @@ pub struct AdminUpdateRolePermissionsResponse {
     pub role_key: String,
     pub assigned_permission_keys: Vec<String>,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAccessReviewRow {
+    pub id: u64,
+    pub title: String,
+    pub status: String,
+    pub review_type: String,
+    pub due_at_label: Option<String>,
+    pub completed_at_label: Option<String>,
+    pub created_at_label: String,
+    pub pending_count: u64,
+    pub approved_count: u64,
+    pub exception_count: u64,
+    pub revoke_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAccessReviewItemRow {
+    pub id: u64,
+    pub review_id: u64,
+    pub user_id: u64,
+    pub user_name: String,
+    pub user_email: String,
+    pub role_key: String,
+    pub role_label: String,
+    pub account_status_label: String,
+    pub membership_status: Option<String>,
+    pub last_activity_label: Option<String>,
+    pub risk_flags: Vec<String>,
+    pub decision: String,
+    pub decision_reason: Option<String>,
+    pub decided_at_label: Option<String>,
+    pub revoked_at_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAccessReviewScreen {
+    pub title: String,
+    pub summary: String,
+    pub target_organization_id: u64,
+    pub reviews: Vec<AdminAccessReviewRow>,
+    pub items: Vec<AdminAccessReviewItemRow>,
+    pub elevation_requests: Vec<AdminAccessElevationRequestRow>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAccessElevationRequestRow {
+    pub id: u64,
+    pub requester_user_id: u64,
+    pub requester_email: String,
+    pub target_user_id: u64,
+    pub target_email: String,
+    pub current_role_key: Option<String>,
+    pub requested_role_key: String,
+    pub status: String,
+    pub business_justification: String,
+    pub decision_reason: Option<String>,
+    pub decided_at_label: Option<String>,
+    pub expires_at_label: Option<String>,
+    pub created_at_label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminStartAccessReviewRequest {
+    pub target_organization_id: Option<u64>,
+    pub title: String,
+    pub due_days: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAccessReviewDecisionRequest {
+    pub target_organization_id: Option<u64>,
+    pub decision: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminCreateAccessElevationRequest {
+    pub target_organization_id: Option<u64>,
+    pub target_user_id: u64,
+    pub requested_role_key: String,
+    pub business_justification: String,
+    pub expires_in_days: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAccessElevationDecisionRequest {
+    pub target_organization_id: Option<u64>,
+    pub decision: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAccessReviewMutationResponse {
+    pub success: bool,
+    pub message: String,
+    pub screen: AdminAccessReviewScreen,
 }

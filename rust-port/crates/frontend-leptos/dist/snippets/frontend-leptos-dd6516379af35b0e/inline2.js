@@ -1,103 +1,95 @@
 
-export async function stloadsUploadLoadDocument(url, token, documentName, documentType, inputId) {
-  const input = document.getElementById(inputId);
-  if (!input || !input.files || input.files.length === 0) {
-    throw new Error('Choose a file before uploading a load document.');
+export async function stloadsGetCurrentPosition() {
+  if (!navigator.geolocation) {
+    throw new Error('This browser does not support device geolocation.');
   }
 
-  const file = input.files[0];
-  const form = new FormData();
-  form.append('document_name', documentName || '');
-  form.append('document_type', documentType || '');
-  form.append('file', file, file.name || 'document.bin');
+  return await new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
+      (error) => reject(new Error(error.message || 'Unable to read the current device location.')),
+      {
+        enableHighAccuracy: true,
+        maximumAge: 10000,
+        timeout: 20000,
+      }
+    );
+  });
+}
 
-  const headers = {};
+export async function stloadsStartLiveTracking(url, token) {
+  if (!navigator.geolocation) {
+    throw new Error('This browser does not support device geolocation.');
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
+
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: form,
+  const options = {
+    enableHighAccuracy: true,
+    maximumAge: 10000,
+    timeout: 20000,
+  };
+
+  const sendPosition = async (position) => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Live tracking update failed: ${response.status} ${text}`);
+    }
+  };
+
+  await new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          await sendPosition(position);
+          resolve(true);
+        } catch (error) {
+          reject(error);
+        }
+      },
+      (error) => reject(new Error(error.message || 'Unable to start live tracking.')),
+      options
+    );
   });
 
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`POST ${url} returned ${response.status} ${text}`);
-  }
+  const watcherId = navigator.geolocation.watchPosition(
+    (position) => {
+      sendPosition(position).catch((error) => console.warn(error));
+    },
+    (error) => {
+      console.warn(error.message || 'Live tracking permission was denied.');
+    },
+    options
+  );
 
-  input.value = '';
-  return text;
+  return watcherId;
 }
 
-export async function stloadsOpenProtectedDocument(url, token) {
-  const headers = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+export function stloadsStopLiveTracking(watcherId) {
+  if (!navigator.geolocation) {
+    return false;
   }
 
-  const response = await fetch(url, {
-    method: 'GET',
-    headers,
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`GET ${url} returned ${response.status} ${text}`);
+  if (watcherId !== undefined && watcherId !== null) {
+    navigator.geolocation.clearWatch(watcherId);
+    return true;
   }
 
-  const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  window.open(objectUrl, '_blank', 'noopener,noreferrer');
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
-  return true;
-}
-
-export async function stloadsDownloadProtectedDocument(url, token, fileName) {
-  const headers = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const response = await fetch(url, {
-    method: 'GET',
-    headers,
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`GET ${url} returned ${response.status} ${text}`);
-  }
-
-  const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = objectUrl;
-  anchor.download = fileName || 'document.bin';
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
-  return true;
-}
-
-export async function stloadsHashSelectedFile(inputId) {
-  const input = document.getElementById(inputId);
-  if (!input || !input.files || input.files.length === 0) {
-    throw new Error('Choose a file before verifying a blockchain document.');
-  }
-
-  const file = input.files[0];
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  const hash = Array.from(new Uint8Array(digest))
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join('');
-
-  input.value = '';
-  return JSON.stringify({
-    fileName: file.name || 'document.bin',
-    hash,
-  });
+  return false;
 }

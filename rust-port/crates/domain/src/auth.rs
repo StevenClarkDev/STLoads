@@ -68,6 +68,39 @@ impl AccountStatus {
     pub const fn requires_admin_review(self) -> bool {
         matches!(self, Self::PendingReview | Self::RevisionRequested)
     }
+
+    pub const fn can_transition_to(self, target: Self) -> bool {
+        use AccountStatus::*;
+
+        if self as i16 == target as i16 {
+            return true;
+        }
+
+        match self {
+            PendingOtp => matches!(target, EmailVerifiedPendingOnboarding | Rejected),
+            EmailVerifiedPendingOnboarding => matches!(target, PendingReview | Rejected),
+            PendingReview => matches!(target, Approved | Rejected | RevisionRequested),
+            RevisionRequested => matches!(target, PendingReview | Rejected),
+            Approved => matches!(target, RevisionRequested | Rejected),
+            Rejected => false,
+        }
+    }
+}
+
+pub fn validate_account_status_transition(
+    current: AccountStatus,
+    target: AccountStatus,
+) -> Result<(), String> {
+    current
+        .can_transition_to(target)
+        .then_some(())
+        .ok_or_else(|| {
+            format!(
+                "Account status transition {} -> {} is not allowed.",
+                current.legacy_code(),
+                target.legacy_code()
+            )
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -366,5 +399,66 @@ pub fn auth_module_contract() -> AuthModuleContract {
         session_token_kinds: SESSION_TOKEN_KINDS,
         rbac_tables: RBAC_TABLES,
         legacy_role_source: "users.role_id plus Spatie role pivots",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AccountStatus, validate_account_status_transition};
+
+    #[test]
+    fn user_lifecycle_state_machine_allows_review_path() {
+        let valid = [
+            (
+                AccountStatus::PendingOtp,
+                AccountStatus::EmailVerifiedPendingOnboarding,
+            ),
+            (
+                AccountStatus::EmailVerifiedPendingOnboarding,
+                AccountStatus::PendingReview,
+            ),
+            (AccountStatus::PendingReview, AccountStatus::Approved),
+            (
+                AccountStatus::PendingReview,
+                AccountStatus::RevisionRequested,
+            ),
+            (
+                AccountStatus::RevisionRequested,
+                AccountStatus::PendingReview,
+            ),
+            (AccountStatus::Approved, AccountStatus::RevisionRequested),
+        ];
+
+        for (current, target) in valid {
+            assert!(
+                validate_account_status_transition(current, target).is_ok(),
+                "expected {:?} -> {:?} to be valid",
+                current,
+                target
+            );
+        }
+    }
+
+    #[test]
+    fn user_lifecycle_state_machine_rejects_unsafe_jumps() {
+        let invalid = [
+            (AccountStatus::PendingOtp, AccountStatus::Approved),
+            (
+                AccountStatus::EmailVerifiedPendingOnboarding,
+                AccountStatus::Approved,
+            ),
+            (AccountStatus::RevisionRequested, AccountStatus::Approved),
+            (AccountStatus::Rejected, AccountStatus::PendingReview),
+            (AccountStatus::Rejected, AccountStatus::Approved),
+        ];
+
+        for (current, target) in invalid {
+            assert!(
+                validate_account_status_transition(current, target).is_err(),
+                "expected {:?} -> {:?} to be invalid",
+                current,
+                target
+            );
+        }
     }
 }

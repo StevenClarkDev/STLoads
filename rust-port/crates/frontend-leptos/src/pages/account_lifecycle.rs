@@ -32,7 +32,7 @@ pub fn AccountLifecyclePage() -> impl IntoView {
         }
 
         loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::fetch_admin_user_directory().await {
                 Ok(next) => {

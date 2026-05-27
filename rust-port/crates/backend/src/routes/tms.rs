@@ -6,11 +6,14 @@ use axum::{
 };
 use std::time::Duration as StdDuration;
 
-use db::tms::{
-    MaterializedHandoffResult, TmsWebhookMutationResult, apply_status_webhook, close_handoff,
-    create_sync_error, find_active_handoff_by_tms_load, find_handoff_by_id,
-    handoff_belongs_to_organization, push_handoff, queue_handoff, requeue_handoff,
-    withdraw_handoff,
+use db::{
+    integrations::{claim_external_event, complete_external_event},
+    tms::{
+        MaterializedHandoffResult, TmsWebhookMutationResult, apply_status_webhook, close_handoff,
+        create_sync_error, find_active_handoff_by_tms_load, find_handoff_by_id,
+        handoff_belongs_to_organization, push_handoff, queue_handoff, requeue_handoff,
+        withdraw_handoff,
+    },
 };
 use domain::tms::{
     HandoffStatus, HandoffStatusDescriptor, ReconciliationActionDescriptor, TmsModuleContract,
@@ -26,8 +29,9 @@ use shared::{
 };
 
 use crate::{
-    auth_session, auth_session::ResolvedSession, rate_limit::RateLimitPolicy,
-    rate_limit::client_fingerprint, realtime_bus::RoutedRealtimeEvent, state::AppState,
+    app::REQUEST_ID_HEADER, auth_session, auth_session::ResolvedSession,
+    rate_limit::RateLimitPolicy, rate_limit::client_fingerprint, realtime_bus::RoutedRealtimeEvent,
+    state::AppState,
 };
 
 fn tms_webhook_policy(name: &'static str) -> RateLimitPolicy {
@@ -46,6 +50,29 @@ fn rate_limit_response(retry_after_seconds: u64) -> TmsWebhookResponse {
     }
 }
 
+fn request_id_from_headers(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn normalized_event_id(event_id: Option<&str>) -> Option<String> {
+    event_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn processed_duplicate_message(messages: &mut Vec<String>, event_id: &str) {
+    messages.push(format!(
+        "Duplicate TMS webhook event {} ignored by external event de-dupe.",
+        event_id
+    ));
+}
+
 #[derive(Debug, Serialize)]
 struct TmsOverview {
     contract: TmsModuleContract,
@@ -54,8 +81,9 @@ struct TmsOverview {
     webhook_surfaces: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct LifecycleWebhookRequest {
+    event_id: Option<String>,
     tms_load_id: String,
     tenant_id: String,
     reason: Option<String>,
@@ -132,6 +160,7 @@ async fn push(
     headers: HeaderMap,
     Json(payload): Json<TmsHandoffPayload>,
 ) -> Result<Json<ApiResponse<TmsHandoffResponse>>, StatusCode> {
+    let request_id = request_id_from_headers(&headers);
     if state.config.kill_switch_tms_pushes {
         return Ok(Json(ApiResponse::ok(TmsHandoffResponse {
             success: false,
@@ -175,6 +204,7 @@ async fn push(
             Some("A duplicate push was rejected because the handoff is already active."),
             payload.source_module.as_deref(),
             payload.pushed_by.as_deref(),
+            request_id.as_deref(),
         )
         .await;
 
@@ -189,7 +219,7 @@ async fn push(
         })));
     }
 
-    match push_handoff(pool, &payload).await {
+    match push_handoff(pool, &payload, request_id.as_deref()).await {
         Ok(result) => {
             publish_tms_lifecycle_events(
                 &state,
@@ -198,6 +228,7 @@ async fn push(
                 true,
                 false,
                 true,
+                request_id.clone(),
                 format!(
                     "Rust TMS push published handoff #{} for {}.",
                     result.handoff.id, payload.tms_load_id
@@ -229,6 +260,7 @@ async fn queue(
     headers: HeaderMap,
     Json(payload): Json<TmsHandoffPayload>,
 ) -> Result<Json<ApiResponse<TmsHandoffResponse>>, StatusCode> {
+    let request_id = request_id_from_headers(&headers);
     let actor_session = authorize_tms_lifecycle_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(unavailable_handoff_response(
@@ -247,7 +279,7 @@ async fn queue(
         })));
     }
 
-    match queue_handoff(pool, &payload).await {
+    match queue_handoff(pool, &payload, request_id.as_deref()).await {
         Ok(handoff) => {
             let result = MaterializedHandoffResult {
                 handoff,
@@ -262,6 +294,7 @@ async fn queue(
                 true,
                 false,
                 false,
+                request_id.clone(),
                 format!("Rust TMS queue accepted handoff #{}.", result.handoff.id),
             );
 
@@ -290,6 +323,7 @@ async fn requeue(
     headers: HeaderMap,
     Json(payload): Json<TmsRequeueRequest>,
 ) -> Result<Json<ApiResponse<TmsHandoffResponse>>, StatusCode> {
+    let request_id = request_id_from_headers(&headers);
     let actor_session = authorize_tms_lifecycle_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(unavailable_handoff_response(
@@ -347,6 +381,7 @@ async fn requeue(
         payload.handoff_id,
         payload.pushed_by.as_deref(),
         payload.source_module.as_deref(),
+        request_id.as_deref(),
     )
     .await
     {
@@ -358,6 +393,7 @@ async fn requeue(
                 true,
                 false,
                 true,
+                request_id.clone(),
                 format!(
                     "Rust TMS requeue republished handoff #{}.",
                     result.handoff.id
@@ -397,6 +433,7 @@ async fn withdraw(
     headers: HeaderMap,
     Json(payload): Json<TmsWithdrawRequest>,
 ) -> Result<Json<ApiResponse<TmsHandoffResponse>>, StatusCode> {
+    let request_id = request_id_from_headers(&headers);
     let actor_session = authorize_tms_lifecycle_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(unavailable_handoff_response(
@@ -452,6 +489,7 @@ async fn withdraw(
         payload.reason.as_deref(),
         payload.pushed_by.as_deref(),
         payload.source_module.as_deref(),
+        request_id.as_deref(),
     )
     .await
     {
@@ -469,6 +507,7 @@ async fn withdraw(
                 true,
                 true,
                 true,
+                request_id.clone(),
                 format!("Rust TMS withdrew handoff #{}.", result.handoff.id),
             );
 
@@ -505,6 +544,7 @@ async fn close(
     headers: HeaderMap,
     Json(payload): Json<TmsCloseRequest>,
 ) -> Result<Json<ApiResponse<TmsHandoffResponse>>, StatusCode> {
+    let request_id = request_id_from_headers(&headers);
     let actor_session = authorize_tms_lifecycle_request(&state, &headers).await?;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(Json(ApiResponse::ok(unavailable_handoff_response(
@@ -560,6 +600,7 @@ async fn close(
         payload.reason.as_deref(),
         payload.pushed_by.as_deref(),
         payload.source_module.as_deref(),
+        request_id.as_deref(),
     )
     .await
     {
@@ -577,6 +618,7 @@ async fn close(
                 true,
                 true,
                 true,
+                request_id.clone(),
                 format!("Rust TMS closed handoff #{}.", result.handoff.id),
             );
 
@@ -613,6 +655,7 @@ async fn webhook_status(
     headers: HeaderMap,
     Json(payload): Json<TmsStatusWebhookRequest>,
 ) -> Result<Json<ApiResponse<TmsWebhookResponse>>, StatusCode> {
+    let request_id = request_id_from_headers(&headers);
     let rate_decision = state
         .check_rate_limit(
             tms_webhook_policy("tms_webhook_status"),
@@ -639,9 +682,44 @@ async fn webhook_status(
         })));
     };
 
-    match apply_status_webhook(pool, &payload).await {
+    if let Some(event_id) = normalized_event_id(payload.event_id.as_deref()) {
+        let payload_value = serde_json::to_value(&payload).unwrap_or(serde_json::Value::Null);
+        if !claim_external_event(
+            pool,
+            None,
+            "tms",
+            "status",
+            &event_id,
+            request_id.as_deref(),
+            Some(&payload_value),
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        {
+            return Ok(Json(ApiResponse::ok(TmsWebhookResponse {
+                success: true,
+                handoff_id: None,
+                action_label: "duplicate_ignored".into(),
+                message: "Duplicate TMS status webhook event ignored by external event de-dupe."
+                    .into(),
+            })));
+        }
+    }
+
+    match apply_status_webhook(pool, &payload, request_id.as_deref()).await {
         Ok(Some(result)) => {
-            publish_tms_webhook_events(&state, &result, actor_session.as_ref());
+            if let Some(event_id) = normalized_event_id(payload.event_id.as_deref()) {
+                let _ = complete_external_event(
+                    pool,
+                    None,
+                    "tms",
+                    "status",
+                    &event_id,
+                    &format!("Updated handoff #{}.", result.handoff.id),
+                )
+                .await;
+            }
+            publish_tms_webhook_events(&state, &result, actor_session.as_ref(), request_id);
             Ok(Json(ApiResponse::ok(TmsWebhookResponse {
                 success: true,
                 handoff_id: Some(result.handoff.id),
@@ -649,12 +727,25 @@ async fn webhook_status(
                 message: result.message,
             })))
         }
-        Ok(None) => Ok(Json(ApiResponse::ok(TmsWebhookResponse {
-            success: false,
-            handoff_id: None,
-            action_label: "missing".into(),
-            message: "No active handoff matched the webhook identity.".into(),
-        }))),
+        Ok(None) => {
+            if let Some(event_id) = normalized_event_id(payload.event_id.as_deref()) {
+                let _ = complete_external_event(
+                    pool,
+                    None,
+                    "tms",
+                    "status",
+                    &event_id,
+                    "No active handoff matched the webhook identity.",
+                )
+                .await;
+            }
+            Ok(Json(ApiResponse::ok(TmsWebhookResponse {
+                success: false,
+                handoff_id: None,
+                action_label: "missing".into(),
+                message: "No active handoff matched the webhook identity.".into(),
+            })))
+        }
         Err(error) => Ok(Json(ApiResponse::ok(TmsWebhookResponse {
             success: false,
             handoff_id: None,
@@ -669,6 +760,7 @@ async fn webhook_bulk_status(
     headers: HeaderMap,
     Json(payload): Json<TmsBulkStatusWebhookRequest>,
 ) -> Result<Json<ApiResponse<TmsBulkStatusWebhookResponse>>, StatusCode> {
+    let request_id = request_id_from_headers(&headers);
     let rate_decision = state
         .check_rate_limit(
             tms_webhook_policy("tms_webhook_bulk_status"),
@@ -709,16 +801,62 @@ async fn webhook_bulk_status(
     let mut messages = Vec::new();
 
     for update in &payload.updates {
-        match apply_status_webhook(pool, update).await {
+        if let Some(event_id) = normalized_event_id(update.event_id.as_deref()) {
+            let payload_value = serde_json::to_value(update).unwrap_or(serde_json::Value::Null);
+            if !claim_external_event(
+                pool,
+                None,
+                "tms",
+                "bulk_status",
+                &event_id,
+                request_id.as_deref(),
+                Some(&payload_value),
+            )
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            {
+                processed_duplicate_message(&mut messages, &event_id);
+                continue;
+            }
+        }
+
+        match apply_status_webhook(pool, update, request_id.as_deref()).await {
             Ok(Some(result)) => {
+                if let Some(event_id) = normalized_event_id(update.event_id.as_deref()) {
+                    let _ = complete_external_event(
+                        pool,
+                        None,
+                        "tms",
+                        "bulk_status",
+                        &event_id,
+                        &format!("Updated handoff #{}.", result.handoff.id),
+                    )
+                    .await;
+                }
                 updated += 1;
                 messages.push(format!(
                     "Updated handoff #{} with action {}.",
                     result.handoff.id, result.action_label
                 ));
-                publish_tms_webhook_events(&state, &result, actor_session.as_ref());
+                publish_tms_webhook_events(
+                    &state,
+                    &result,
+                    actor_session.as_ref(),
+                    request_id.clone(),
+                );
             }
             Ok(None) => {
+                if let Some(event_id) = normalized_event_id(update.event_id.as_deref()) {
+                    let _ = complete_external_event(
+                        pool,
+                        None,
+                        "tms",
+                        "bulk_status",
+                        &event_id,
+                        "No active handoff matched the webhook identity.",
+                    )
+                    .await;
+                }
                 missing += 1;
                 messages.push(format!(
                     "No active handoff matched {} / {}.",
@@ -753,6 +891,7 @@ async fn webhook_cancel(
         State(state),
         headers,
         Json(TmsStatusWebhookRequest {
+            event_id: payload.event_id,
             tms_load_id: payload.tms_load_id,
             tenant_id: payload.tenant_id,
             tms_status: TmsStatus::Cancelled.as_legacy_label().into(),
@@ -771,6 +910,7 @@ async fn webhook_close(
     headers: HeaderMap,
     Json(payload): Json<LifecycleWebhookRequest>,
 ) -> Result<Json<ApiResponse<TmsWebhookResponse>>, StatusCode> {
+    let request_id = request_id_from_headers(&headers);
     let rate_decision = state
         .check_rate_limit(
             tms_webhook_policy("tms_webhook_close"),
@@ -810,16 +950,52 @@ async fn webhook_close(
         })));
     };
 
+    if let Some(event_id) = normalized_event_id(payload.event_id.as_deref()) {
+        let payload_value = serde_json::to_value(&payload).unwrap_or(serde_json::Value::Null);
+        if !claim_external_event(
+            pool,
+            None,
+            "tms",
+            "close",
+            &event_id,
+            request_id.as_deref(),
+            Some(&payload_value),
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        {
+            return Ok(Json(ApiResponse::ok(TmsWebhookResponse {
+                success: true,
+                handoff_id: Some(existing_handoff.id),
+                action_label: "duplicate_ignored".into(),
+                message: "Duplicate TMS close webhook event ignored by external event de-dupe."
+                    .into(),
+            })));
+        }
+    }
+
     match close_handoff(
         pool,
         existing_handoff.id,
         payload.reason.as_deref(),
         payload.pushed_by.as_deref(),
         payload.source_module.as_deref(),
+        request_id.as_deref(),
     )
     .await
     {
         Ok(Some(handoff)) => {
+            if let Some(event_id) = normalized_event_id(payload.event_id.as_deref()) {
+                let _ = complete_external_event(
+                    pool,
+                    None,
+                    "tms",
+                    "close",
+                    &event_id,
+                    &format!("Closed handoff #{}.", handoff.id),
+                )
+                .await;
+            }
             let result = MaterializedHandoffResult {
                 handoff,
                 load_id: existing_handoff.load_id,
@@ -833,6 +1009,7 @@ async fn webhook_close(
                 true,
                 true,
                 true,
+                request_id.clone(),
                 format!("TMS close webhook archived handoff #{}.", result.handoff.id),
             );
 
@@ -977,6 +1154,9 @@ fn validate_handoff_payload(payload: &TmsHandoffPayload) -> Option<String> {
     None
 }
 
+// TMS lifecycle publishing fans one materialization result into several
+// customer-visible events and needs explicit actor/request context.
+#[allow(clippy::too_many_arguments)]
 fn publish_tms_lifecycle_events(
     state: &AppState,
     _result: &MaterializedHandoffResult,
@@ -984,10 +1164,12 @@ fn publish_tms_lifecycle_events(
     notify_operations: bool,
     notify_reconciliation: bool,
     notify_load_board: bool,
+    request_id: Option<String>,
     summary: String,
 ) {
     if notify_operations {
         let mut event = RoutedRealtimeEvent::new(RealtimeEvent {
+            request_id: request_id.clone(),
             kind: RealtimeEventKind::TmsOperationsUpdated,
             leg_id: None,
             conversation_id: None,
@@ -1017,6 +1199,7 @@ fn publish_tms_lifecycle_events(
     if notify_reconciliation {
         state.publish_realtime(
             RoutedRealtimeEvent::new(RealtimeEvent {
+                request_id,
                 kind: RealtimeEventKind::TmsReconciliationUpdated,
                 leg_id: None,
                 conversation_id: None,
@@ -1041,6 +1224,7 @@ fn publish_tms_webhook_events(
     state: &AppState,
     result: &TmsWebhookMutationResult,
     actor_session: Option<&ResolvedSession>,
+    request_id: Option<String>,
 ) {
     let notify_reconciliation = result.action_label != "status_update";
     let lifecycle = MaterializedHandoffResult {
@@ -1057,6 +1241,7 @@ fn publish_tms_webhook_events(
         true,
         notify_reconciliation,
         true,
+        request_id,
         result.message.clone(),
     );
 }

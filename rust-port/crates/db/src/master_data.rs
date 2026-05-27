@@ -362,9 +362,10 @@ pub async fn soft_delete_simple_catalog(
             "UPDATE locations SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL"
         }
         _ => {
-            return Err(sqlx::Error::Protocol(
-                format!("unsupported soft-delete table: {}", table_name).into(),
-            ));
+            return Err(sqlx::Error::Protocol(format!(
+                "unsupported soft-delete table: {}",
+                table_name
+            )));
         }
     };
 

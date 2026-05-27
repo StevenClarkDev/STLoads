@@ -41,7 +41,7 @@ pub fn AdminDashboardPage() -> impl IntoView {
         }
 
         is_loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::fetch_admin_overview().await {
@@ -73,7 +73,7 @@ pub fn AdminDashboardPage() -> impl IntoView {
         }
 
         let current_user_id = current_session.user.as_ref().map(|user| user.id);
-        let auth = auth.clone();
+        let auth = auth;
 
         if let Some(existing_handle) = ws_handle.get_untracked() {
             existing_handle.abort();

@@ -22,7 +22,7 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates ./crates
 
-RUN cargo build --locked --release -p backend
+RUN cargo build --locked --release -p backend --bins
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest AS runtime
 RUN microdnf install -y ca-certificates tzdata shadow-utils \

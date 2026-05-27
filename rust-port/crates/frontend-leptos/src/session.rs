@@ -22,14 +22,14 @@ pub fn AuthProvider(children: Children) -> impl IntoView {
         notice: RwSignal::new(None),
     };
 
-    provide_context(auth.clone());
+    provide_context(auth);
 
     Effect::new(move |_| {
         if auth.session_ready.get() || auth.session_loading.get() {
             return;
         }
 
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             let _ = refresh_session(auth).await;
         });

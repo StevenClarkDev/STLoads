@@ -3,59 +3,18 @@ use std::collections::BTreeMap;
 use leptos::{ev::SubmitEvent, prelude::*, tachys::view::any_view::IntoAny, task::spawn_local};
 use leptos_router::components::A;
 
+use super::shared::{FIELD_LABEL_STYLE, MUTED_TEXT_STYLE, tone_style};
 use crate::{
     api, document_upload,
     session::{self, use_auth},
 };
 use shared::{
-    KycDocumentItem, SelfProfileFact, SelfProfileScreen, UpdateSelfProfileRequest,
+    KycDocumentItem, SelfProfileScreen, UpdateCarrierCapacityRequest, UpdateSelfProfileRequest,
     UpsertKycDocumentRequest, VerifyKycDocumentRequest,
 };
 
-fn fact_grid(title: &'static str, facts: Vec<SelfProfileFact>) -> impl IntoView {
-    view! {
-        <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fff;display:grid;gap:0.65rem;">
-            <strong>{title}</strong>
-            {if facts.is_empty() {
-                view! { <p style="margin:0;color:#64748b;">"No profile facts are recorded yet."</p> }.into_any()
-            } else {
-                facts.into_iter().map(|fact| view! {
-                    <p style="margin:0;"><strong>{fact.label}</strong>" : "{fact.value}</p>
-                }).collect_view().into_any()
-            }}
-        </section>
-    }
-}
-
-fn tone_style(tone: &str) -> &'static str {
-    match tone {
-        "success" => {
-            "background:#e8fff3;padding:0.25rem 0.55rem;border-radius:999px;color:#0f766e;"
-        }
-        "warning" => {
-            "background:#fff7dd;padding:0.25rem 0.55rem;border-radius:999px;color:#b45309;"
-        }
-        "danger" => "background:#ffe4e6;padding:0.25rem 0.55rem;border-radius:999px;color:#be123c;",
-        "info" => "background:#e0f2fe;padding:0.25rem 0.55rem;border-radius:999px;color:#0369a1;",
-        _ => "background:#f1f5f9;padding:0.25rem 0.55rem;border-radius:999px;color:#475569;",
-    }
-}
-
-fn human_file_size(bytes: Option<u64>) -> String {
-    match bytes {
-        Some(value) if value >= 1024 * 1024 => format!("{:.1} MB", value as f64 / 1024.0 / 1024.0),
-        Some(value) if value >= 1024 => format!("{:.1} KB", value as f64 / 1024.0),
-        Some(value) => format!("{} B", value),
-        None => "Size not recorded".into(),
-    }
-}
-
-#[derive(Clone)]
-struct LocalVerifyOutcome {
-    file_name: String,
-    hash_preview: String,
-    matches: bool,
-}
+use super::profile_helpers::*;
+use super::profile_kyc_helpers::render_kyc_workspace;
 
 #[component]
 pub fn ProfilePage() -> impl IntoView {
@@ -77,6 +36,17 @@ pub fn ProfilePage() -> impl IntoView {
     let password = RwSignal::new(String::new());
     let password_confirmation = RwSignal::new(String::new());
     let saving = RwSignal::new(false);
+    let capacity_equipment_types = RwSignal::new(String::new());
+    let capacity_lane_preferences = RwSignal::new(String::new());
+    let capacity_operating_regions = RwSignal::new(String::new());
+    let capacity_preferred_commodities = RwSignal::new(String::new());
+    let capacity_service_levels = RwSignal::new(String::new());
+    let capacity_certifications = RwSignal::new(String::new());
+    let capacity_availability_status = RwSignal::new("available".to_string());
+    let capacity_available_power_units = RwSignal::new("0".to_string());
+    let capacity_insurance_limit_usd = RwSignal::new("0".to_string());
+    let capacity_notes = RwSignal::new(String::new());
+    let saving_capacity = RwSignal::new(false);
 
     let upload_document_name = RwSignal::new(String::new());
     let upload_document_type = RwSignal::new("standard".to_string());
@@ -111,7 +81,7 @@ pub fn ProfilePage() -> impl IntoView {
         }
 
         loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::fetch_self_profile_screen().await {
                 Ok(next) => {
@@ -124,6 +94,24 @@ pub fn ProfilePage() -> impl IntoView {
                     mc_number.set(next.draft.mc_number.clone().unwrap_or_default());
                     mc_cbsa_usdot_no.set(next.draft.mc_cbsa_usdot_no.clone().unwrap_or_default());
                     ucr_hcc_no.set(next.draft.ucr_hcc_no.clone().unwrap_or_default());
+                    if let Some(capacity) = next.carrier_capacity.as_ref() {
+                        capacity_equipment_types
+                            .set(join_capacity_values(&capacity.equipment_types));
+                        capacity_lane_preferences
+                            .set(join_capacity_values(&capacity.lane_preferences));
+                        capacity_operating_regions
+                            .set(join_capacity_values(&capacity.operating_regions));
+                        capacity_preferred_commodities
+                            .set(join_capacity_values(&capacity.preferred_commodities));
+                        capacity_service_levels.set(join_capacity_values(&capacity.service_levels));
+                        capacity_certifications.set(join_capacity_values(&capacity.certifications));
+                        capacity_availability_status.set(capacity.availability_status.clone());
+                        capacity_available_power_units
+                            .set(capacity.available_power_units.to_string());
+                        capacity_insurance_limit_usd
+                            .set(format!("{:.0}", capacity.insurance_limit_usd));
+                        capacity_notes.set(capacity.capacity_notes.clone().unwrap_or_default());
+                    }
                     screen.set(Some(next));
                     feedback.set(None);
                 }
@@ -144,7 +132,7 @@ pub fn ProfilePage() -> impl IntoView {
     let submit = move |ev: SubmitEvent| {
         ev.prevent_default();
         saving.set(true);
-        let auth = auth.clone();
+        let auth = auth;
 
         let payload = UpdateSelfProfileRequest {
             name: name.get(),
@@ -188,6 +176,55 @@ pub fn ProfilePage() -> impl IntoView {
         });
     };
 
+    let save_capacity = move |ev: SubmitEvent| {
+        ev.prevent_default();
+        let power_units = capacity_available_power_units
+            .get()
+            .trim()
+            .parse::<u32>()
+            .unwrap_or(0);
+        let insurance_limit = capacity_insurance_limit_usd
+            .get()
+            .trim()
+            .parse::<f64>()
+            .unwrap_or(0.0);
+        let payload = UpdateCarrierCapacityRequest {
+            equipment_types: split_capacity_values(capacity_equipment_types.get()),
+            lane_preferences: split_capacity_values(capacity_lane_preferences.get()),
+            operating_regions: split_capacity_values(capacity_operating_regions.get()),
+            preferred_commodities: split_capacity_values(capacity_preferred_commodities.get()),
+            service_levels: split_capacity_values(capacity_service_levels.get()),
+            certifications: split_capacity_values(capacity_certifications.get()),
+            availability_status: capacity_availability_status.get(),
+            available_power_units: power_units,
+            insurance_limit_usd: insurance_limit,
+            capacity_notes: optional_capacity_notes(capacity_notes.get()),
+        };
+
+        saving_capacity.set(true);
+        let auth = auth;
+        spawn_local(async move {
+            match api::update_carrier_capacity(&payload).await {
+                Ok(response) => {
+                    feedback.set(Some(response.message));
+                    if response.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    feedback.set(Some(error));
+                }
+            }
+            saving_capacity.set(false);
+        });
+    };
+
     let start_edit_document = move |document: KycDocumentItem| {
         editing_document_id.set(Some(document.id));
         editing_document_name.set(document.document_name);
@@ -208,7 +245,7 @@ pub fn ProfilePage() -> impl IntoView {
         }
 
         uploading_document.set(true);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match document_upload::upload_profile_kyc_document(
@@ -257,7 +294,7 @@ pub fn ProfilePage() -> impl IntoView {
         }
 
         saving_document.set(true);
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::update_profile_kyc_document(
                 document_id,
@@ -307,7 +344,7 @@ pub fn ProfilePage() -> impl IntoView {
 
         let input_id = document_upload::profile_kyc_replace_input_id(document_id);
         replacing_document_id.set(Some(document_id));
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match document_upload::replace_profile_kyc_document(
@@ -340,7 +377,7 @@ pub fn ProfilePage() -> impl IntoView {
 
     let verify_document = move |document_id: u64| {
         verifying_document_id.set(Some(document_id));
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::verify_profile_kyc_document(
@@ -373,7 +410,7 @@ pub fn ProfilePage() -> impl IntoView {
 
     let delete_document = move |document_id: u64| {
         deleting_document_id.set(Some(document_id));
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::delete_profile_kyc_document(document_id).await {
@@ -415,7 +452,7 @@ pub fn ProfilePage() -> impl IntoView {
     let verify_local_document = move |document_id: u64, stored_hash: Option<String>| {
         let Some(stored_hash) = stored_hash.filter(|value| !value.trim().is_empty()) else {
             feedback.set(Some(
-                "This KYC row does not have a stored blockchain hash yet.".into(),
+                "This KYC row does not have a stored SHA-256 hash yet.".into(),
             ));
             return;
         };
@@ -451,7 +488,7 @@ pub fn ProfilePage() -> impl IntoView {
                         )
                     } else {
                         format!(
-                            "Local SHA-256 verification failed for document #{}. The selected file does not match the anchored hash.",
+                            "Local SHA-256 verification failed for document #{}. The selected file does not match the stored hash.",
                             document_id
                         )
                     }));
@@ -493,6 +530,7 @@ pub fn ProfilePage() -> impl IntoView {
                     let show_carrier_fields = screen_value.role_key == "carrier";
                     let show_broker_fields = screen_value.role_key == "broker";
                     let documents = screen_value.documents.clone();
+                    let required_documents = screen_value.required_documents.clone();
                     view! {
                         <>
                             <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;">
@@ -501,39 +539,39 @@ pub fn ProfilePage() -> impl IntoView {
                             </section>
 
                             <form on:submit=submit style="display:grid;gap:1rem;padding:1rem;border:1px solid #d6d3d1;border-radius:1rem;background:#fff;">
-                                <div style="display:grid;gap:0.35rem;"><strong>"Edit profile"</strong></div>
+                                <div style=FIELD_LABEL_STYLE><strong>"Edit profile"</strong></div>
                                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
-                                    <label style="display:grid;gap:0.35rem;"><span>"Name"</span><input type="text" prop:value=move || name.get() on:input=move |ev| name.set(event_target_value(&ev)) /></label>
-                                    <label style="display:grid;gap:0.35rem;"><span>"Email"</span><input type="email" prop:value=move || email.get() on:input=move |ev| email.set(event_target_value(&ev)) /></label>
-                                    <label style="display:grid;gap:0.35rem;"><span>"Phone"</span><input type="text" prop:value=move || phone_no.get() on:input=move |ev| phone_no.set(event_target_value(&ev)) /></label>
-                                    <label style="display:grid;gap:0.35rem;"><span>"Company"</span><input type="text" prop:value=move || company_name.get() on:input=move |ev| company_name.set(event_target_value(&ev)) /></label>
+                                    <label style=FIELD_LABEL_STYLE><span>"Name"</span><input type="text" prop:value=move || name.get() on:input=move |ev| name.set(event_target_value(&ev)) /></label>
+                                    <label style=FIELD_LABEL_STYLE><span>"Email"</span><input type="email" prop:value=move || email.get() on:input=move |ev| email.set(event_target_value(&ev)) /></label>
+                                    <label style=FIELD_LABEL_STYLE><span>"Phone"</span><input type="text" prop:value=move || phone_no.get() on:input=move |ev| phone_no.set(event_target_value(&ev)) /></label>
+                                    <label style=FIELD_LABEL_STYLE><span>"Company"</span><input type="text" prop:value=move || company_name.get() on:input=move |ev| company_name.set(event_target_value(&ev)) /></label>
                                 </div>
-                                <label style="display:grid;gap:0.35rem;">
+                                <label style=FIELD_LABEL_STYLE>
                                     <span>"Address"</span>
                                     <textarea rows="2" prop:value=move || address.get() on:input=move |ev| address.set(event_target_value(&ev)) style="padding:0.75rem 0.85rem;border:1px solid #d6d3d1;border-radius:0.85rem;resize:vertical;" />
                                 </label>
 
                                 {show_carrier_fields.then(|| view! {
                                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
-                                        <label style="display:grid;gap:0.35rem;"><span>"DOT Number"</span><input type="text" prop:value=move || dot_number.get() on:input=move |ev| dot_number.set(event_target_value(&ev)) /></label>
-                                        <label style="display:grid;gap:0.35rem;"><span>"MC Number"</span><input type="text" prop:value=move || mc_number.get() on:input=move |ev| mc_number.set(event_target_value(&ev)) /></label>
+                                        <label style=FIELD_LABEL_STYLE><span>"DOT Number"</span><input type="text" prop:value=move || dot_number.get() on:input=move |ev| dot_number.set(event_target_value(&ev)) /></label>
+                                        <label style=FIELD_LABEL_STYLE><span>"MC Number"</span><input type="text" prop:value=move || mc_number.get() on:input=move |ev| mc_number.set(event_target_value(&ev)) /></label>
                                     </div>
                                 })}
 
                                 {show_broker_fields.then(|| view! {
                                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
-                                        <label style="display:grid;gap:0.35rem;"><span>"MC/CBSA/USDOT"</span><input type="text" prop:value=move || mc_cbsa_usdot_no.get() on:input=move |ev| mc_cbsa_usdot_no.set(event_target_value(&ev)) /></label>
-                                        <label style="display:grid;gap:0.35rem;"><span>"UCR/HCC"</span><input type="text" prop:value=move || ucr_hcc_no.get() on:input=move |ev| ucr_hcc_no.set(event_target_value(&ev)) /></label>
+                                        <label style=FIELD_LABEL_STYLE><span>"MC/CBSA/USDOT"</span><input type="text" prop:value=move || mc_cbsa_usdot_no.get() on:input=move |ev| mc_cbsa_usdot_no.set(event_target_value(&ev)) /></label>
+                                        <label style=FIELD_LABEL_STYLE><span>"UCR/HCC"</span><input type="text" prop:value=move || ucr_hcc_no.get() on:input=move |ev| ucr_hcc_no.set(event_target_value(&ev)) /></label>
                                     </div>
                                 })}
 
                                 <div style="display:grid;gap:0.35rem;padding-top:0.25rem;border-top:1px solid #e5e7eb;">
                                     <strong>"Change password"</strong>
-                                    <small style="color:#64748b;">"Leave both fields empty if you do not want to change the password."</small>
+                                    <small style=MUTED_TEXT_STYLE>"Leave both fields empty if you do not want to change the password."</small>
                                 </div>
                                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
-                                    <label style="display:grid;gap:0.35rem;"><span>"New password"</span><input type="password" prop:value=move || password.get() on:input=move |ev| password.set(event_target_value(&ev)) /></label>
-                                    <label style="display:grid;gap:0.35rem;"><span>"Confirm password"</span><input type="password" prop:value=move || password_confirmation.get() on:input=move |ev| password_confirmation.set(event_target_value(&ev)) /></label>
+                                    <label style=FIELD_LABEL_STYLE><span>"New password"</span><input type="password" prop:value=move || password.get() on:input=move |ev| password.set(event_target_value(&ev)) /></label>
+                                    <label style=FIELD_LABEL_STYLE><span>"Confirm password"</span><input type="password" prop:value=move || password_confirmation.get() on:input=move |ev| password_confirmation.set(event_target_value(&ev)) /></label>
                                 </div>
 
                                 <div style="display:flex;justify-content:flex-end;">
@@ -543,236 +581,82 @@ pub fn ProfilePage() -> impl IntoView {
                                 </div>
                             </form>
 
-                            <section style="padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fff;display:grid;gap:1rem;">
-                                <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                                    <div style="display:grid;gap:0.35rem;">
-                                        <strong>"KYC revision workspace"</strong>
-                                        <small style="color:#64748b;">
-                                            "This Rust document workbench replaces the heavier revision-oriented Blade workflow. Each change sends the profile back into admin review, just like the PHP flow."
-                                        </small>
-                                        <small style="color:#64748b;">
-                                            "Blockchain rows can now verify a local file with SHA-256 in the browser, which closes one of the last big PHP-only profile behaviors."
-                                        </small>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        style="padding:0.55rem 0.85rem;border-radius:0.8rem;border:1px solid #d1d5db;background:#f8fafc;color:#111827;cursor:pointer;"
-                                        on:click=move |_| reset_document_forms()
-                                    >
-                                        "Reset KYC forms"
-                                    </button>
-                                </div>
+                            {show_carrier_fields.then(|| {
+                                let capacity = screen_value.carrier_capacity.clone();
+                                view! {
+                                    <form on:submit=save_capacity style="display:grid;gap:1rem;padding:1rem;border:1px solid #d6d3d1;border-radius:1rem;background:#fff;">
+                                        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+                                            <div style=FIELD_LABEL_STYLE>
+                                                <strong>"Carrier capacity profile"</strong>
+                                                <small style=MUTED_TEXT_STYLE>"Structured capacity feeds eligibility, matching, and future tender controls."</small>
+                                            </div>
+                                            <span style=tone_style(capacity_tone(capacity.as_ref()))>
+                                                {capacity.as_ref().map(|item| item.readiness_label.clone()).unwrap_or_else(|| "Capacity not configured".into())}
+                                            </span>
+                                        </div>
 
-                                <form
-                                    style="display:grid;gap:0.85rem;padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#fcfcfb;"
-                                    on:submit=move |ev| {
-                                        ev.prevent_default();
-                                        upload_document();
-                                    }
-                                >
-                                    <div style="display:grid;gap:0.35rem;">
-                                        <strong>"Add a new KYC row"</strong>
-                                        <small style="color:#64748b;">"New rows require a file. Choose blockchain to anchor the row as part of the upload step."</small>
-                                    </div>
-                                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
-                                        <label style="display:grid;gap:0.35rem;">
-                                            <span>"Document name"</span>
-                                            <input type="text" prop:value=move || upload_document_name.get() on:input=move |ev| upload_document_name.set(event_target_value(&ev)) placeholder="Certificate of Insurance" />
-                                        </label>
-                                        <label style="display:grid;gap:0.35rem;">
-                                            <span>"Document type"</span>
-                                            <select prop:value=move || upload_document_type.get() on:change=move |ev| upload_document_type.set(event_target_value(&ev))>
-                                                <option value="standard">"Standard"</option>
-                                                <option value="blockchain">"Blockchain"</option>
-                                            </select>
-                                        </label>
-                                    </div>
-                                    <label style="display:grid;gap:0.35rem;">
-                                        <span>"Choose file"</span>
-                                        <input id=document_upload::profile_kyc_upload_input_id() type="file" />
-                                    </label>
-                                    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;">
-                                        <button type="submit" style="padding:0.65rem 0.95rem;border-radius:0.85rem;border:none;background:#111827;color:white;cursor:pointer;" disabled=move || uploading_document.get()>
-                                            {move || if uploading_document.get() { "Uploading..." } else { "Add KYC row" }}
-                                        </button>
-                                        <small style="color:#64748b;">"25 MB limit in the current Rust slice."</small>
-                                    </div>
-                                </form>
+                                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
+                                            <label style=FIELD_LABEL_STYLE>
+                                                <span>"Equipment types"</span>
+                                                <input type="text" placeholder="dry van, reefer" prop:value=move || capacity_equipment_types.get() on:input=move |ev| capacity_equipment_types.set(event_target_value(&ev)) />
+                                            </label>
+                                            <label style=FIELD_LABEL_STYLE>
+                                                <span>"Operating regions"</span>
+                                                <input type="text" placeholder="tx, midwest, southeast" prop:value=move || capacity_operating_regions.get() on:input=move |ev| capacity_operating_regions.set(event_target_value(&ev)) />
+                                            </label>
+                                            <label style=FIELD_LABEL_STYLE>
+                                                <span>"Lane preferences"</span>
+                                                <input type="text" placeholder="dallas to chicago, houston outbound" prop:value=move || capacity_lane_preferences.get() on:input=move |ev| capacity_lane_preferences.set(event_target_value(&ev)) />
+                                            </label>
+                                            <label style=FIELD_LABEL_STYLE>
+                                                <span>"Preferred commodities"</span>
+                                                <input type="text" placeholder="consumer goods, food grade" prop:value=move || capacity_preferred_commodities.get() on:input=move |ev| capacity_preferred_commodities.set(event_target_value(&ev)) />
+                                            </label>
+                                            <label style=FIELD_LABEL_STYLE>
+                                                <span>"Service levels"</span>
+                                                <input type="text" placeholder="standard, expedited" prop:value=move || capacity_service_levels.get() on:input=move |ev| capacity_service_levels.set(event_target_value(&ev)) />
+                                            </label>
+                                            <label style=FIELD_LABEL_STYLE>
+                                                <span>"Certifications"</span>
+                                                <input type="text" placeholder="hazmat, twic, food grade" prop:value=move || capacity_certifications.get() on:input=move |ev| capacity_certifications.set(event_target_value(&ev)) />
+                                            </label>
+                                            <label style=FIELD_LABEL_STYLE>
+                                                <span>"Availability"</span>
+                                                <select prop:value=move || capacity_availability_status.get() on:change=move |ev| capacity_availability_status.set(event_target_value(&ev))>
+                                                    <option value="available">"Available"</option>
+                                                    <option value="limited">"Limited"</option>
+                                                    <option value="unavailable">"Unavailable"</option>
+                                                    <option value="seasonal">"Seasonal"</option>
+                                                    <option value="paused">"Paused"</option>
+                                                </select>
+                                            </label>
+                                            <label style=FIELD_LABEL_STYLE>
+                                                <span>"Available power units"</span>
+                                                <input type="number" min="0" prop:value=move || capacity_available_power_units.get() on:input=move |ev| capacity_available_power_units.set(event_target_value(&ev)) />
+                                            </label>
+                                            <label style=FIELD_LABEL_STYLE>
+                                                <span>"Insurance limit USD"</span>
+                                                <input type="number" min="0" step="1000" prop:value=move || capacity_insurance_limit_usd.get() on:input=move |ev| capacity_insurance_limit_usd.set(event_target_value(&ev)) />
+                                            </label>
+                                        </div>
 
-                                <form
-                                    style="display:grid;gap:0.85rem;padding:1rem;border:1px solid #e5e7eb;border-radius:1rem;background:#f8fafc;"
-                                    on:submit=move |ev| {
-                                        ev.prevent_default();
-                                        save_document_metadata();
-                                    }
-                                >
-                                    <div style="display:grid;gap:0.35rem;">
-                                        <strong>"Edit selected KYC row"</strong>
-                                        <small style="color:#64748b;">{move || editing_document_id.get().map(|id| format!("Editing document #{}", id)).unwrap_or_else(|| "Choose a row below to edit metadata or replace its file.".into())}</small>
-                                    </div>
-                                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
-                                        <label style="display:grid;gap:0.35rem;">
-                                            <span>"Document name"</span>
-                                            <input type="text" prop:value=move || editing_document_name.get() on:input=move |ev| editing_document_name.set(event_target_value(&ev)) placeholder="Certificate of Insurance" />
+                                        <label style=FIELD_LABEL_STYLE>
+                                            <span>"Capacity notes"</span>
+                                            <textarea rows="2" prop:value=move || capacity_notes.get() on:input=move |ev| capacity_notes.set(event_target_value(&ev)) style="padding:0.75rem 0.85rem;border:1px solid #d6d3d1;border-radius:0.85rem;resize:vertical;" />
                                         </label>
-                                        <label style="display:grid;gap:0.35rem;">
-                                            <span>"Document type"</span>
-                                            <select prop:value=move || editing_document_type.get() on:change=move |ev| editing_document_type.set(event_target_value(&ev))>
-                                                <option value="standard">"Standard"</option>
-                                                <option value="blockchain">"Blockchain"</option>
-                                            </select>
-                                        </label>
-                                    </div>
-                                    <label style="display:grid;gap:0.35rem;">
-                                        <span>"Replace file"</span>
-                                        <input
-                                            id=move || editing_document_id.get().map(document_upload::profile_kyc_replace_input_id).unwrap_or_else(|| "profile-kyc-document-replace-idle".into())
-                                            type="file"
-                                        />
-                                    </label>
-                                    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;">
-                                        <button type="submit" style="padding:0.65rem 0.95rem;border-radius:0.85rem;border:none;background:#111827;color:white;cursor:pointer;" disabled=move || saving_document.get() || editing_document_id.get().is_none()>
-                                            {move || if saving_document.get() { "Saving..." } else { "Save row metadata" }}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            style="padding:0.65rem 0.95rem;border-radius:0.85rem;border:none;background:#1d4ed8;color:white;cursor:pointer;"
-                                            disabled=move || replacing_document_id.get().is_some() || editing_document_id.get().is_none()
-                                            on:click=move |_| replace_document_file()
-                                        >
-                                            {move || if replacing_document_id.get().is_some() { "Replacing..." } else { "Replace file" }}
-                                        </button>
-                                    </div>
-                                </form>
 
-                                {if documents.is_empty() {
-                                    view! { <p style="margin:0;color:#64748b;">"No KYC documents are attached yet."</p> }.into_any()
-                                } else {
-                                    view! {
-                                        <table style="width:100%;border-collapse:collapse;min-width:760px;">
-                                            <thead style="background:#f8fafc;">
-                                                <tr>
-                                                    <th style="text-align:left;padding:0.75rem;">"Document"</th>
-                                                    <th style="text-align:left;padding:0.75rem;">"File"</th>
-                                                    <th style="text-align:left;padding:0.75rem;">"Blockchain"</th>
-                                                    <th style="text-align:left;padding:0.75rem;">"Uploaded"</th>
-                                                    <th style="text-align:left;padding:0.75rem;">"Actions"</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {documents.into_iter().map(|document| {
-                                                    let document_id = document.id;
-                                                    let download_path = document.download_path.clone();
-                                                    let verify_input_id = document_upload::profile_kyc_verify_input_id(document_id);
-                                                    let stored_blockchain_hash = document.blockchain_hash.clone();
-                                                    let file_meta = format!(
-                                                        "{} | {}",
-                                                        document.mime_type.clone().unwrap_or_else(|| "unknown mime".into()),
-                                                        human_file_size(document.file_size_bytes),
-                                                    );
-                                                    let blockchain_badge = document.blockchain_label.clone().map(|label| {
-                                                        let tone = document.blockchain_tone.clone().unwrap_or_else(|| "info".into());
-                                                        view! { <span style=tone_style(&tone)>{label}</span> }.into_any()
-                                                    });
-                                                    let edit_row = document.clone();
-                                                    view! {
-                                                        <tr style="border-top:1px solid #f1f5f9;vertical-align:top;">
-                                                            <td style="padding:0.75rem;display:grid;gap:0.3rem;">
-                                                                <strong>{document.document_name}</strong>
-                                                                <small>{document.document_type.clone()}</small>
-                                                            </td>
-                                                            <td style="padding:0.75rem;display:grid;gap:0.35rem;">
-                                                                <strong>{document.file_label.clone()}</strong>
-                                                                <small>{file_meta}</small>
-                                                            </td>
-                                                            <td style="padding:0.75rem;display:grid;gap:0.35rem;">
-                                                                {blockchain_badge.unwrap_or_else(|| view! { <span>"Not anchored yet"</span> }.into_any())}
-                                                                {document.blockchain_hash_preview.clone().map(|preview| view! {
-                                                                    <small style="color:#64748b;">{preview}</small>
-                                                                })}
-                                                                {move || local_verify_results.with(|rows| rows.get(&document_id).cloned()).map(|result| {
-                                                                    let tone = if result.matches { "success" } else { "danger" };
-                                                                    let summary = if result.matches {
-                                                                        format!("{} matched {}", result.file_name, result.hash_preview)
-                                                                    } else {
-                                                                        format!("{} did not match {}", result.file_name, result.hash_preview)
-                                                                    };
-                                                                    view! {
-                                                                        <small style=tone_style(tone)>{summary}</small>
-                                                                    }
-                                                                })}
-                                                            </td>
-                                                            <td style="padding:0.75rem;">{document.uploaded_at_label.clone()}</td>
-                                                            <td style="padding:0.75rem;display:grid;gap:0.5rem;min-width:200px;">
-                                                                {document.can_view_file.then(|| {
-                                                                    let path = download_path.clone().unwrap_or_default();
-                                                                    view! {
-                                                                        <button
-                                                                            type="button"
-                                                                            style="padding:0.55rem 0.8rem;border-radius:0.75rem;border:none;background:#1d4ed8;color:white;cursor:pointer;"
-                                                                            disabled=move || opening_document_id.get() == Some(document_id)
-                                                                            on:click=move |_| open_document(document_id, path.clone())
-                                                                        >
-                                                                            {move || if opening_document_id.get() == Some(document_id) { "Opening..." } else { "View file" }}
-                                                                        </button>
-                                                                    }
-                                                                })}
-                                                                {document.can_edit.then(|| view! {
-                                                                    <button
-                                                                        type="button"
-                                                                        style="padding:0.55rem 0.8rem;border-radius:0.75rem;border:1px solid #d1d5db;background:#f8fafc;color:#111827;cursor:pointer;"
-                                                                        on:click=move |_| start_edit_document(edit_row.clone())
-                                                                    >
-                                                                        "Edit row"
-                                                                    </button>
-                                                                })}
-                                                                {document.can_verify_blockchain.then(|| view! {
-                                                                    <button
-                                                                        type="button"
-                                                                        style="padding:0.55rem 0.8rem;border-radius:0.75rem;border:none;background:#0f766e;color:white;cursor:pointer;"
-                                                                        disabled=move || verifying_document_id.get() == Some(document_id)
-                                                                        on:click=move |_| verify_document(document_id)
-                                                                    >
-                                                                        {move || if verifying_document_id.get() == Some(document_id) { "Anchoring..." } else { "Anchor to blockchain" }}
-                                                                    </button>
-                                                                })}
-                                                                {stored_blockchain_hash.clone().filter(|_| document.document_type.eq_ignore_ascii_case("blockchain")).map(|stored_hash| view! {
-                                                                    <div style="display:grid;gap:0.35rem;">
-                                                                        <label
-                                                                            for=verify_input_id.clone()
-                                                                            style="padding:0.55rem 0.8rem;border-radius:0.75rem;border:1px solid #0f766e;background:#ecfdf5;color:#065f46;cursor:pointer;text-align:center;"
-                                                                        >
-                                                                            {move || if local_verify_loading_id.get() == Some(document_id) { "Verifying local file..." } else { "Choose file to verify" }}
-                                                                        </label>
-                                                                        <input
-                                                                            id=verify_input_id.clone()
-                                                                            type="file"
-                                                                            style="display:none;"
-                                                                            on:change=move |_| verify_local_document(document_id, Some(stored_hash.clone()))
-                                                                        />
-                                                                    </div>
-                                                                })}
-                                                                {document.can_delete.then(|| view! {
-                                                                    <button
-                                                                        type="button"
-                                                                        style="padding:0.55rem 0.8rem;border-radius:0.75rem;border:none;background:#be123c;color:white;cursor:pointer;"
-                                                                        disabled=move || deleting_document_id.get() == Some(document_id)
-                                                                        on:click=move |_| delete_document(document_id)
-                                                                    >
-                                                                        {move || if deleting_document_id.get() == Some(document_id) { "Removing..." } else { "Delete row" }}
-                                                                    </button>
-                                                                })}
-                                                            </td>
-                                                        </tr>
-                                                    }
-                                                }).collect_view()}
-                                            </tbody>
-                                        </table>
-                                    }.into_any()
-                                }}
-                            </section>
+                                        <div style="display:flex;justify-content:flex-end;">
+                                            <button type="submit" disabled=move || saving_capacity.get() style="padding:0.65rem 0.95rem;border-radius:0.85rem;border:none;background:#111827;color:white;cursor:pointer;">
+                                                {move || if saving_capacity.get() { "Saving capacity..." } else { "Save capacity" }}
+                                            </button>
+                                        </div>
+                                    </form>
+                                }
+                            })}
 
-                            <section style="display:grid;gap:0.35rem;">
+                            {render_kyc_workspace(required_documents, documents, upload_document_name, upload_document_type, uploading_document, editing_document_id, editing_document_name, editing_document_type, saving_document, replacing_document_id, local_verify_results, opening_document_id, verifying_document_id, local_verify_loading_id, deleting_document_id, reset_document_forms, upload_document, save_document_metadata, replace_document_file, start_edit_document, open_document, verify_document, verify_local_document, delete_document)}
+
+                            <section style=FIELD_LABEL_STYLE>
                                 {screen_value.notes.into_iter().map(|note| view! { <p style="margin:0;">{note}</p> }).collect_view()}
                             </section>
                         </>
@@ -782,14 +666,5 @@ pub fn ProfilePage() -> impl IntoView {
                 }
             }}
         </article>
-    }
-}
-
-fn optional_string(value: String) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
     }
 }

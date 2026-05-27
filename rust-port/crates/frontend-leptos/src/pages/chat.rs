@@ -6,8 +6,8 @@ use crate::{
     session::{self, use_auth},
 };
 use shared::{
-    ChatSendMessageRequest, ChatWorkspaceScreen, OfferReviewDecision, OfferReviewRequest,
-    RealtimeEventKind, RealtimeTopic,
+    ChatSendMessageRequest, ChatWorkspaceScreen, OfferCounterRequest, OfferReviewDecision,
+    OfferReviewRequest, RealtimeEventKind, RealtimeTopic,
 };
 
 fn tone_style(tone: &str) -> &'static str {
@@ -33,6 +33,10 @@ pub fn ChatWorkspacePage() -> impl IntoView {
     let error_message = RwSignal::new(None::<String>);
     let action_message = RwSignal::new(None::<String>);
     let pending_offer_id = RwSignal::new(None::<u64>);
+    let counter_offer_id = RwSignal::new(None::<u64>);
+    let counter_amount = RwSignal::new(String::new());
+    let counter_expires_at = RwSignal::new(String::new());
+    let counter_note = RwSignal::new(String::new());
     let is_sending = RwSignal::new(false);
     let message_body = RwSignal::new(String::new());
     let refresh_nonce = RwSignal::new(0_u64);
@@ -57,7 +61,7 @@ pub fn ChatWorkspacePage() -> impl IntoView {
         }
 
         is_loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::fetch_chat_workspace_screen(conversation_id).await {
@@ -102,7 +106,7 @@ pub fn ChatWorkspacePage() -> impl IntoView {
             existing_handle.abort();
         }
 
-        let auth = auth.clone();
+        let auth = auth;
         let handle = realtime::connect_realtime_listener(
             conversation_id,
             vec![RealtimeTopic::Conversation],
@@ -167,12 +171,12 @@ pub fn ChatWorkspacePage() -> impl IntoView {
             return;
         };
 
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
-            if let Err(error) = api::mark_conversation_read(conversation_id).await {
-                if error.contains("returned 401") {
-                    session::invalidate_session(&auth, "Your Rust session expired; sign in again.");
-                }
+            if let Err(error) = api::mark_conversation_read(conversation_id).await
+                && error.contains("returned 401")
+            {
+                session::invalidate_session(&auth, "Your Rust session expired; sign in again.");
             }
         });
 
@@ -196,10 +200,86 @@ pub fn ChatWorkspacePage() -> impl IntoView {
 
         pending_offer_id.set(Some(offer_id));
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::review_offer(offer_id, &OfferReviewRequest { decision }).await {
+                Ok(result) => {
+                    action_message.set(Some(result.message));
+                    if result.success {
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+
+            pending_offer_id.set(None);
+        });
+    };
+
+    let counter_offer_action = move |offer_id: u64| {
+        let Some(amount) = counter_amount
+            .get()
+            .parse::<f64>()
+            .ok()
+            .filter(|value| *value > 0.0)
+        else {
+            action_message.set(Some("Enter a valid counteroffer amount.".into()));
+            return;
+        };
+
+        pending_offer_id.set(Some(offer_id));
+        action_message.set(None);
+        let auth = auth;
+        let payload = OfferCounterRequest {
+            amount,
+            expires_at: (!counter_expires_at.get().trim().is_empty())
+                .then(|| counter_expires_at.get()),
+            note: (!counter_note.get().trim().is_empty()).then(|| counter_note.get()),
+        };
+
+        spawn_local(async move {
+            match api::counter_offer(offer_id, &payload).await {
+                Ok(result) => {
+                    action_message.set(Some(result.message));
+                    if result.success {
+                        counter_offer_id.set(None);
+                        counter_amount.set(String::new());
+                        counter_expires_at.set(String::new());
+                        counter_note.set(String::new());
+                        refresh_nonce.update(|value| *value += 1);
+                    }
+                }
+                Err(error) => {
+                    if error.contains("returned 401") {
+                        session::invalidate_session(
+                            &auth,
+                            "Your Rust session expired; sign in again.",
+                        );
+                    }
+                    action_message.set(Some(error));
+                }
+            }
+
+            pending_offer_id.set(None);
+        });
+    };
+
+    let rate_confirmation_action = move |offer_id: u64| {
+        pending_offer_id.set(Some(offer_id));
+        action_message.set(None);
+        let auth = auth;
+
+        spawn_local(async move {
+            match api::generate_rate_confirmation(offer_id).await {
                 Ok(result) => {
                     action_message.set(Some(result.message));
                     if result.success {
@@ -249,7 +329,7 @@ pub fn ChatWorkspacePage() -> impl IntoView {
 
         is_sending.set(true);
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::send_message(conversation_id, &ChatSendMessageRequest { body }).await {
@@ -425,36 +505,77 @@ pub fn ChatWorkspacePage() -> impl IntoView {
                                     .map(|offer| {
                                         let offer_id = offer.offer_id;
                                         let is_reviewing = Signal::derive(move || pending_offer_id.get() == Some(offer_id));
+                                        let show_counter_form = Signal::derive(move || counter_offer_id.get() == Some(offer_id));
                                         let can_review_this_offer = can_review_offers.get() && offer.can_accept;
+                                        let is_accepted_offer = offer.status_label == "Approved" || offer.status_label == "Accepted";
                                         view! {
-                                            <div style="display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:0.8rem 1rem;border:1px solid #e5e7eb;border-radius:0.9rem;flex-wrap:wrap;">
-                                                <div>
-                                                    <strong>{offer.amount_label}</strong>
-                                                    <div><small>{offer.created_at_label}</small></div>
-                                                </div>
-                                                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                                                    <span style=tone_style(&offer.status_tone)>{offer.status_label}</span>
-                                                    {can_review_this_offer.then(|| view! {
-                                                        <>
+                                            <div style="display:grid;gap:0.65rem;padding:0.8rem 1rem;border:1px solid #e5e7eb;border-radius:0.9rem;">
+                                                <div style="display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap;">
+                                                    <div>
+                                                        <strong>{offer.amount_label}</strong>
+                                                        <div><small>{offer.created_at_label}</small></div>
+                                                    </div>
+                                                    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                                                        <span style=tone_style(&offer.status_tone)>{offer.status_label}</span>
+                                                        {can_review_this_offer.then(|| view! {
+                                                            <>
+                                                                <button
+                                                                    type="button"
+                                                                    style="padding:0.5rem 0.8rem;border-radius:0.75rem;border:1px solid #0f766e;background:#ecfdf5;color:#0f766e;cursor:pointer;"
+                                                                    disabled=move || is_reviewing.get()
+                                                                    on:click=move |_| review_offer_action(offer_id, OfferReviewDecision::Accept)
+                                                                >
+                                                                    "Accept"
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    style="padding:0.5rem 0.8rem;border-radius:0.75rem;border:1px solid #1d4ed8;background:#eff6ff;color:#1d4ed8;cursor:pointer;"
+                                                                    disabled=move || is_reviewing.get()
+                                                                    on:click=move |_| counter_offer_id.set(Some(offer_id))
+                                                                >
+                                                                    "Counter"
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    style="padding:0.5rem 0.8rem;border-radius:0.75rem;border:1px solid #be123c;background:#fff1f2;color:#be123c;cursor:pointer;"
+                                                                    disabled=move || is_reviewing.get()
+                                                                    on:click=move |_| review_offer_action(offer_id, OfferReviewDecision::Decline)
+                                                                >
+                                                                    {move || if is_reviewing.get() { "Working..." } else { "Decline" }}
+                                                                </button>
+                                                            </>
+                                                        })}
+                                                        {(can_review_offers.get() && is_accepted_offer).then(|| view! {
                                                             <button
                                                                 type="button"
-                                                                style="padding:0.5rem 0.8rem;border-radius:0.75rem;border:1px solid #0f766e;background:#ecfdf5;color:#0f766e;cursor:pointer;"
+                                                                style="padding:0.5rem 0.8rem;border-radius:0.75rem;border:1px solid #111827;background:#111827;color:white;cursor:pointer;"
                                                                 disabled=move || is_reviewing.get()
-                                                                on:click=move |_| review_offer_action(offer_id, OfferReviewDecision::Accept)
+                                                                on:click=move |_| rate_confirmation_action(offer_id)
                                                             >
-                                                                "Accept"
+                                                                "Rate confirmation"
                                                             </button>
-                                                            <button
-                                                                type="button"
-                                                                style="padding:0.5rem 0.8rem;border-radius:0.75rem;border:1px solid #be123c;background:#fff1f2;color:#be123c;cursor:pointer;"
-                                                                disabled=move || is_reviewing.get()
-                                                                on:click=move |_| review_offer_action(offer_id, OfferReviewDecision::Decline)
-                                                            >
-                                                                {move || if is_reviewing.get() { "Working..." } else { "Decline" }}
-                                                            </button>
-                                                        </>
-                                                    })}
+                                                        })}
+                                                    </div>
                                                 </div>
+                                                {move || show_counter_form.get().then(|| view! {
+                                                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.6rem;align-items:end;">
+                                                        <label style="display:grid;gap:0.25rem;">
+                                                            <span>"Counter amount"</span>
+                                                            <input type="number" step="0.01" prop:value=move || counter_amount.get() on:input=move |ev| counter_amount.set(event_target_value(&ev)) style="padding:0.55rem 0.7rem;border:1px solid #d1d5db;border-radius:0.75rem;" />
+                                                        </label>
+                                                        <label style="display:grid;gap:0.25rem;">
+                                                            <span>"Expires"</span>
+                                                            <input type="datetime-local" prop:value=move || counter_expires_at.get() on:input=move |ev| counter_expires_at.set(event_target_value(&ev)) style="padding:0.55rem 0.7rem;border:1px solid #d1d5db;border-radius:0.75rem;" />
+                                                        </label>
+                                                        <label style="display:grid;gap:0.25rem;">
+                                                            <span>"Note"</span>
+                                                            <input prop:value=move || counter_note.get() on:input=move |ev| counter_note.set(event_target_value(&ev)) style="padding:0.55rem 0.7rem;border:1px solid #d1d5db;border-radius:0.75rem;" />
+                                                        </label>
+                                                        <button type="button" disabled=move || is_reviewing.get() on:click=move |_| counter_offer_action(offer_id) style="padding:0.55rem 0.8rem;border-radius:0.75rem;border:1px solid #1d4ed8;background:#1d4ed8;color:white;cursor:pointer;">
+                                                            "Send counter"
+                                                        </button>
+                                                    </div>
+                                                })}
                                             </div>
                                         }
                                     })

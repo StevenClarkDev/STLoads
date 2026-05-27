@@ -2,10 +2,9 @@ use std::collections::HashMap;
 
 use db::dispatch::{
     count_dispatch_desk_legs_filtered, list_dispatch_desk_legs_filtered,
-    list_load_board_legs_filtered, list_load_board_legs_for_carrier_filtered,
-    list_load_board_legs_for_owner_filtered, load_board_metrics, load_board_metrics_for_carrier,
-    load_board_metrics_for_owner, load_board_tab_counts, load_board_tab_counts_for_carrier,
-    load_board_tab_counts_for_owner,
+    list_load_board_saved_filters, load_board_metrics, load_board_metrics_for_carrier,
+    load_board_metrics_for_owner, load_board_search, load_board_tab_counts,
+    load_board_tab_counts_for_carrier, load_board_tab_counts_for_owner,
 };
 use db::marketplace::{
     ConversationPresenceRecord, ConversationReadRecord, OfferRecord,
@@ -14,6 +13,7 @@ use db::marketplace::{
     find_peer_conversation_read_state, list_message_details_for_conversation, list_offers_for_leg,
     list_recent_conversation_workspace_records_for_user,
 };
+use db::master_data::{list_commodity_types, list_equipments};
 use db::tms::{
     count_handoffs_by_status, count_unresolved_sync_errors_by_class, list_recent_handoffs_filtered,
     list_recent_reconciliation_logs_filtered, list_unresolved_sync_error_breakdown,
@@ -25,10 +25,11 @@ use domain::marketplace::OfferStatus;
 use domain::tms::reconciliation_action_descriptors;
 use shared::{
     ChatConversationItem, ChatMessageItem, ChatOfferItem, ChatWorkspaceScreen, DispatchDeskLink,
-    DispatchDeskRow, DispatchDeskScreen, ErrorBreakdownRow, HandoffRow, LoadBoardMetric,
-    LoadBoardRow, LoadBoardScreen, LoadBoardTab, MismatchCard, Pagination, ReconciliationLogRow,
-    StatusCard, StloadsOperationsScreen, StloadsReconciliationScreen, SyncIssueRow,
-    SyncIssueSummary, sample_stloads_operations_screen, sample_stloads_reconciliation_screen,
+    DispatchDeskRow, DispatchDeskScreen, ErrorBreakdownRow, HandoffRow, LoadBoardFilterOption,
+    LoadBoardFilters, LoadBoardMetric, LoadBoardRow, LoadBoardSavedFilter, LoadBoardScreen,
+    LoadBoardTab, MismatchCard, Pagination, ReconciliationLogRow, StatusCard,
+    StloadsOperationsScreen, StloadsReconciliationScreen, SyncIssueRow, SyncIssueSummary,
+    sample_stloads_operations_screen, sample_stloads_reconciliation_screen,
 };
 use tracing::warn;
 
@@ -89,16 +90,34 @@ const DISPATCH_DESK_ORDER: &[(&str, &str)] = &[
     ("quote", "Quote Desk"),
     ("tender", "Tender Desk"),
     ("facility", "Facility Desk"),
+    ("in_transit_exception", "In-Transit Exceptions"),
     ("closeout", "Closeout Desk"),
     ("collections", "Collections Desk"),
+    ("dispute", "Dispute Desk"),
+    ("reconciliation", "Reconciliation Desk"),
+    ("compliance", "Compliance Desk"),
 ];
+
+#[derive(Debug, Clone)]
+struct CarrierCapacityMatchProfile {
+    equipment_types: Vec<String>,
+    operating_regions: Vec<String>,
+    preferred_commodities: Vec<String>,
+    service_levels: Vec<String>,
+    availability_status: String,
+    available_power_units: i32,
+    insurance_limit_usd: f64,
+}
 
 pub async fn load_board_screen(
     state: &AppState,
     viewer: Option<&ResolvedSession>,
     tab_filter: Option<String>,
+    mut filters: LoadBoardFilters,
 ) -> LoadBoardScreen {
     let active_tab = normalize_load_board_tab(tab_filter.as_deref());
+    filters.page = filters.page.max(1);
+    filters.per_page = filters.per_page.clamp(1, 100);
     let Some(viewer) = viewer else {
         return empty_load_board_screen(
             state,
@@ -111,6 +130,7 @@ pub async fn load_board_screen(
             ],
             Some(("Open Rust Login".into(), "/auth/login".into())),
             active_tab,
+            filters,
         );
     };
 
@@ -125,6 +145,7 @@ pub async fn load_board_screen(
             ],
             None,
             active_tab,
+            filters,
         );
     }
 
@@ -140,10 +161,11 @@ pub async fn load_board_screen(
             )],
             None,
             active_tab,
+            filters,
         );
     };
 
-    match build_load_board_screen(state, pool, viewer, active_tab.clone()).await {
+    match build_load_board_screen(state, pool, viewer, active_tab.clone(), filters.clone()).await {
         Ok(screen) => screen,
         Err(error) => {
             warn!(error = %error, "failed to build auth-scoped load board screen");
@@ -157,6 +179,7 @@ pub async fn load_board_screen(
                 )],
                 None,
                 active_tab,
+                filters,
             )
         }
     }
@@ -317,13 +340,13 @@ async fn build_load_board_screen(
     pool: &db::DbPool,
     viewer: &ResolvedSession,
     active_tab: String,
+    filters: LoadBoardFilters,
 ) -> Result<LoadBoardScreen, sqlx::Error> {
     let viewer_role = viewer.user.primary_role();
-    let (tab_counts, metrics, rows, role_label, mut recommendation_notes) = match viewer_role {
+    let (tab_counts, metrics, role_label, mut recommendation_notes) = match viewer_role {
         Some(UserRole::Admin) => (
             load_board_tab_counts(pool).await?,
             load_board_metrics(pool).await?,
-            list_load_board_legs_filtered(pool, Some(active_tab.as_str()), 20).await?,
             "Admin Workspace".to_string(),
             vec![
                 "This load board is globally scoped because the authenticated session has admin visibility.".into(),
@@ -333,8 +356,6 @@ async fn build_load_board_screen(
         Some(UserRole::Carrier) => (
             load_board_tab_counts_for_carrier(pool, viewer.user.id).await?,
             load_board_metrics_for_carrier(pool, viewer.user.id).await?,
-            list_load_board_legs_for_carrier_filtered(pool, viewer.user.id, Some(active_tab.as_str()), 20)
-                .await?,
             "Carrier Workspace".to_string(),
             vec![
                 "This load board is scoped to open board inventory plus legs already booked by the authenticated carrier account.".into(),
@@ -344,8 +365,6 @@ async fn build_load_board_screen(
         Some(UserRole::Shipper) | Some(UserRole::Broker) | Some(UserRole::FreightForwarder) => (
             load_board_tab_counts_for_owner(pool, viewer.user.id).await?,
             load_board_metrics_for_owner(pool, viewer.user.id).await?,
-            list_load_board_legs_for_owner_filtered(pool, viewer.user.id, Some(active_tab.as_str()), 20)
-                .await?,
             viewer_role_workspace(viewer),
             vec![
                 "This load board is scoped to loads owned by the authenticated account.".into(),
@@ -360,8 +379,33 @@ async fn build_load_board_screen(
                 vec!["The authenticated account has no mapped Rust role, so the load board stays locked.".into()],
                 None,
                 active_tab,
+                filters,
             ));
         }
+    };
+
+    let search_result = load_board_search(
+        pool,
+        viewer_role,
+        viewer.user.id,
+        &filters,
+        Some(active_tab.as_str()),
+    )
+    .await?;
+    let rows = search_result.rows;
+    let carrier_capacity = if viewer_role == Some(UserRole::Carrier) {
+        carrier_capacity_match_profile(pool, viewer.user.id)
+            .await?
+            .inspect(|profile| {
+                recommendation_notes.push(format!(
+                    "Carrier capacity matching is using {} equipment type(s), {} operating region(s), and {} available power unit(s).",
+                    profile.equipment_types.len(),
+                    profile.operating_regions.len(),
+                    profile.available_power_units.max(0)
+                ));
+            })
+    } else {
+        None
     };
 
     let count_map: HashMap<String, u64> = tab_counts
@@ -407,6 +451,12 @@ async fn build_load_board_screen(
                 row.price,
                 row.pickup_date.as_ref(),
                 row.stloads_alert_title.is_none(),
+                carrier_capacity.as_ref(),
+                row.equipment_name.as_deref(),
+                row.commodity_type_name.as_deref(),
+                row.service_level.as_deref(),
+                row.pickup_location_name.as_deref(),
+                row.delivery_location_name.as_deref(),
             );
             let amount_label = format_currency(row.booked_amount.or(row.price));
             let payment_label = payment_label(
@@ -473,6 +523,47 @@ async fn build_load_board_screen(
         ));
     }
 
+    let organization_id = crate::auth_session::session_organization_id(viewer).unwrap_or(1);
+    let role_key = viewer.user.primary_role().map(|role| match role {
+        UserRole::Admin => "admin",
+        UserRole::Shipper => "shipper",
+        UserRole::Carrier => "carrier",
+        UserRole::Broker => "broker",
+        UserRole::FreightForwarder => "freight_forwarder",
+    });
+    let saved_filters =
+        list_load_board_saved_filters(pool, organization_id, viewer.user.id, role_key)
+            .await?
+            .into_iter()
+            .filter_map(|row| {
+                serde_json::from_value::<LoadBoardFilters>(row.filter_payload)
+                    .ok()
+                    .map(|filters| LoadBoardSavedFilter {
+                        id: row.id.max(0) as u64,
+                        name: row.name,
+                        scope_label: row.role_key.unwrap_or_else(|| "Personal".into()),
+                        is_default: row.is_default,
+                        filters,
+                    })
+            })
+            .collect::<Vec<_>>();
+    let equipment_options = list_equipments(pool)
+        .await?
+        .into_iter()
+        .map(|item| LoadBoardFilterOption {
+            id: item.id.max(0) as u64,
+            label: item.name,
+        })
+        .collect::<Vec<_>>();
+    let commodity_options = list_commodity_types(pool)
+        .await?
+        .into_iter()
+        .map(|item| LoadBoardFilterOption {
+            id: item.id.max(0) as u64,
+            label: item.name,
+        })
+        .collect::<Vec<_>>();
+
     Ok(LoadBoardScreen {
         title: "Manage Loads".into(),
         role_label,
@@ -480,12 +571,16 @@ async fn build_load_board_screen(
         primary_action_href: None,
         tabs,
         metrics,
+        filters: filters.clone(),
+        saved_filters,
+        equipment_options,
+        commodity_options,
         rows,
         recommendation_notes,
         pagination: Pagination {
-            page: 1,
-            per_page: 20,
-            total: count_map.get(active_tab.as_str()).copied().unwrap_or(0),
+            page: filters.page,
+            per_page: filters.per_page,
+            total: search_result.total.max(0) as u64,
         },
     })
 }
@@ -671,7 +766,10 @@ async fn build_chat_workspace_screen(
                 status_label,
                 status_tone: status_tone.to_string(),
                 created_at_label: format!("Submitted {}", format_datetime(&offer.created_at)),
-                can_accept: matches!(offer.status(), Some(OfferStatus::Pending)),
+                can_accept: offer
+                    .status()
+                    .map(OfferStatus::is_reviewable)
+                    .unwrap_or(false),
             }
         })
         .collect::<Vec<_>>();
@@ -738,7 +836,8 @@ async fn build_dispatch_desk_screen(
         Some(UserRole::Admin) => None,
         _ => Some(viewer.user.id),
     };
-    let rows = list_dispatch_desk_legs_filtered(pool, owner_scope, status_ids, 20).await?;
+    let rows =
+        list_dispatch_desk_legs_filtered(pool, owner_scope, status_ids, desk_key, 20).await?;
     let total = count_dispatch_desk_legs_filtered(pool, owner_scope, status_ids).await?;
 
     let sync_error_count = if desk_key == "collections" {
@@ -747,7 +846,8 @@ async fn build_dispatch_desk_screen(
         0
     };
 
-    let status_cards = build_dispatch_desk_status_cards(desk_key, &rows, sync_error_count);
+    let mut status_cards = build_dispatch_desk_status_cards(desk_key, &rows, sync_error_count);
+    status_cards.extend(dispatch_manager_status_cards(&rows));
     let mut notes = vec![
         "This Rust dispatch desk intentionally mirrors the PHP desk split by operational phase instead of flattening everything into one board.".into(),
         "Admins see the full desk scope; non-admin sessions only see loads owned by the authenticated account, matching the Laravel controller behavior.".into(),
@@ -1003,6 +1103,7 @@ fn empty_load_board_screen(
     mut notes: Vec<String>,
     primary_action: Option<(String, String)>,
     active_tab: String,
+    filters: LoadBoardFilters,
 ) -> LoadBoardScreen {
     if let Some(public_base_url) = state.config.public_base_url.as_ref() {
         notes.push(format!(
@@ -1042,11 +1143,15 @@ fn empty_load_board_screen(
                 note: "Escrow follow-up appears after secure data access is available.".into(),
             },
         ],
+        filters: filters.clone(),
+        saved_filters: Vec::new(),
+        equipment_options: Vec::new(),
+        commodity_options: Vec::new(),
         rows: Vec::new(),
         recommendation_notes: notes,
         pagination: Pagination {
-            page: 1,
-            per_page: 20,
+            page: filters.page,
+            per_page: filters.per_page,
             total: 0,
         },
     }
@@ -1152,8 +1257,14 @@ fn normalize_dispatch_desk_key(value: Option<&str>) -> String {
     match value.unwrap_or("quote").trim() {
         "tender" => "tender".into(),
         "facility" => "facility".into(),
+        "in_transit_exception" | "in-transit-exception" | "exception" => {
+            "in_transit_exception".into()
+        }
         "closeout" => "closeout".into(),
         "collections" => "collections".into(),
+        "dispute" => "dispute".into(),
+        "reconciliation" => "reconciliation".into(),
+        "compliance" => "compliance".into(),
         _ => "quote".into(),
     }
 }
@@ -1162,8 +1273,12 @@ fn dispatch_desk_statuses(desk_key: &str) -> &'static [i16] {
     match desk_key {
         "tender" => &[1, 4],
         "facility" => &[4, 5, 6],
+        "in_transit_exception" => &[5, 6, 7, 8, 9],
         "closeout" => &[9, 10],
         "collections" => &[10, 11],
+        "dispute" => &[4, 5, 6, 7, 8, 9, 10, 11],
+        "reconciliation" => &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        "compliance" => &[1, 2, 3, 4],
         _ => &[1],
     }
 }
@@ -1172,8 +1287,12 @@ fn desk_title(desk_key: &str) -> &'static str {
     match desk_key {
         "tender" => "Tender Desk",
         "facility" => "Facility Desk",
+        "in_transit_exception" => "In-Transit Exception Desk",
         "closeout" => "Closeout Desk",
         "collections" => "Collections Desk",
+        "dispute" => "Dispute Desk",
+        "reconciliation" => "Reconciliation Desk",
+        "compliance" => "Compliance Desk",
         _ => "Quote Desk",
     }
 }
@@ -1186,11 +1305,23 @@ fn desk_subtitle(desk_key: &str) -> &'static str {
         "facility" => {
             "Loads at pickup and facility-readiness stage, with STLOADS and readiness signals side by side."
         }
+        "in_transit_exception" => {
+            "Active pickup, transit, and delivery work with stale tracking, late milestone, missing POD, or drift risk."
+        }
         "closeout" => {
             "Delivered or completed loads that still need withdraw, close, or archive follow-up on STLOADS."
         }
         "collections" => {
             "Finance-stage loads that still need STLOADS archive cleanup or sync-error review."
+        }
+        "dispute" => {
+            "Loads with payment, service, document, or customer/carrier dispute follow-up."
+        }
+        "reconciliation" => {
+            "Loads with STLOADS/TMS drift, retries, failed pushes, or archive cleanup."
+        }
+        "compliance" => {
+            "Loads blocked by carrier packet, document, agreement, or authority readiness."
         }
         _ => "Quote-stage loads that are still being priced and reviewed for board eligibility.",
     }
@@ -1377,6 +1508,49 @@ fn build_dispatch_desk_status_cards(
     }
 }
 
+fn dispatch_manager_status_cards(rows: &[db::dispatch::DispatchDeskLegRecord]) -> Vec<StatusCard> {
+    let now = chrono::Utc::now().naive_utc();
+    vec![
+        StatusCard {
+            key: "unassigned".into(),
+            label: "Unassigned".into(),
+            value: rows
+                .iter()
+                .filter(|row| row.assigned_owner_name.is_none())
+                .count() as u64,
+            tone: "warning".into(),
+            note: Some("Rows without an assigned operator owner.".into()),
+            is_active: false,
+        },
+        StatusCard {
+            key: "sla_at_risk".into(),
+            label: "SLA At Risk".into(),
+            value: rows
+                .iter()
+                .filter(|row| {
+                    row.sla_due_at
+                        .map(|due| due <= now + chrono::Duration::hours(4))
+                        .unwrap_or_else(|| row.created_at <= now - chrono::Duration::hours(20))
+                })
+                .count() as u64,
+            tone: "danger".into(),
+            note: Some("Rows that are overdue or close to their SLA target.".into()),
+            is_active: false,
+        },
+        StatusCard {
+            key: "exceptions".into(),
+            label: "Exceptions".into(),
+            value: rows
+                .iter()
+                .filter(|row| row.exception_type.is_some())
+                .count() as u64,
+            tone: "primary".into(),
+            note: Some("Rows with explicit exception records attached.".into()),
+            is_active: false,
+        },
+    ]
+}
+
 fn map_dispatch_desk_row(
     desk_key: &str,
     row: db::dispatch::DispatchDeskLegRecord,
@@ -1481,11 +1655,38 @@ fn map_dispatch_desk_row(
         row.escrow_status.as_deref(),
         row.handoff_status.as_deref(),
     );
+    let (entry_rule_label, exit_rule_label) = dispatch_desk_entry_exit_rules(desk_key);
+    let priority = row.priority.as_deref().unwrap_or_else(|| {
+        if row.exception_severity.as_deref() == Some("critical") {
+            "urgent"
+        } else if row.exception_type.is_some() {
+            "high"
+        } else {
+            "normal"
+        }
+    });
+    let (priority_label, priority_tone) = dispatch_priority_label(priority);
+    let (sla_due_label, sla_tone) = dispatch_sla_label(row.sla_due_at, row.created_at, priority);
+    let (exception_label, exception_tone, exception_resolution_key, exception_resolution_label) =
+        dispatch_exception_summary(
+            desk_key,
+            row.exception_type.as_deref(),
+            row.exception_status.as_deref(),
+            row.exception_severity.as_deref(),
+            row.handoff_status.as_deref(),
+            row.escrow_status.as_deref(),
+            row.status_id,
+            row.latest_activity_note.as_deref(),
+        );
 
     DispatchDeskRow {
         load_id: row.load_id.max(0) as u64,
         leg_id: row.leg_id.max(0) as u64,
         handoff_id: row.handoff_id.map(|value| value.max(0) as u64),
+        queue_key: desk_key.to_string(),
+        queue_label: desk_title(desk_key).into(),
+        entry_rule_label: entry_rule_label.into(),
+        exit_rule_label: exit_rule_label.into(),
         load_number: row.load_number,
         title: row.load_title,
         equipment_label: row.equipment_name,
@@ -1509,6 +1710,21 @@ fn map_dispatch_desk_row(
         archive_guidance_tone,
         archive_guidance_note,
         latest_activity_note: row.latest_activity_note,
+        latest_internal_note: row.latest_internal_note,
+        latest_customer_update: row.latest_customer_update,
+        assigned_owner_label: row
+            .assigned_owner_name
+            .or_else(|| Some("Unassigned".into())),
+        priority_label,
+        priority_tone,
+        sla_due_label,
+        sla_tone,
+        escalation_reason: row.escalation_reason,
+        exception_label,
+        exception_tone,
+        exception_resolution_key,
+        exception_resolution_label,
+        exception_resolution_enabled: true,
         load_href: Some(format!("/loads/{}", row.load_id.max(0) as u64)),
         primary_action_key,
         primary_action_label,
@@ -1606,6 +1822,155 @@ fn dispatch_desk_archive_guidance(
         },
         _ => (None, None, None),
     }
+}
+
+fn dispatch_desk_entry_exit_rules(desk_key: &str) -> (&'static str, &'static str) {
+    match desk_key {
+        "quote" => (
+            "Enter when a new leg needs pricing, review, or board eligibility.",
+            "Exit when the leg is priced, reviewed, posted, tendered, or cancelled.",
+        ),
+        "tender" => (
+            "Enter when freight is ready for carrier tender, booking, or duplicate-board review.",
+            "Exit when a carrier is booked or the tender is withdrawn, declined, expired, or cancelled.",
+        ),
+        "facility" => (
+            "Enter when booked freight approaches pickup/facility appointment execution.",
+            "Exit when pickup milestones are complete or a facility exception is resolved.",
+        ),
+        "in_transit_exception" => (
+            "Enter when tracking is stale, pickup/delivery is late, POD is missing, or TMS drift appears.",
+            "Exit when the exception is resolved and the execution timeline is current.",
+        ),
+        "closeout" => (
+            "Enter when delivery/closeout work needs documents, POD, withdraw, close, or archive cleanup.",
+            "Exit when closeout documents and board archive readiness are complete.",
+        ),
+        "collections" => (
+            "Enter when delivered or paid work still needs finance, payout, or archive cleanup.",
+            "Exit when payment, payout, and archive work is complete.",
+        ),
+        "dispute" => (
+            "Enter when freight has a payment, service, document, claim, or customer/carrier dispute.",
+            "Exit when the dispute is resolved, dismissed, or handed to finance/legal.",
+        ),
+        "reconciliation" => (
+            "Enter when STLOADS/TMS handoff, webhook, sync, or archive state drifts.",
+            "Exit when the handoff is reconciled, retried, withdrawn, closed, or accepted as known drift.",
+        ),
+        "compliance" => (
+            "Enter when carrier packet, authority, insurance, document, or agreement readiness blocks work.",
+            "Exit when compliance blockers are cleared or the load is reassigned/cancelled.",
+        ),
+        _ => (
+            "Enter when operational action is needed.",
+            "Exit when action is complete.",
+        ),
+    }
+}
+
+fn dispatch_priority_label(priority: &str) -> (String, String) {
+    match priority {
+        "urgent" => ("Urgent".into(), "danger".into()),
+        "high" => ("High".into(), "warning".into()),
+        "low" => ("Low".into(), "secondary".into()),
+        _ => ("Normal".into(), "info".into()),
+    }
+}
+
+fn dispatch_sla_label(
+    sla_due_at: Option<chrono::NaiveDateTime>,
+    created_at: chrono::NaiveDateTime,
+    priority: &str,
+) -> (String, String) {
+    let fallback_hours = match priority {
+        "urgent" => 2,
+        "high" => 6,
+        "low" => 72,
+        _ => 24,
+    };
+    let due_at = sla_due_at.unwrap_or(created_at + chrono::Duration::hours(fallback_hours));
+    let now = chrono::Utc::now().naive_utc();
+    if due_at < now {
+        (
+            format!("Overdue since {}", format_datetime(&due_at)),
+            "danger".into(),
+        )
+    } else if due_at <= now + chrono::Duration::hours(4) {
+        (
+            format!("Due soon {}", format_datetime(&due_at)),
+            "warning".into(),
+        )
+    } else {
+        (
+            format!("Due {}", format_datetime(&due_at)),
+            "success".into(),
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn dispatch_exception_summary(
+    desk_key: &str,
+    exception_type: Option<&str>,
+    exception_status: Option<&str>,
+    exception_severity: Option<&str>,
+    handoff_status: Option<&str>,
+    escrow_status: Option<&str>,
+    status_id: i16,
+    latest_activity_note: Option<&str>,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    if let Some(exception_type) = exception_type {
+        let tone = match exception_severity {
+            Some("critical" | "high") => "danger",
+            Some("medium") => "warning",
+            _ => "info",
+        };
+        return (
+            Some(format!(
+                "{} {}",
+                title_case_legacy_label(exception_type),
+                exception_status.unwrap_or("open")
+            )),
+            Some(tone.into()),
+            Some(exception_type.into()),
+            Some("Resolve exception".into()),
+        );
+    }
+
+    let derived = match desk_key {
+        "in_transit_exception" if status_id >= 5 && latest_activity_note.is_none() => {
+            Some(("stale_tracking", "Stale tracking risk", "warning"))
+        }
+        "closeout" if status_id >= 10 && latest_activity_note.is_none() => {
+            Some(("missing_pod", "Missing POD/closeout note", "warning"))
+        }
+        "collections" if !matches!(escrow_status, Some("released" | "paid_out")) => {
+            Some(("payment_hold", "Payment hold", "danger"))
+        }
+        "reconciliation" if matches!(handoff_status, Some("push_failed" | "requeue_required")) => {
+            Some(("tms_drift", "TMS/STLOADS drift", "danger"))
+        }
+        "compliance" => Some(("compliance_block", "Compliance review", "warning")),
+        "dispute" => Some(("dispute", "Dispute follow-up", "warning")),
+        _ => None,
+    };
+
+    derived
+        .map(|(key, label, tone)| {
+            (
+                Some(label.into()),
+                Some(tone.into()),
+                Some(key.into()),
+                Some("Resolve exception".into()),
+            )
+        })
+        .unwrap_or((None, None, None, None))
 }
 
 fn dispatch_desk_primary_action(
@@ -1888,11 +2253,20 @@ fn load_leg_status_tone(status_id: i16) -> &'static str {
     }
 }
 
+// The recommendation score intentionally weighs independent load-board factors
+// at the call site until a dedicated ranking model replaces this heuristic.
+#[allow(clippy::too_many_arguments)]
 fn recommendation_score(
     status_id: i16,
     price: Option<f64>,
     pickup_date: Option<&chrono::NaiveDateTime>,
     has_no_sync_alert: bool,
+    carrier_capacity: Option<&CarrierCapacityMatchProfile>,
+    equipment_name: Option<&str>,
+    commodity_type_name: Option<&str>,
+    service_level: Option<&str>,
+    pickup_location_name: Option<&str>,
+    delivery_location_name: Option<&str>,
 ) -> Option<u8> {
     if matches!(
         LegacyLoadLegStatusCode::from_legacy_code(status_id),
@@ -1923,7 +2297,102 @@ fn recommendation_score(
         score -= 10;
     }
 
+    if let Some(capacity) = carrier_capacity {
+        match capacity.availability_status.as_str() {
+            "available" => score += 10,
+            "limited" | "seasonal" => score += 2,
+            "unavailable" | "paused" => score -= 35,
+            _ => {}
+        }
+        if capacity.available_power_units <= 0 {
+            score -= 15;
+        }
+        if capacity.insurance_limit_usd <= 0.0 {
+            score -= 10;
+        }
+        if value_matches_capacity(equipment_name, &capacity.equipment_types) {
+            score += 12;
+        }
+        if value_matches_capacity(commodity_type_name, &capacity.preferred_commodities) {
+            score += 6;
+        }
+        if value_matches_capacity(service_level, &capacity.service_levels) {
+            score += 6;
+        }
+        if value_matches_capacity(pickup_location_name, &capacity.operating_regions)
+            || value_matches_capacity(delivery_location_name, &capacity.operating_regions)
+        {
+            score += 8;
+        }
+    }
+
     Some(score.clamp(0, 98) as u8)
+}
+
+async fn carrier_capacity_match_profile(
+    pool: &db::DbPool,
+    carrier_user_id: i64,
+) -> Result<Option<CarrierCapacityMatchProfile>, sqlx::Error> {
+    sqlx::query_as::<
+        _,
+        (
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+            String,
+            i32,
+            f64,
+        ),
+    >(
+        "SELECT equipment_types, operating_regions, preferred_commodities, service_levels,
+                availability_status, available_power_units, insurance_limit_usd
+         FROM carrier_capacity_profiles
+         WHERE carrier_user_id = $1",
+    )
+    .bind(carrier_user_id)
+    .fetch_optional(pool)
+    .await
+    .map(|row| {
+        row.map(
+            |(
+                equipment_types,
+                operating_regions,
+                preferred_commodities,
+                service_levels,
+                availability_status,
+                available_power_units,
+                insurance_limit_usd,
+            )| CarrierCapacityMatchProfile {
+                equipment_types,
+                operating_regions,
+                preferred_commodities,
+                service_levels,
+                availability_status,
+                available_power_units,
+                insurance_limit_usd,
+            },
+        )
+    })
+}
+
+fn value_matches_capacity(value: Option<&str>, capacity_values: &[String]) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    let normalized = normalize_match_token(value);
+    capacity_values.iter().any(|capacity_value| {
+        let capacity_token = normalize_match_token(capacity_value);
+        !capacity_token.is_empty()
+            && (normalized.contains(&capacity_token) || capacity_token.contains(&normalized))
+    })
+}
+
+fn normalize_match_token(value: &str) -> String {
+    value
+        .trim()
+        .to_ascii_lowercase()
+        .replace([' ', '-', ','], "_")
 }
 
 fn payment_label(status: Option<&str>, is_booked_or_live: bool) -> String {
@@ -2041,8 +2510,13 @@ fn outgoing_receipt_badge(
 fn smart_offer_summary(offers: &[OfferRecord]) -> (String, &'static str) {
     match offers.first().and_then(|offer| offer.status()) {
         Some(OfferStatus::Pending) => ("Pending - awaiting shipper".into(), "warning"),
+        Some(OfferStatus::Countered) => ("Countered - awaiting response".into(), "primary"),
         Some(OfferStatus::Accepted) => ("Accepted - booking ready".into(), "success"),
         Some(OfferStatus::Declined) => ("Declined - awaiting revision".into(), "danger"),
+        Some(OfferStatus::Withdrawn) => ("Withdrawn".into(), "secondary"),
+        Some(OfferStatus::Expired) => ("Expired".into(), "secondary"),
+        Some(OfferStatus::Superseded) => ("Superseded by newer offer".into(), "secondary"),
+        Some(OfferStatus::Cancelled) => ("Cancelled".into(), "danger"),
         None if offers.is_empty() => ("No active offers".into(), "info"),
         None => ("Offer state needs review".into(), "secondary"),
     }
@@ -2051,8 +2525,13 @@ fn smart_offer_summary(offers: &[OfferRecord]) -> (String, &'static str) {
 fn offer_status_badge(status_id: i16) -> (String, &'static str) {
     match OfferStatus::from_legacy_code(status_id) {
         Some(OfferStatus::Pending) => ("Pending".into(), "warning"),
+        Some(OfferStatus::Countered) => ("Countered".into(), "primary"),
         Some(OfferStatus::Accepted) => ("Approved".into(), "success"),
         Some(OfferStatus::Declined) => ("Declined".into(), "danger"),
+        Some(OfferStatus::Withdrawn) => ("Withdrawn".into(), "secondary"),
+        Some(OfferStatus::Expired) => ("Expired".into(), "secondary"),
+        Some(OfferStatus::Superseded) => ("Superseded".into(), "secondary"),
+        Some(OfferStatus::Cancelled) => ("Cancelled".into(), "danger"),
         None => (format!("Status {}", status_id), "secondary"),
     }
 }
@@ -2147,5 +2626,58 @@ fn transition_label(from: Option<&str>, to: Option<&str>) -> Option<String> {
         )),
         (Some(from), None) => Some(title_case_legacy_label(from)),
         (None, Some(to)) => Some(title_case_legacy_label(to)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recommendation_score_uses_carrier_capacity_profile() {
+        let capacity = CarrierCapacityMatchProfile {
+            equipment_types: vec!["dry_van".into()],
+            operating_regions: vec!["dallas".into()],
+            preferred_commodities: vec!["paper_goods".into()],
+            service_levels: vec!["standard".into()],
+            availability_status: "available".into(),
+            available_power_units: 2,
+            insurance_limit_usd: 1_000_000.0,
+        };
+        let matched = recommendation_score(
+            1,
+            Some(2400.0),
+            None,
+            true,
+            Some(&capacity),
+            Some("Dry Van"),
+            Some("Paper Goods"),
+            Some("standard"),
+            Some("Dallas Yard"),
+            Some("Joliet Terminal"),
+        )
+        .expect("open leg should score");
+
+        let paused_capacity = CarrierCapacityMatchProfile {
+            availability_status: "paused".into(),
+            available_power_units: 0,
+            insurance_limit_usd: 0.0,
+            ..capacity
+        };
+        let blocked = recommendation_score(
+            1,
+            Some(2400.0),
+            None,
+            true,
+            Some(&paused_capacity),
+            Some("Flatbed"),
+            Some("Steel"),
+            Some("expedited"),
+            Some("Phoenix"),
+            Some("Reno"),
+        )
+        .expect("open leg should score");
+
+        assert!(matched > blocked);
     }
 }

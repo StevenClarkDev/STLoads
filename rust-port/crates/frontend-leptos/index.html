@@ -10,10 +10,10 @@
     />
     <link rel="icon" href="/assets/images/favicon.png" type="image/x-icon" />
     <link rel="shortcut icon" href="/assets/images/favicon.png" type="image/x-icon" />
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Rubik:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet" />
+    <link data-trunk rel="copy-file" href="runtime-config.js" />
     <script src="/runtime-config.js"></script>
-    <link data-trunk rel="rust" data-bin="frontend-leptos" />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Rubik:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet" media="print" onload="this.media='all'" />
     <style>
         :root {
             --primary-blue: #1F537B;
@@ -46,6 +46,41 @@
 
         a {
             color: inherit;
+        }
+
+        :focus-visible {
+            outline: 3px solid #00ADF0;
+            outline-offset: 3px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                scroll-behavior: auto !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        .skip-link {
+            position: fixed;
+            left: 1rem;
+            top: 1rem;
+            z-index: 10000;
+            transform: translateY(-180%);
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            background: #102033;
+            color: #fff;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .skip-link:focus,
+        .skip-link:focus-visible {
+            transform: translateY(0);
         }
 
         .auth-shell {
@@ -687,6 +722,252 @@
         .status-pill.secondary {
             background: #f1f5f9;
             color: #475569;
+        }
+
+        .ui-page-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+
+        .ui-page-header-copy {
+            display: grid;
+            gap: 0.35rem;
+        }
+
+        .ui-page-header h2,
+        .ui-page-header p {
+            margin: 0;
+        }
+
+        .ui-page-header h2 {
+            font-size: 1.45rem;
+            color: #102033;
+        }
+
+        .ui-eyebrow {
+            color: #1F537B;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0;
+            text-transform: uppercase;
+        }
+
+        .ui-page-header-body {
+            color: #64748b;
+            max-width: 78ch;
+        }
+
+        .ui-panel {
+            display: grid;
+            gap: 1rem;
+            padding: 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+        }
+
+        .ui-toolbar,
+        .ui-filter-bar {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .ui-filter-bar {
+            padding: 0.85rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #f8fafc;
+        }
+
+        .ui-table-shell {
+            overflow: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #fff;
+        }
+
+        .ui-table-shell table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .ui-table-shell th,
+        .ui-table-shell td {
+            padding: 0.8rem;
+            border-bottom: 1px solid #eef2f7;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .ui-status-pill,
+        .ui-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.35rem;
+            border-radius: 5px;
+            font-size: 0.84rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .ui-status-pill {
+            padding: 0.32rem 0.68rem;
+        }
+
+        .ui-badge {
+            padding: 0.22rem 0.52rem;
+            font-size: 0.76rem;
+        }
+
+        .ui-status-pill.info,
+        .ui-badge.info,
+        .ui-toast.info {
+            background: #e0f2fe;
+            color: #0369a1;
+        }
+
+        .ui-status-pill.success,
+        .ui-badge.success,
+        .ui-toast.success {
+            background: #e8fff3;
+            color: #0f766e;
+        }
+
+        .ui-status-pill.warning,
+        .ui-badge.warning,
+        .ui-toast.warning {
+            background: #fff7dd;
+            color: #b45309;
+        }
+
+        .ui-status-pill.danger,
+        .ui-badge.danger,
+        .ui-toast.danger {
+            background: #ffe4e6;
+            color: #be123c;
+        }
+
+        .ui-status-pill.secondary,
+        .ui-badge.secondary,
+        .ui-toast.secondary {
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        .ui-toast {
+            padding: 0.85rem 1rem;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: 8px;
+        }
+
+        .ui-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 9000;
+            display: grid;
+            place-items: center;
+            padding: 1rem;
+            background: rgba(15, 23, 42, 0.5);
+        }
+
+        .ui-modal,
+        .ui-confirm-dialog,
+        .ui-drawer {
+            width: min(680px, 100%);
+            max-height: min(720px, 92vh);
+            overflow: auto;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+        }
+
+        .ui-modal,
+        .ui-confirm-dialog {
+            padding: 1rem;
+        }
+
+        .ui-drawer {
+            position: fixed;
+            inset: 0 0 0 auto;
+            z-index: 9100;
+            max-width: 440px;
+            border-radius: 0;
+        }
+
+        .ui-modal-header,
+        .ui-drawer-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            align-items: center;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .ui-modal-header h3,
+        .ui-drawer-header h3,
+        .ui-confirm-dialog h3 {
+            margin: 0;
+        }
+
+        .ui-modal-body,
+        .ui-drawer-body {
+            padding-top: 1rem;
+        }
+
+        .ui-timeline {
+            display: grid;
+            gap: 0.75rem;
+            margin: 0;
+            padding-left: 1.25rem;
+        }
+
+        .ui-file-upload,
+        .ui-map-panel {
+            min-height: 160px;
+            display: grid;
+            place-items: center;
+            padding: 1rem;
+            border: 1px dashed #94a3b8;
+            border-radius: 8px;
+            background: #f8fafc;
+        }
+
+        .ui-money-input {
+            display: grid;
+            gap: 0.35rem;
+        }
+
+        .ui-money-input-control {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.65rem 0.75rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            background: #fff;
+        }
+
+        .ui-money-input-control input {
+            width: 100%;
+            min-width: 0;
+            border: 0;
+            outline: 0;
+            font: inherit;
+        }
+
+        .ui-field-error {
+            margin: 0.25rem 0 0;
+            color: #be123c;
+            font-size: 0.86rem;
+            font-weight: 600;
         }
 
         .dashboard-grid {
@@ -1347,5 +1628,7 @@
         }
     </style>
 </head>
-<body></body>
+<body>
+    <link data-trunk rel="rust" data-bin="frontend-leptos" />
+</body>
 </html>

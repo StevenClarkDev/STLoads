@@ -36,6 +36,40 @@ impl HandoffStatus {
             _ => None,
         }
     }
+
+    pub const fn can_transition_to(self, target: Self) -> bool {
+        use HandoffStatus::*;
+
+        if matches!((self, target), (current, next) if current as u8 == next as u8) {
+            return true;
+        }
+
+        match self {
+            Queued => matches!(target, PushInProgress | Withdrawn),
+            PushInProgress => matches!(target, Published | PushFailed | RequeueRequired),
+            PushFailed => matches!(target, RequeueRequired | Withdrawn),
+            RequeueRequired => matches!(target, Queued | Withdrawn),
+            Published => matches!(target, Withdrawn | Closed | RequeueRequired),
+            Withdrawn => matches!(target, Closed | RequeueRequired),
+            Closed => false,
+        }
+    }
+}
+
+pub fn validate_handoff_transition(
+    current: HandoffStatus,
+    target: HandoffStatus,
+) -> Result<(), String> {
+    current
+        .can_transition_to(target)
+        .then_some(())
+        .ok_or_else(|| {
+            format!(
+                "TMS handoff transition {} -> {} is not allowed.",
+                current.as_legacy_label(),
+                target.as_legacy_label()
+            )
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,6 +111,37 @@ impl TmsStatus {
             _ => None,
         }
     }
+
+    pub const fn can_transition_to(self, target: Self) -> bool {
+        use TmsStatus::*;
+
+        if matches!((self, target), (current, next) if current as u8 == next as u8) {
+            return true;
+        }
+
+        match self {
+            Dispatched => matches!(target, AtPickup | InTransit | Cancelled),
+            AtPickup => matches!(target, InTransit | Cancelled),
+            InTransit => matches!(target, AtDelivery | Delivered | Cancelled),
+            AtDelivery => matches!(target, Delivered | Cancelled),
+            Delivered => matches!(target, Invoiced),
+            Invoiced => matches!(target, Settled),
+            Cancelled | Settled => false,
+        }
+    }
+}
+
+pub fn validate_tms_status_transition(current: TmsStatus, target: TmsStatus) -> Result<(), String> {
+    current
+        .can_transition_to(target)
+        .then_some(())
+        .ok_or_else(|| {
+            format!(
+                "TMS status transition {} -> {} is not allowed.",
+                current.as_legacy_label(),
+                target.as_legacy_label()
+            )
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -331,4 +396,83 @@ pub fn reconciliation_action_descriptors() -> &'static [ReconciliationActionDesc
 
 pub fn tms_module_contract() -> TmsModuleContract {
     TMS_MODULE_CONTRACT.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        HandoffStatus, TmsStatus, validate_handoff_transition, validate_tms_status_transition,
+    };
+
+    #[test]
+    fn handoff_state_machine_rejects_lost_or_closed_reopens() {
+        let valid = [
+            (HandoffStatus::Queued, HandoffStatus::PushInProgress),
+            (HandoffStatus::PushInProgress, HandoffStatus::Published),
+            (HandoffStatus::PushInProgress, HandoffStatus::PushFailed),
+            (HandoffStatus::PushFailed, HandoffStatus::RequeueRequired),
+            (HandoffStatus::RequeueRequired, HandoffStatus::Queued),
+            (HandoffStatus::Published, HandoffStatus::Closed),
+            (HandoffStatus::Withdrawn, HandoffStatus::Closed),
+        ];
+
+        for (current, target) in valid {
+            assert!(
+                validate_handoff_transition(current, target).is_ok(),
+                "expected {:?} -> {:?} to be valid",
+                current,
+                target
+            );
+        }
+
+        for (current, target) in [
+            (HandoffStatus::Closed, HandoffStatus::Queued),
+            (HandoffStatus::Queued, HandoffStatus::Closed),
+            (HandoffStatus::Published, HandoffStatus::PushInProgress),
+            (HandoffStatus::PushFailed, HandoffStatus::Published),
+        ] {
+            assert!(
+                validate_handoff_transition(current, target).is_err(),
+                "expected {:?} -> {:?} to be invalid",
+                current,
+                target
+            );
+        }
+    }
+
+    #[test]
+    fn tms_status_state_machine_blocks_finance_and_cancellation_regressions() {
+        let valid = [
+            (TmsStatus::Dispatched, TmsStatus::AtPickup),
+            (TmsStatus::AtPickup, TmsStatus::InTransit),
+            (TmsStatus::InTransit, TmsStatus::AtDelivery),
+            (TmsStatus::AtDelivery, TmsStatus::Delivered),
+            (TmsStatus::Delivered, TmsStatus::Invoiced),
+            (TmsStatus::Invoiced, TmsStatus::Settled),
+            (TmsStatus::InTransit, TmsStatus::Cancelled),
+        ];
+
+        for (current, target) in valid {
+            assert!(
+                validate_tms_status_transition(current, target).is_ok(),
+                "expected {:?} -> {:?} to be valid",
+                current,
+                target
+            );
+        }
+
+        for (current, target) in [
+            (TmsStatus::Settled, TmsStatus::Invoiced),
+            (TmsStatus::Cancelled, TmsStatus::Dispatched),
+            (TmsStatus::Delivered, TmsStatus::AtDelivery),
+            (TmsStatus::Dispatched, TmsStatus::Settled),
+        ] {
+            assert!(
+                validate_tms_status_transition(current, target).is_err(),
+                "expected {:?} -> {:?} to be invalid",
+                current,
+                target
+            );
+        }
+    }
 }

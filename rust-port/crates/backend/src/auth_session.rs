@@ -215,22 +215,20 @@ pub async fn permission_keys_for_user(state: &AppState, user: &UserRecord) -> Ve
         return Vec::new();
     };
 
-    if let Some(pool) = state.pool.as_ref() {
-        if let Ok(mut dynamic_permissions) =
+    if let Some(pool) = state.pool.as_ref()
+        && let Ok(mut dynamic_permissions) =
             list_permission_names_for_role(pool, i64::from(role.legacy_id())).await
+    {
+        if let Ok(Some(membership)) = primary_membership_for_user(pool, user.id).await
+            && let Ok(org_permissions) =
+                list_permission_keys_for_organization_role(pool, &membership.role_key).await
         {
-            if let Ok(Some(membership)) = primary_membership_for_user(pool, user.id).await {
-                if let Ok(org_permissions) =
-                    list_permission_keys_for_organization_role(pool, &membership.role_key).await
-                {
-                    dynamic_permissions.extend(org_permissions);
-                    dynamic_permissions.sort();
-                    dynamic_permissions.dedup();
-                }
-            }
-            if !dynamic_permissions.is_empty() {
-                return dynamic_permissions;
-            }
+            dynamic_permissions.extend(org_permissions);
+            dynamic_permissions.sort();
+            dynamic_permissions.dedup();
+        }
+        if !dynamic_permissions.is_empty() {
+            return dynamic_permissions;
         }
     }
 

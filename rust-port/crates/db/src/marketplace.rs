@@ -1,6 +1,8 @@
 use chrono::{Duration, NaiveDateTime, Utc};
 use domain::auth::UserRole;
-use domain::marketplace::{OfferStatus, marketplace_module_contract, offer_status_descriptors};
+use domain::marketplace::{
+    OfferStatus, marketplace_module_contract, offer_status_descriptors, validate_offer_transition,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
@@ -106,6 +108,8 @@ pub async fn list_offers_for_leg(
     pool: &DbPool,
     load_leg_id: i64,
 ) -> Result<Vec<OfferRecord>, sqlx::Error> {
+    expire_open_offers_for_leg(pool, load_leg_id).await?;
+
     sqlx::query_as::<_, OfferRecord>(
         "SELECT id, load_leg_id, carrier_id, conversation_id, amount::double precision AS amount, status_id, created_at, updated_at
          FROM offers
@@ -115,6 +119,28 @@ pub async fn list_offers_for_leg(
     .bind(load_leg_id)
     .fetch_all(pool)
     .await
+}
+
+pub async fn expire_open_offers_for_leg(
+    pool: &DbPool,
+    load_leg_id: i64,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE offers
+         SET status_id = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE load_leg_id = $1
+           AND status_id IN ($3, $4)
+           AND expires_at IS NOT NULL
+           AND expires_at <= CURRENT_TIMESTAMP",
+    )
+    .bind(load_leg_id)
+    .bind(OfferStatus::Expired.legacy_code())
+    .bind(OfferStatus::Pending.legacy_code())
+    .bind(OfferStatus::Countered.legacy_code())
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected())
 }
 
 pub async fn list_pending_offers_for_leg(
@@ -528,7 +554,8 @@ pub async fn review_offer(
         "SELECT id, load_leg_id, carrier_id, conversation_id, amount::double precision AS amount, status_id, created_at, updated_at
          FROM offers
          WHERE id = $1
-         LIMIT 1",
+         LIMIT 1
+         FOR UPDATE",
     )
     .bind(offer_id)
     .fetch_optional(&mut *tx)
@@ -538,14 +565,25 @@ pub async fn review_offer(
         return Ok(None);
     };
 
-    let final_status_id = if accept { 3 } else { 0 };
+    let current_status = offer.status().ok_or_else(|| {
+        sqlx::Error::Protocol(format!(
+            "Offer {} has unknown status id {}.",
+            offer.id, offer.status_id
+        ))
+    })?;
+    let final_status = if accept {
+        OfferStatus::Accepted
+    } else {
+        OfferStatus::Declined
+    };
+    validate_offer_transition(current_status, final_status).map_err(sqlx::Error::Protocol)?;
 
     sqlx::query(
         "UPDATE offers
          SET status_id = $1, updated_at = CURRENT_TIMESTAMP
          WHERE id = $2",
     )
-    .bind(final_status_id)
+    .bind(final_status.legacy_code())
     .bind(offer_id)
     .execute(&mut *tx)
     .await?;
@@ -553,11 +591,14 @@ pub async fn review_offer(
     if accept {
         sqlx::query(
             "UPDATE offers
-             SET status_id = 0, updated_at = CURRENT_TIMESTAMP
-             WHERE load_leg_id = $1 AND id <> $2 AND status_id = 1",
+             SET status_id = $3, updated_at = CURRENT_TIMESTAMP
+             WHERE load_leg_id = $1 AND id <> $2 AND status_id IN ($4, $5)",
         )
         .bind(offer.load_leg_id)
         .bind(offer_id)
+        .bind(OfferStatus::Superseded.legacy_code())
+        .bind(OfferStatus::Pending.legacy_code())
+        .bind(OfferStatus::Countered.legacy_code())
         .execute(&mut *tx)
         .await?;
 
@@ -611,6 +652,139 @@ pub async fn review_offer(
 
     tx.commit().await?;
     Ok(updated)
+}
+
+pub async fn counter_offer(
+    pool: &DbPool,
+    source_offer_id: i64,
+    amount: f64,
+    expires_at: Option<NaiveDateTime>,
+    note: Option<&str>,
+    actor_user_id: Option<i64>,
+) -> Result<Option<OfferRecord>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let Some(source_offer) = sqlx::query_as::<_, OfferRecord>(
+        "SELECT id, load_leg_id, carrier_id, conversation_id, amount::double precision AS amount, status_id, created_at, updated_at
+         FROM offers
+         WHERE id = $1
+         LIMIT 1
+         FOR UPDATE",
+    )
+    .bind(source_offer_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    let current_status = source_offer.status().ok_or_else(|| {
+        sqlx::Error::Protocol(format!(
+            "Offer {} has unknown status id {}.",
+            source_offer.id, source_offer.status_id
+        ))
+    })?;
+    validate_offer_transition(current_status, OfferStatus::Superseded)
+        .map_err(sqlx::Error::Protocol)?;
+
+    sqlx::query(
+        "UPDATE offers
+         SET status_id = $1, decision_note = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3",
+    )
+    .bind(OfferStatus::Superseded.legacy_code())
+    .bind(note)
+    .bind(source_offer_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let counter_offer_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO offers (
+            load_leg_id, carrier_id, conversation_id, amount, status_id,
+            parent_offer_id, expires_at, tender_kind, decision_note, created_at, updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'counteroffer', $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING id",
+    )
+    .bind(source_offer.load_leg_id)
+    .bind(source_offer.carrier_id)
+    .bind(source_offer.conversation_id)
+    .bind(amount)
+    .bind(OfferStatus::Countered.legacy_code())
+    .bind(source_offer_id)
+    .bind(expires_at)
+    .bind(note)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO load_history (load_id, admin_id, status, remarks, created_at, updated_at)
+         SELECT load_id, $1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+         FROM load_legs
+         WHERE id = $4",
+    )
+    .bind(actor_user_id)
+    .bind(3_i16)
+    .bind("Rust marketplace created a counteroffer")
+    .bind(source_offer.load_leg_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let updated = sqlx::query_as::<_, OfferRecord>(
+        "SELECT id, load_leg_id, carrier_id, conversation_id, amount::double precision AS amount, status_id, created_at, updated_at
+         FROM offers
+         WHERE id = $1
+         LIMIT 1",
+    )
+    .bind(counter_offer_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(updated)
+}
+
+pub async fn ensure_rate_confirmation_ref(
+    pool: &DbPool,
+    offer_id: i64,
+) -> Result<Option<(OfferRecord, String)>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let Some(offer) = sqlx::query_as::<_, OfferRecord>(
+        "SELECT id, load_leg_id, carrier_id, conversation_id, amount::double precision AS amount, status_id, created_at, updated_at
+         FROM offers
+         WHERE id = $1
+         LIMIT 1
+         FOR UPDATE",
+    )
+    .bind(offer_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    if offer.status() != Some(OfferStatus::Accepted) {
+        return Err(sqlx::Error::Protocol(
+            "Only accepted offers can generate a rate confirmation.".into(),
+        ));
+    }
+
+    let confirmation_ref = sqlx::query_scalar::<_, String>(
+        "UPDATE offers
+         SET rate_confirmation_ref = COALESCE(rate_confirmation_ref, CONCAT('RC-', id::text, '-', load_leg_id::text)),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING rate_confirmation_ref",
+    )
+    .bind(offer_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(Some((offer, confirmation_ref)))
 }
 
 pub async fn create_message(

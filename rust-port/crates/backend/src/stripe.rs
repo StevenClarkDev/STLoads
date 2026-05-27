@@ -92,7 +92,11 @@ impl StripeService {
             .unwrap_or(false)
     }
 
-    pub async fn create_express_account(&self, email: &str) -> Result<StripeAccount, String> {
+    pub async fn create_express_account(
+        &self,
+        email: &str,
+        request_id: Option<&str>,
+    ) -> Result<StripeAccount, String> {
         let response = self
             .post_form::<StripeAccountResponse>(
                 "/accounts",
@@ -101,6 +105,8 @@ impl StripeService {
                     ("capabilities[transfers][requested]", "true"),
                     ("email", email),
                 ],
+                request_id,
+                None,
             )
             .await?;
 
@@ -112,6 +118,7 @@ impl StripeService {
         account_id: &str,
         refresh_url: Option<&str>,
         return_url: Option<&str>,
+        request_id: Option<&str>,
     ) -> Result<StripeAccountLink, String> {
         let refresh_url = refresh_url.unwrap_or(&self.config.connect_refresh_url);
         let return_url = return_url.unwrap_or(&self.config.connect_return_url);
@@ -124,12 +131,17 @@ impl StripeService {
                     ("refresh_url", refresh_url),
                     ("return_url", return_url),
                 ],
+                request_id,
+                None,
             )
             .await?;
 
         Ok(StripeAccountLink { url: response.url })
     }
 
+    // Stripe requests are external API contracts; parameters stay explicit so
+    // money movement and idempotency evidence are visible at each call site.
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_payment_intent(
         &self,
         amount: i64,
@@ -137,6 +149,8 @@ impl StripeService {
         transfer_group: &str,
         leg_id: i64,
         description: &str,
+        request_id: Option<&str>,
+        idempotency_key: Option<&str>,
     ) -> Result<StripePaymentIntent, String> {
         let amount = amount.to_string();
         let leg_id = leg_id.to_string();
@@ -152,7 +166,10 @@ impl StripeService {
                     ("automatic_payment_methods[allow_redirects]", "never"),
                     ("description", description),
                     ("metadata[leg_id]", &leg_id),
+                    ("metadata[request_id]", request_id.unwrap_or("")),
                 ],
+                request_id,
+                idempotency_key,
             )
             .await?;
 
@@ -162,6 +179,9 @@ impl StripeService {
         })
     }
 
+    // Stripe transfers carry payout, destination, grouping, and idempotency data
+    // as one request boundary.
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_transfer(
         &self,
         amount: i64,
@@ -169,6 +189,8 @@ impl StripeService {
         destination_account_id: &str,
         source_charge_id: &str,
         transfer_group: Option<&str>,
+        request_id: Option<&str>,
+        idempotency_key: Option<&str>,
     ) -> Result<StripeTransfer, String> {
         let amount = amount.to_string();
         let mut form = vec![
@@ -180,15 +202,24 @@ impl StripeService {
         if let Some(transfer_group) = transfer_group.filter(|value| !value.trim().is_empty()) {
             form.push(("transfer_group", transfer_group));
         }
+        if let Some(request_id) = request_id.filter(|value| !value.trim().is_empty()) {
+            form.push(("metadata[request_id]", request_id));
+        }
 
         let response = self
-            .post_form::<StripeTransferResponse>("/transfers", &form)
+            .post_form::<StripeTransferResponse>("/transfers", &form, request_id, idempotency_key)
             .await?;
 
         Ok(StripeTransfer { id: response.id })
     }
 
-    async fn post_form<T>(&self, path: &str, form: &[(&str, &str)]) -> Result<T, String>
+    async fn post_form<T>(
+        &self,
+        path: &str,
+        form: &[(&str, &str)],
+        request_id: Option<&str>,
+        idempotency_key: Option<&str>,
+    ) -> Result<T, String>
     where
         T: for<'de> Deserialize<'de>,
     {
@@ -202,11 +233,20 @@ impl StripeService {
         };
 
         let url = format!("{}{}", self.config.api_base_url, path);
-        let response = self
+        let mut request = self
             .client
             .post(&url)
             .bearer_auth(secret_key)
-            .form(form)
+            .header("x-request-id", request_id.unwrap_or(""))
+            .form(form);
+        if let Some(idempotency_key) = idempotency_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            request = request.header("Idempotency-Key", idempotency_key);
+        }
+
+        let response = request
             .send()
             .await
             .map_err(|error| format!("Stripe request failed: {}", error))?;

@@ -117,6 +117,105 @@ export async function stloadsHashSelectedFile(inputId) {
     hash,
   });
 }
+
+export function stloadsQueueOfflineExecutionSubmission(legId, submissionType, payload) {
+  const key = `stloads.execution.offline.${legId}`;
+  const existing = JSON.parse(window.localStorage.getItem(key) || '[]');
+  let parsedPayload = payload || {};
+  if (typeof parsedPayload === 'string') {
+    try {
+      parsedPayload = JSON.parse(parsedPayload);
+    } catch (_) {
+      parsedPayload = { value: parsedPayload };
+    }
+  }
+  existing.push({
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    legId,
+    submissionType,
+    payload: parsedPayload,
+    capturedAt: new Date().toISOString(),
+    status: 'pending'
+  });
+  window.localStorage.setItem(key, JSON.stringify(existing));
+  return JSON.stringify({ pendingCount: existing.length });
+}
+
+export async function stloadsQueueOfflineExecutionDocumentUpload(
+  legId,
+  documentName,
+  documentType,
+  inputId
+) {
+  const input = document.getElementById(inputId);
+  if (!input || !input.files || input.files.length === 0) {
+    throw new Error('Choose a file before queueing an offline execution document.');
+  }
+
+  const file = input.files[0];
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Could not read selected file.'));
+    reader.readAsDataURL(file);
+  });
+  const payload = {
+    document_name: documentName || documentType || 'Execution document',
+    document_type: documentType || 'other',
+    file_name: file.name || 'offline-document.bin',
+    mime_type: file.type || null,
+    bytes_base64: dataUrl
+  };
+  input.value = '';
+  return stloadsQueueOfflineExecutionSubmission(legId, 'document_upload', payload);
+}
+
+export async function stloadsReplayOfflineExecutionSubmissions(url, token, legId) {
+  const key = `stloads.execution.offline.${legId}`;
+  const existing = JSON.parse(window.localStorage.getItem(key) || '[]');
+  const remaining = [];
+  let replayed = 0;
+  let failed = 0;
+
+  for (const item of existing) {
+    if (item.status === 'replayed') {
+      continue;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          client_submission_id: item.id,
+          submission_type: item.submissionType,
+          payload: item.payload || {},
+          captured_at: item.capturedAt || null
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`POST ${url} returned ${response.status}`);
+      }
+
+      const envelope = await response.json();
+      if (envelope && envelope.data && envelope.data.success === false) {
+        throw new Error(envelope.data.message || 'Offline submission was rejected by the server.');
+      }
+
+      replayed += 1;
+    } catch (error) {
+      failed += 1;
+      remaining.push({ ...item, status: 'failed', lastError: String(error) });
+    }
+  }
+
+  window.localStorage.setItem(key, JSON.stringify(remaining));
+  return JSON.stringify({ replayed, failed, pendingCount: remaining.length });
+}
 "#)]
 extern "C" {
     #[wasm_bindgen(catch, js_name = stloadsUploadLoadDocument)]
@@ -140,6 +239,28 @@ extern "C" {
 
     #[wasm_bindgen(catch, js_name = stloadsHashSelectedFile)]
     async fn stloads_hash_selected_file(input_id: &str) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(js_name = stloadsQueueOfflineExecutionSubmission)]
+    fn stloads_queue_offline_execution_submission(
+        leg_id: u64,
+        submission_type: &str,
+        payload: &str,
+    ) -> JsValue;
+
+    #[wasm_bindgen(catch, js_name = stloadsQueueOfflineExecutionDocumentUpload)]
+    async fn stloads_queue_offline_execution_document_upload(
+        leg_id: u64,
+        document_name: &str,
+        document_type: &str,
+        input_id: &str,
+    ) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(catch, js_name = stloadsReplayOfflineExecutionSubmissions)]
+    async fn stloads_replay_offline_execution_submissions(
+        url: &str,
+        token: &str,
+        leg_id: u64,
+    ) -> Result<JsValue, JsValue>;
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -171,6 +292,75 @@ pub fn upload_input_id(load_id: u64) -> String {
 
 pub fn execution_upload_input_id(leg_id: u64) -> String {
     format!("execution-document-upload-{}", leg_id)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn queue_offline_execution_submission(
+    leg_id: u64,
+    submission_type: &str,
+    payload: &str,
+) -> Result<String, String> {
+    stloads_queue_offline_execution_submission(leg_id, submission_type, payload)
+        .as_string()
+        .ok_or_else(|| "Offline execution queue did not return a text payload.".into())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn queue_offline_execution_document_upload(
+    leg_id: u64,
+    document_name: &str,
+    document_type: &str,
+    input_id: &str,
+) -> Result<String, String> {
+    let raw = stloads_queue_offline_execution_document_upload(
+        leg_id,
+        document_name,
+        document_type,
+        input_id,
+    )
+    .await
+    .map_err(|error| format!("Offline execution document queue failed: {:?}", error))?;
+
+    raw.as_string()
+        .ok_or_else(|| "Offline execution document queue did not return a text payload.".into())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn replay_offline_execution_submissions(leg_id: u64) -> Result<String, String> {
+    let raw = stloads_replay_offline_execution_submissions(
+        &api::api_href(&format!("/execution/legs/{}/offline-submissions", leg_id)),
+        &api::auth_token().unwrap_or_default(),
+        leg_id,
+    )
+    .await
+    .map_err(|error| format!("Offline execution replay failed: {:?}", error))?;
+
+    raw.as_string()
+        .ok_or_else(|| "Offline execution replay did not return a text payload.".into())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn replay_offline_execution_submissions(_leg_id: u64) -> Result<String, String> {
+    Err("Offline replay is only available in the browser build.".into())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn queue_offline_execution_submission(
+    _leg_id: u64,
+    _submission_type: &str,
+    _payload: &str,
+) -> Result<String, String> {
+    Err("Offline queue is only available in the browser build.".into())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn queue_offline_execution_document_upload(
+    _leg_id: u64,
+    _document_name: &str,
+    _document_type: &str,
+    _input_id: &str,
+) -> Result<String, String> {
+    Err("Offline document queue is only available in the browser build.".into())
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -1,6 +1,8 @@
 use crate::Pagination;
 use serde::{Deserialize, Serialize};
 
+use crate::RequiredDocumentChecklistItem;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusCard {
     pub key: String,
@@ -113,6 +115,40 @@ pub struct LoadBoardMetric {
     pub note: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LoadBoardFilters {
+    pub origin: Option<String>,
+    pub destination: Option<String>,
+    pub radius_miles: Option<u32>,
+    pub pickup_date: Option<String>,
+    pub delivery_date: Option<String>,
+    pub equipment_id: Option<u64>,
+    pub commodity_type_id: Option<u64>,
+    pub min_rate: Option<f64>,
+    pub max_rate: Option<f64>,
+    pub customer: Option<String>,
+    pub status: Option<String>,
+    pub compliance: Option<String>,
+    pub visibility: Option<String>,
+    pub page: u64,
+    pub per_page: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadBoardSavedFilter {
+    pub id: u64,
+    pub name: String,
+    pub scope_label: String,
+    pub is_default: bool,
+    pub filters: LoadBoardFilters,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadBoardFilterOption {
+    pub id: u64,
+    pub label: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadBoardRow {
     pub load_id: u64,
@@ -145,9 +181,77 @@ pub struct LoadBoardScreen {
     pub primary_action_href: Option<String>,
     pub tabs: Vec<LoadBoardTab>,
     pub metrics: Vec<LoadBoardMetric>,
+    pub filters: LoadBoardFilters,
+    pub saved_filters: Vec<LoadBoardSavedFilter>,
+    pub equipment_options: Vec<LoadBoardFilterOption>,
+    pub commodity_options: Vec<LoadBoardFilterOption>,
     pub rows: Vec<LoadBoardRow>,
     pub recommendation_notes: Vec<String>,
     pub pagination: Pagination,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CarrierNetworkOption {
+    pub user_id: u64,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CarrierNetworkRow {
+    pub id: u64,
+    pub carrier_user_id: u64,
+    pub carrier_label: String,
+    pub relationship_status: String,
+    pub carrier_group_key: Option<String>,
+    pub notes: Option<String>,
+    pub effective_from: String,
+    pub effective_to: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CarrierNetworkScreen {
+    pub can_manage: bool,
+    pub owner_label: String,
+    pub carrier_options: Vec<CarrierNetworkOption>,
+    pub rows: Vec<CarrierNetworkRow>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertCarrierNetworkRequest {
+    pub id: Option<u64>,
+    pub carrier_user_id: u64,
+    pub relationship_status: String,
+    pub carrier_group_key: Option<String>,
+    pub notes: Option<String>,
+    pub effective_to: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertCarrierNetworkResponse {
+    pub success: bool,
+    pub message: String,
+    pub screen: CarrierNetworkScreen,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CarrierMatchRow {
+    pub carrier_user_id: u64,
+    pub carrier_label: String,
+    pub score: u8,
+    pub eligible: bool,
+    pub relationship_status: Option<String>,
+    pub explanation: Vec<String>,
+    pub blocked_reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CarrierMatchScreen {
+    pub leg_id: u64,
+    pub load_id: u64,
+    pub load_label: String,
+    pub rows: Vec<CarrierMatchRow>,
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,6 +267,10 @@ pub struct DispatchDeskRow {
     pub load_id: u64,
     pub leg_id: u64,
     pub handoff_id: Option<u64>,
+    pub queue_key: String,
+    pub queue_label: String,
+    pub entry_rule_label: String,
+    pub exit_rule_label: String,
     pub load_number: Option<String>,
     pub title: String,
     pub equipment_label: Option<String>,
@@ -180,6 +288,19 @@ pub struct DispatchDeskRow {
     pub archive_guidance_tone: Option<String>,
     pub archive_guidance_note: Option<String>,
     pub latest_activity_note: Option<String>,
+    pub latest_internal_note: Option<String>,
+    pub latest_customer_update: Option<String>,
+    pub assigned_owner_label: Option<String>,
+    pub priority_label: String,
+    pub priority_tone: String,
+    pub sla_due_label: String,
+    pub sla_tone: String,
+    pub escalation_reason: Option<String>,
+    pub exception_label: Option<String>,
+    pub exception_tone: Option<String>,
+    pub exception_resolution_key: Option<String>,
+    pub exception_resolution_label: Option<String>,
+    pub exception_resolution_enabled: bool,
     pub load_href: Option<String>,
     pub primary_action_key: Option<String>,
     pub primary_action_label: Option<String>,
@@ -285,8 +406,26 @@ pub struct LoadBuilderDraft {
     pub load_type_id: Option<u64>,
     pub equipment_id: Option<u64>,
     pub commodity_type_id: Option<u64>,
+    pub customer_contract_id: Option<u64>,
+    pub customer_contract_lane_id: Option<u64>,
+    pub freight_mode: Option<String>,
+    pub visibility: Option<String>,
+    pub service_level: Option<String>,
+    pub customer_reference: Option<String>,
+    pub po_number: Option<String>,
+    pub pickup_appointment_ref: Option<String>,
+    pub delivery_appointment_ref: Option<String>,
+    pub facility_contact_name: Option<String>,
+    pub facility_contact_phone: Option<String>,
+    pub facility_contact_email: Option<String>,
+    pub appointment_window_start: Option<String>,
+    pub appointment_window_end: Option<String>,
+    pub accessorial_flags: Option<serde_json::Value>,
     pub weight_unit: Option<String>,
     pub weight: Option<f64>,
+    pub temperature_data: Option<serde_json::Value>,
+    pub container_data: Option<serde_json::Value>,
+    pub securement_data: Option<serde_json::Value>,
     pub special_instructions: Option<String>,
     pub is_hazardous: bool,
     pub is_temperature_controlled: bool,
@@ -314,6 +453,15 @@ pub struct LoadBuilderScreen {
 pub struct LoadProfileField {
     pub label: String,
     pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadLifecycleAction {
+    pub action: String,
+    pub label: String,
+    pub tone: String,
+    pub enabled: bool,
+    pub disabled_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -354,6 +502,9 @@ pub struct LoadDocumentRow {
     pub blockchain_hash_preview: Option<String>,
     pub can_edit: bool,
     pub can_verify_blockchain: bool,
+    pub current_version: u32,
+    pub version_count: u64,
+    pub version_history_label: String,
     pub uploaded_at_label: String,
 }
 
@@ -387,9 +538,14 @@ pub struct LoadProfileScreen {
     pub load_id: u64,
     pub load_number: Option<String>,
     pub can_manage_documents: bool,
+    pub can_manage_lifecycle: bool,
+    pub lifecycle_status: String,
+    pub revision_number: i32,
+    pub lifecycle_actions: Vec<LoadLifecycleAction>,
     pub info_fields: Vec<LoadProfileField>,
     pub legs: Vec<LoadProfileLegRow>,
     pub documents: Vec<LoadDocumentRow>,
+    pub required_documents: Vec<RequiredDocumentChecklistItem>,
     pub history: Vec<LoadHistoryRow>,
     pub stloads_handoff: Option<LoadHandoffSummary>,
     pub notes: Vec<String>,
@@ -537,6 +693,15 @@ pub fn sample_load_board_screen() -> LoadBoardScreen {
             LoadBoardMetric { label: "Recommended Matches".into(), value: "18 legs".into(), note: "Carrier preference scoring pulled these to the top.".into() },
             LoadBoardMetric { label: "Funding Watch".into(), value: "6 legs".into(), note: "Booked legs awaiting escrow funding or release.".into() },
         ],
+        filters: LoadBoardFilters {
+            page: 1,
+            per_page: 20,
+            visibility: Some("public".into()),
+            ..Default::default()
+        },
+        saved_filters: Vec::new(),
+        equipment_options: Vec::new(),
+        commodity_options: Vec::new(),
         rows: vec![
             LoadBoardRow { load_id: 24017, leg_id: 240171, leg_code: "LD-24017-1".into(), origin_label: "Dallas, TX".into(), destination_label: "Joliet, IL".into(), pickup_date_label: "Apr 8, 2026".into(), delivery_date_label: "Apr 10, 2026".into(), status_label: "Booked".into(), status_tone: "primary".into(), stloads_label: Some("Published".into()), stloads_tone: Some("success".into()), stloads_alert: None, remarks_label: None, carrier_label: Some("Atlas Freight".into()), booked_carrier_id: Some(412), bid_status_label: "Fixed".into(), amount_label: "$2,450".into(), payment_label: "Escrow pending".into(), recommended_score: Some(96), primary_action_label: "Fund escrow".into() },
             LoadBoardRow { load_id: 24012, leg_id: 240122, leg_code: "LD-24012-2".into(), origin_label: "Ontario, CA".into(), destination_label: "Reno, NV".into(), pickup_date_label: "Apr 7, 2026".into(), delivery_date_label: "Apr 7, 2026".into(), status_label: "Published".into(), status_tone: "success".into(), stloads_label: Some("Requeue Required".into()), stloads_tone: Some("danger".into()), stloads_alert: Some("Rate drift after TMS update".into()), remarks_label: None, carrier_label: None, booked_carrier_id: None, bid_status_label: "Open".into(), amount_label: "$1,260".into(), payment_label: "Not funded".into(), recommended_score: Some(88), primary_action_label: "View offers".into() },

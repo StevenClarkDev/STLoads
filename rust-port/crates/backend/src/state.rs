@@ -24,8 +24,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub async fn from_env() -> Self {
-        let config = RuntimeConfig::from_env();
+    pub async fn from_config(config: RuntimeConfig) -> Self {
         if let Err(error) = config.validate_for_startup() {
             panic!("invalid production runtime configuration: {error}");
         }
@@ -55,16 +54,21 @@ impl AppState {
                     }
                 }
             }
+        } else if config.is_production() {
+            panic!("DATABASE_URL is not set in production");
         } else {
-            if config.is_production() {
-                panic!("DATABASE_URL is not set in production");
-            } else {
-                warn!("DATABASE_URL is not set; backend will serve fallback screen data");
-            }
+            warn!("DATABASE_URL is not set; backend will serve fallback screen data");
         }
 
         let email = EmailService::from_config_with_pool(&config, pool.clone());
-        email.start_outbox_worker();
+        if config.should_start_workers() {
+            email.start_outbox_worker();
+        } else {
+            info!(
+                runtime_mode = %config.runtime_mode,
+                "background workers are disabled for this runtime"
+            );
+        }
 
         let state = Self {
             config,
@@ -75,7 +79,9 @@ impl AppState {
             rate_limiter: RateLimiter::default(),
             realtime_tx,
         };
-        tms_scheduler::start_tms_workers(state.clone());
+        if state.config.should_start_workers() {
+            tms_scheduler::start_tms_workers(state.clone());
+        }
         state
     }
 
@@ -166,15 +172,14 @@ impl AppState {
 
     pub async fn record_lockout_success(&self, identity: impl AsRef<str>) {
         let identity = identity.as_ref();
-        if let Some(pool) = self.pool.as_ref() {
-            if let Err(error) =
+        if let Some(pool) = self.pool.as_ref()
+            && let Err(error) =
                 db::security::clear_lockout(pool, &security_key("lockout", identity)).await
-            {
-                warn!(
-                    error = %error,
-                    "distributed lockout clear failed; clearing process-local limiter"
-                );
-            }
+        {
+            warn!(
+                error = %error,
+                "distributed lockout clear failed; clearing process-local limiter"
+            );
         }
 
         self.rate_limiter.record_success(identity);

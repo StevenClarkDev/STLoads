@@ -6,6 +6,9 @@ pub struct RuntimeConfig {
     pub port: u16,
     pub deployment_target: String,
     pub environment: String,
+    pub runtime_mode: String,
+    pub log_format: String,
+    pub otel_exporter_endpoint: Option<String>,
     pub public_base_url: Option<String>,
     pub cors_allowed_origins: Vec<String>,
     pub run_migrations: bool,
@@ -69,6 +72,23 @@ impl RuntimeConfig {
             deployment_target: env::var("DEPLOYMENT_TARGET")
                 .unwrap_or_else(|_| "ibm-server".to_string()),
             environment: env::var("APP_ENV").unwrap_or_else(|_| "development".to_string()),
+            runtime_mode: env::var("STLOADS_RUNTIME_MODE")
+                .or_else(|_| env::var("RUNTIME_MODE"))
+                .unwrap_or_else(|_| "web".to_string()),
+            log_format: env::var("LOG_FORMAT").unwrap_or_else(|_| {
+                if env::var("APP_ENV")
+                    .unwrap_or_else(|_| "development".to_string())
+                    .trim()
+                    .eq_ignore_ascii_case("production")
+                {
+                    "json".to_string()
+                } else {
+                    "pretty".to_string()
+                }
+            }),
+            otel_exporter_endpoint: env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+                .ok()
+                .and_then(optional_env_value),
             public_base_url: env::var("PUBLIC_BASE_URL").ok(),
             cors_allowed_origins: allowed_origin_values(),
             run_migrations: env::var("RUN_MIGRATIONS")
@@ -156,23 +176,17 @@ impl RuntimeConfig {
             mail_mailer: env::var("MAIL_MAILER")
                 .or_else(|_| env::var("MAIL_DRIVER"))
                 .unwrap_or_else(|_| "log".to_string()),
-            mail_host: env::var("MAIL_HOST")
-                .ok()
-                .and_then(|value| optional_env_value(value)),
+            mail_host: env::var("MAIL_HOST").ok().and_then(optional_env_value),
             mail_port: env::var("MAIL_PORT")
                 .ok()
                 .and_then(|value| value.parse::<u16>().ok())
                 .unwrap_or(587),
-            mail_username: env::var("MAIL_USERNAME")
-                .ok()
-                .and_then(|value| optional_env_value(value)),
-            mail_password: env::var("MAIL_PASSWORD")
-                .ok()
-                .and_then(|value| optional_env_value(value)),
+            mail_username: env::var("MAIL_USERNAME").ok().and_then(optional_env_value),
+            mail_password: env::var("MAIL_PASSWORD").ok().and_then(optional_env_value),
             mail_encryption: env::var("MAIL_ENCRYPTION")
                 .or_else(|_| env::var("MAIL_SCHEME"))
                 .ok()
-                .and_then(|value| optional_env_value(value)),
+                .and_then(optional_env_value),
             mail_from_address: env::var("MAIL_FROM_ADDRESS")
                 .ok()
                 .and_then(optional_env_value)
@@ -232,12 +246,39 @@ impl RuntimeConfig {
         self.environment.trim().eq_ignore_ascii_case("production")
     }
 
+    pub fn should_start_web(&self) -> bool {
+        matches!(
+            self.runtime_mode.trim().to_ascii_lowercase().as_str(),
+            "web" | "all"
+        )
+    }
+
+    pub fn should_start_workers(&self) -> bool {
+        matches!(
+            self.runtime_mode.trim().to_ascii_lowercase().as_str(),
+            "worker" | "workers" | "all"
+        )
+    }
+
+    pub fn should_emit_json_logs(&self) -> bool {
+        self.log_format.trim().eq_ignore_ascii_case("json") || self.is_production()
+    }
+
     pub fn validate_for_startup(&self) -> Result<(), String> {
         if !self.is_production() {
             return Ok(());
         }
 
         let mut errors = Vec::new();
+        if !matches!(
+            self.runtime_mode.trim().to_ascii_lowercase().as_str(),
+            "web" | "worker" | "workers" | "all"
+        ) {
+            errors.push("STLOADS_RUNTIME_MODE must be one of web, worker, workers, or all".into());
+        }
+        if !self.should_emit_json_logs() {
+            errors.push("production LOG_FORMAT must be json".into());
+        }
 
         require_option(&mut errors, "DATABASE_URL", self.database_url.as_deref());
         require_option(
@@ -441,10 +482,10 @@ fn allowed_origin_values() -> Vec<String> {
     }
 
     for fallback in ["FRONTEND_PUBLIC_URL", "PUBLIC_BASE_URL"] {
-        if let Ok(value) = env::var(fallback) {
-            if let Some(trimmed) = optional_env_value(value) {
-                values.push(trimmed);
-            }
+        if let Ok(value) = env::var(fallback)
+            && let Some(trimmed) = optional_env_value(value)
+        {
+            values.push(trimmed);
         }
     }
 
@@ -503,6 +544,9 @@ mod tests {
             port: 3001,
             deployment_target: "local".into(),
             environment: "development".into(),
+            runtime_mode: "web".into(),
+            log_format: "pretty".into(),
+            otel_exporter_endpoint: None,
             public_base_url: None,
             cors_allowed_origins: Vec::new(),
             run_migrations: false,
@@ -632,6 +676,9 @@ mod tests {
             port: 3001,
             deployment_target: "ibm-code-engine".into(),
             environment: "production".into(),
+            runtime_mode: "web".into(),
+            log_format: "json".into(),
+            otel_exporter_endpoint: None,
             public_base_url: Some("https://api.stloads.com".into()),
             cors_allowed_origins: vec!["https://portal.stloads.com".into()],
             run_migrations: false,

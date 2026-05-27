@@ -49,13 +49,13 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
 
     let pathname = move || location.pathname.get();
     let logout = move |_| {
-        let auth = auth.clone();
+        let auth = auth;
         let navigate = logout_navigate.clone();
         spawn_local(async move {
-            if let Ok(response) = session::sign_out(auth).await {
-                if response.success {
-                    navigate("/admin-login", Default::default());
-                }
+            if let Ok(response) = session::sign_out(auth).await
+                && response.success
+            {
+                navigate("/admin-login", Default::default());
             }
         });
     };
@@ -75,6 +75,7 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
 
     view! {
         <main class="php-app-shell admin-frame" style="background:url('/assets/images/login/texture-bg.jpg') no-repeat center center / cover;">
+            <a class="skip-link" href="#main-content">"Skip to main content"</a>
             <div class="php-page-wrapper">
                 <header class="php-page-header">
                     <div class="php-header-left">
@@ -206,6 +207,38 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
                                         </span>
                                         <i class="fas fa-chevron-right"></i>
                                     </A>
+                                    <A href="/admin/support" attr:class=sidebar_link_class(pathname() == "/admin/support")>
+                                        <span class="php-sidebar-link-main">
+                                            <i class="fas fa-headset"></i>
+                                            <span>"Support Search"</span>
+                                        </span>
+                                        <i class="fas fa-chevron-right"></i>
+                                    </A>
+                                    <A href="/admin/audit" attr:class=sidebar_link_class(pathname() == "/admin/audit")>
+                                        <span class="php-sidebar-link-main">
+                                            <i class="fas fa-search"></i>
+                                            <span>"Audit Search"</span>
+                                        </span>
+                                        <i class="fas fa-chevron-right"></i>
+                                    </A>
+                                    {move || can_manage_roles.get().then(|| view! {
+                                        <A href="/admin/identity" attr:class=sidebar_link_class(pathname() == "/admin/identity")>
+                                            <span class="php-sidebar-link-main">
+                                                <i class="fas fa-id-card"></i>
+                                                <span>"Enterprise Identity"</span>
+                                            </span>
+                                            <i class="fas fa-chevron-right"></i>
+                                        </A>
+                                    })}
+                                    {move || can_manage_roles.get().then(|| view! {
+                                        <A href="/admin/access-reviews" attr:class=sidebar_link_class(pathname() == "/admin/access-reviews")>
+                                            <span class="php-sidebar-link-main">
+                                                <i class="fas fa-clipboard-check"></i>
+                                                <span>"Access Reviews"</span>
+                                            </span>
+                                            <i class="fas fa-chevron-right"></i>
+                                        </A>
+                                    })}
                                     <A href="/admin/change-password" attr:class=sidebar_link_class(pathname() == "/admin/change-password")>
                                         <span class="php-sidebar-link-main">
                                             <i class="fas fa-key"></i>
@@ -254,6 +287,13 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
                                             <span class="php-sidebar-link-main">
                                                 <i class="fas fa-code-branch"></i>
                                                 <span>"Reconciliation"</span>
+                                            </span>
+                                            <i class="fas fa-chevron-right"></i>
+                                        </A>
+                                        <A href="/admin/integrations" attr:class=sidebar_link_class(pathname() == "/admin/integrations")>
+                                            <span class="php-sidebar-link-main">
+                                                <i class="fas fa-plug"></i>
+                                                <span>"Integrations"</span>
                                             </span>
                                             <i class="fas fa-chevron-right"></i>
                                         </A>
@@ -318,7 +358,7 @@ pub fn AdminFrame(children: Children) -> impl IntoView {
                         </section>
                     </aside>
 
-                    <section class="php-page-body">{children()}</section>
+                    <section id="main-content" class="php-page-body" tabindex="-1">{children()}</section>
                 </div>
 
                 <footer class="php-footer">
@@ -346,6 +386,12 @@ fn admin_quick_jump_path(query: &str) -> Option<String> {
     if query.contains("dashboard") || query.contains("overview") || query == "admin" {
         return Some("/admin".into());
     }
+    if query.contains("access review")
+        || query.contains("recert")
+        || query.contains("least privilege")
+    {
+        return Some("/admin/access-reviews".into());
+    }
     if query.contains("approval") || query.contains("onboarding") || query.contains("review") {
         return Some("/admin/onboarding-reviews".into());
     }
@@ -355,11 +401,24 @@ fn admin_quick_jump_path(query: &str) -> Option<String> {
     if query.contains("role") || query.contains("permission") {
         return Some("/admin/roles".into());
     }
+    if query.contains("identity") || query.contains("sso") || query.contains("scim") {
+        return Some("/admin/identity".into());
+    }
+    if query.contains("audit") || query.contains("compliance") || query.contains("request id") {
+        return Some("/admin/audit".into());
+    }
     if query.contains("master") || query.contains("catalog") || query.contains("data") {
         return Some("/admin/master-data".into());
     }
     if query.contains("reconciliation") {
         return Some("/admin/stloads/reconciliation".into());
+    }
+    if query.contains("integration")
+        || query.contains("api")
+        || query.contains("webhook")
+        || query.contains("edi")
+    {
+        return Some("/admin/integrations".into());
     }
     if query.contains("stloads") || query.contains("operation") {
         return Some("/admin/stloads/operations".into());

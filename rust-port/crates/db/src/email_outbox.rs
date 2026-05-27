@@ -7,6 +7,7 @@ use crate::DbPool;
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct EmailOutboxRecord {
     pub id: i64,
+    pub request_id: Option<String>,
     pub template_name: String,
     pub to_email: String,
     pub to_name: Option<String>,
@@ -25,6 +26,7 @@ pub struct EmailOutboxRecord {
 
 #[derive(Debug, Clone)]
 pub struct EnqueueEmailParams<'a> {
+    pub request_id: Option<&'a str>,
     pub template_name: &'a str,
     pub to_email: &'a str,
     pub to_name: Option<&'a str>,
@@ -40,6 +42,7 @@ pub async fn enqueue_email(
     sqlx::query_as::<_, EmailOutboxRecord>(
         r#"
         INSERT INTO email_outbox (
+            request_id,
             template_name,
             to_email,
             to_name,
@@ -53,10 +56,11 @@ pub async fn enqueue_email(
             created_at,
             updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 'processing', CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'processing', CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         "#,
     )
+    .bind(params.request_id)
     .bind(params.template_name)
     .bind(params.to_email)
     .bind(params.to_name)

@@ -27,6 +27,7 @@ pub struct CreateBreakGlassSessionInput<'a> {
     pub target_organization_id: i64,
     pub reason: &'a str,
     pub ticket_ref: &'a str,
+    pub request_id: Option<&'a str>,
     pub expires_at: NaiveDateTime,
 }
 
@@ -45,6 +46,8 @@ pub struct AuditEventInput<'a> {
     pub user_agent: Option<&'a str>,
     pub source: &'a str,
     pub metadata: Option<Value>,
+    pub before_state: Option<Value>,
+    pub after_state: Option<Value>,
 }
 
 pub async fn create_break_glass_session(
@@ -82,13 +85,15 @@ pub async fn create_break_glass_session(
             action: "break_glass_started",
             reason: Some(input.reason),
             ticket_ref: Some(input.ticket_ref),
-            request_id: None,
+            request_id: input.request_id,
             ip_address: None,
             user_agent: None,
             source: "rust-backend",
             metadata: Some(serde_json::json!({
                 "expires_at": input.expires_at,
             })),
+            before_state: None,
+            after_state: None,
         },
     )
     .await?;
@@ -129,9 +134,9 @@ pub async fn insert_audit_event(
         "INSERT INTO audit_events (
             actor_user_id, organization_id, target_organization_id, entity_type, entity_id,
             action, reason, ticket_ref, request_id, ip_address, user_agent, source, metadata,
-            created_at
+            before_state, after_state, created_at
          ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP
          )
          RETURNING id",
     )
@@ -148,6 +153,8 @@ pub async fn insert_audit_event(
     .bind(input.user_agent)
     .bind(input.source)
     .bind(input.metadata.as_ref())
+    .bind(input.before_state.as_ref())
+    .bind(input.after_state.as_ref())
     .fetch_one(pool)
     .await
 }
@@ -160,9 +167,9 @@ async fn insert_audit_event_in_tx(
         "INSERT INTO audit_events (
             actor_user_id, organization_id, target_organization_id, entity_type, entity_id,
             action, reason, ticket_ref, request_id, ip_address, user_agent, source, metadata,
-            created_at
+            before_state, after_state, created_at
          ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP
          )
          RETURNING id",
     )
@@ -179,6 +186,8 @@ async fn insert_audit_event_in_tx(
     .bind(input.user_agent)
     .bind(input.source)
     .bind(input.metadata.as_ref())
+    .bind(input.before_state.as_ref())
+    .bind(input.after_state.as_ref())
     .fetch_one(&mut **tx)
     .await
 }

@@ -6,31 +6,59 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use std::time::Duration as StdDuration;
+use base64::{Engine as _, engine::general_purpose};
+use std::{
+    io::{Cursor, Write},
+    time::Duration as StdDuration,
+};
+use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 use chrono::{NaiveDateTime, Utc};
 use db::tracking::{
-    CreateLegDocumentParams, advance_leg_execution, create_leg_document, create_tracking_point,
-    find_execution_leg_by_id, find_leg_document_by_id, find_leg_document_scope,
-    latest_tracking_point_for_leg, list_execution_note_history_for_leg, list_leg_documents,
-    list_leg_events, list_tracking_points_for_leg,
+    CreateLegDocumentParams, active_customer_tracking_link, active_customer_tracking_link_by_token,
+    active_tracking_consent_for_leg_user, advance_leg_execution,
+    approve_execution_closeout_package, create_customer_tracking_link,
+    create_execution_finance_exception, create_leg_document, create_tracking_point,
+    current_route_plan, current_telematics_summary, decide_execution_finance_exceptions,
+    execution_closeout_readiness, find_execution_leg_by_id, find_leg_document_by_id,
+    find_leg_document_scope, insert_execution_offline_history_note, latest_tracking_point_for_leg,
+    list_execution_finance_exception_summaries, list_execution_note_history_for_leg,
+    list_execution_offline_submissions, list_leg_documents, list_leg_events,
+    list_tracking_points_for_leg, mark_execution_offline_submission_failed,
+    record_execution_offline_submission, record_telematics_execution_ping, record_tracking_consent,
+    revoke_customer_tracking_links, upsert_execution_route_plan, upsert_telematics_connection,
 };
 use domain::{
     auth::UserRole,
     dispatch::LegacyLoadLegStatusCode,
-    tracking::{LegEventType, TrackingModuleContract, leg_event_types, tracking_module_contract},
+    execution::{
+        ExecutionTransitionContext, ExecutionTransitionError, execution_transition_for,
+        is_trackable_execution_status,
+    },
+    tracking::{
+        Coordinate, LegEventType, TrackingModuleContract, can_store_location_ping, haversine_km,
+        is_inside_geofence, leg_event_types, tracking_module_contract,
+    },
 };
 use serde::Serialize;
 use shared::{
-    ApiResponse, ExecutionActionItem, ExecutionDocumentItem, ExecutionDocumentTypeOption,
-    ExecutionLegActionRequest, ExecutionLegActionResponse, ExecutionLegScreen,
-    ExecutionLocationPingRequest, ExecutionLocationPingResponse, ExecutionNoteItem,
-    ExecutionTimelineItem, ExecutionTrackingPointItem, ExecutionUploadDocumentResponse,
-    RealtimeEvent, RealtimeEventKind, RealtimeTopic,
+    ApiResponse, ExecutionActionItem, ExecutionCloseoutApprovalRequest,
+    ExecutionCustomerTrackingLinkRequest, ExecutionCustomerTrackingLinkResponse,
+    ExecutionCustomerTrackingRevokeRequest, ExecutionCustomerTrackingScreen, ExecutionDocumentItem,
+    ExecutionDocumentTypeOption, ExecutionFinanceExceptionDecisionRequest,
+    ExecutionFinanceExceptionRequest, ExecutionLegActionRequest, ExecutionLegActionResponse,
+    ExecutionLegScreen, ExecutionLocationPingRequest, ExecutionLocationPingResponse,
+    ExecutionNoteItem, ExecutionOfflineSubmissionRequest, ExecutionOfflineSubmissionResponse,
+    ExecutionRoutePlanRequest, ExecutionStatusItem, ExecutionTelematicsConnectionRequest,
+    ExecutionTelematicsPingRequest, ExecutionTimelineItem, ExecutionTrackingConsentRequest,
+    ExecutionTrackingConsentResponse, ExecutionTrackingPointItem, ExecutionUploadDocumentResponse,
+    ExecutionWorkflowMutationResponse, RealtimeEvent, RealtimeEventKind, RealtimeTopic,
+    RequiredDocumentChecklistItem,
 };
 
 use crate::{
-    auth_session, rate_limit::RateLimitPolicy, realtime_bus::RoutedRealtimeEvent, state::AppState,
+    auth_session, document_validation::validate_uploaded_document, rate_limit::RateLimitPolicy,
+    realtime_bus::RoutedRealtimeEvent, state::AppState,
 };
 
 fn execution_document_policy(name: &'static str) -> RateLimitPolicy {
@@ -59,7 +87,46 @@ pub fn router() -> Router<crate::state::AppState> {
         .route("/contract", get(contract))
         .route("/leg-event-types", get(event_types))
         .route("/legs/{leg_id}", get(leg_screen))
+        .route(
+            "/customer-tracking/{share_token}",
+            get(customer_tracking_screen),
+        )
         .route("/legs/{leg_id}/actions", post(run_leg_action))
+        .route(
+            "/legs/{leg_id}/tracking-consent",
+            post(capture_tracking_consent),
+        )
+        .route(
+            "/legs/{leg_id}/offline-submissions",
+            post(replay_offline_submission),
+        )
+        .route("/legs/{leg_id}/closeout", post(review_closeout_package))
+        .route(
+            "/legs/{leg_id}/closeout-package",
+            get(download_closeout_package),
+        )
+        .route(
+            "/legs/{leg_id}/finance-exceptions",
+            post(create_finance_exception),
+        )
+        .route(
+            "/legs/{leg_id}/finance-exceptions/decision",
+            post(decide_finance_exception),
+        )
+        .route(
+            "/legs/{leg_id}/customer-tracking",
+            post(create_customer_tracking_share_link),
+        )
+        .route(
+            "/legs/{leg_id}/customer-tracking/revoke",
+            post(revoke_customer_tracking_share_links),
+        )
+        .route("/legs/{leg_id}/telematics", post(upsert_telematics_status))
+        .route(
+            "/legs/{leg_id}/telematics/ping",
+            post(ingest_telematics_ping),
+        )
+        .route("/legs/{leg_id}/route-plan", post(upsert_route_plan))
         .route(
             "/legs/{leg_id}/documents/upload",
             post(upload_leg_document).layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
@@ -69,6 +136,66 @@ pub fn router() -> Router<crate::state::AppState> {
             "/documents/{document_id}/file",
             get(download_leg_document_file),
         )
+}
+
+async fn customer_tracking_screen(
+    State(state): State<AppState>,
+    Path(share_token): Path<String>,
+) -> Result<Json<ApiResponse<ExecutionCustomerTrackingScreen>>, StatusCode> {
+    let Some(pool) = state.pool.as_ref() else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+
+    let Some(link) = active_customer_tracking_link_by_token(pool, &share_token)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    let Some(leg) = find_execution_leg_by_id(pool, link.leg_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    let latest_location = latest_tracking_point_for_leg(pool, link.leg_id)
+        .await
+        .unwrap_or(None);
+    let (tracking_health_label, _) =
+        execution_tracking_health(latest_location.as_ref(), leg.status_id);
+    let (geofence_status_label, _, eta_risk_label, _) =
+        execution_location_risk_labels(&leg, latest_location.as_ref());
+    let route_label = format!(
+        "{} -> {}",
+        leg.pickup_location_name
+            .clone()
+            .unwrap_or_else(|| "Pickup".into()),
+        leg.delivery_location_name
+            .clone()
+            .unwrap_or_else(|| "Delivery".into())
+    );
+
+    Ok(Json(ApiResponse::ok(ExecutionCustomerTrackingScreen {
+        leg_code: leg
+            .leg_code
+            .unwrap_or_else(|| format!("LEG-{}", leg.leg_id)),
+        load_number: leg.load_number,
+        route_label,
+        status_label: status_label_from_code(leg.status_id),
+        latest_location_label: latest_location
+            .as_ref()
+            .map(|point| format_datetime(&point.recorded_at)),
+        latest_coordinate_label: latest_location
+            .as_ref()
+            .map(|point| format!("{:.5}, {:.5}", point.lat, point.lng)),
+        tracking_health_label,
+        geofence_status_label,
+        eta_risk_label,
+        expires_at_label: format_datetime(&link.expires_at),
+        visibility_scope_label: link.visibility_scope.replace('_', " "),
+    })))
 }
 
 async fn index() -> Json<ApiResponse<ExecutionOverview>> {
@@ -131,16 +258,895 @@ async fn leg_screen(
     let execution_notes = list_execution_note_history_for_leg(pool, leg_id)
         .await
         .unwrap_or_default();
+    let tracking_consent = active_tracking_consent_for_leg_user(pool, leg_id, session.user.id)
+        .await
+        .unwrap_or(None);
+    let closeout = execution_closeout_readiness(pool, leg_id).await.ok();
+    let offline_submissions = list_execution_offline_submissions(pool, leg_id)
+        .await
+        .unwrap_or_default();
+    let finance_exceptions = list_execution_finance_exception_summaries(pool, leg_id)
+        .await
+        .unwrap_or_default();
+    let customer_tracking_link = active_customer_tracking_link(pool, leg_id)
+        .await
+        .unwrap_or(None);
+    let route_plan = current_route_plan(pool, leg_id).await.unwrap_or(None);
+    let telematics = current_telematics_summary(pool, leg.booked_carrier_id)
+        .await
+        .unwrap_or(None);
 
     Ok(Json(ApiResponse::ok(build_execution_screen(
         &session,
         &leg,
         latest_location.as_ref(),
+        tracking_consent.as_ref(),
+        closeout.as_ref(),
+        &offline_submissions,
+        &finance_exceptions,
+        customer_tracking_link.as_ref(),
+        route_plan.as_ref(),
+        telematics.as_ref(),
         tracking_points,
         events,
         documents,
         execution_notes,
     ))))
+}
+
+async fn replay_offline_submission(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<ExecutionOfflineSubmissionRequest>,
+) -> Result<Json<ApiResponse<ExecutionOfflineSubmissionResponse>>, StatusCode> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+
+    let Some(existing) = find_execution_leg_by_id(pool, leg_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    if !can_manage_execution(&session, &existing) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let captured_at = payload.captured_at.as_deref().and_then(parse_recorded_at);
+    let submission = record_execution_offline_submission(
+        pool,
+        leg_id,
+        Some(session.user.id),
+        &payload.submission_type,
+        &payload.client_submission_id,
+        &payload.payload,
+        captured_at,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if submission.processing_status != "duplicate" {
+        let replay_result = match payload.submission_type.as_str() {
+            "driver_note" => {
+                let note = payload
+                    .payload
+                    .get("note")
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("Offline driver note replayed without text.");
+                insert_execution_offline_history_note(
+                    pool,
+                    leg_id,
+                    Some(session.user.id),
+                    existing.status_id,
+                    note,
+                )
+                .await
+                .map_err(|error| error.to_string())
+            }
+            "driver_action" => {
+                replay_offline_driver_action(pool, &session, leg_id, &existing, &payload.payload)
+                    .await
+            }
+            "gps_ping" => {
+                replay_offline_gps_ping(pool, leg_id, &payload.payload, captured_at).await
+            }
+            "document_upload" => {
+                replay_offline_document_upload(&state, pool, leg_id, &payload.payload, &session)
+                    .await
+            }
+            _ => Ok(()),
+        };
+
+        if let Err(error) = replay_result {
+            let note = format!("Offline replay failed: {}", error);
+            mark_execution_offline_submission_failed(pool, submission.id, &note)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            return Ok(Json(ApiResponse::ok(ExecutionOfflineSubmissionResponse {
+                success: false,
+                leg_id: leg_id.max(0) as u64,
+                submission_id: Some(submission.id.max(0) as u64),
+                status_label: "failed".into(),
+                message: note,
+            })));
+        }
+    }
+
+    Ok(Json(ApiResponse::ok(ExecutionOfflineSubmissionResponse {
+        success: true,
+        leg_id: leg_id.max(0) as u64,
+        submission_id: Some(submission.id.max(0) as u64),
+        status_label: submission.processing_status.replace('_', " "),
+        message: submission
+            .reconciliation_note
+            .unwrap_or_else(|| "Offline submission replayed into Rust execution.".into()),
+    })))
+}
+
+async fn replay_offline_driver_action(
+    pool: &db::DbPool,
+    session: &auth_session::ResolvedSession,
+    leg_id: i64,
+    existing: &db::tracking::ExecutionLegRecord,
+    payload: &serde_json::Value,
+) -> Result<(), String> {
+    let action_key = payload
+        .get("action_key")
+        .or_else(|| payload.get("actionKey"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "Offline driver action is missing action_key.".to_string())?;
+    let note = payload
+        .get("note")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let existing_documents = list_leg_documents(pool, leg_id)
+        .await
+        .map_err(|error| error.to_string())?;
+    let has_delivery_pod = existing_documents
+        .iter()
+        .any(|document| document.r#type == "delivery_pod");
+    let has_tracking_consent = active_tracking_consent_for_leg_user(pool, leg_id, session.user.id)
+        .await
+        .map_err(|error| error.to_string())?
+        .is_some();
+    let transition = execution_transition_for(
+        existing.status_id,
+        action_key,
+        ExecutionTransitionContext {
+            has_delivery_pod,
+            has_completion_note: note.is_some(),
+            has_tracking_consent,
+        },
+    )
+    .map_err(execution_transition_error_message)?;
+
+    advance_leg_execution(
+        pool,
+        leg_id,
+        transition.to,
+        transition.event_type,
+        Some(session.user.id),
+        note,
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+async fn replay_offline_gps_ping(
+    pool: &db::DbPool,
+    leg_id: i64,
+    payload: &serde_json::Value,
+    captured_at: Option<NaiveDateTime>,
+) -> Result<(), String> {
+    let lat = payload
+        .get("lat")
+        .and_then(|value| value.as_f64())
+        .ok_or_else(|| "Offline GPS ping is missing latitude.".to_string())?;
+    let lng = payload
+        .get("lng")
+        .and_then(|value| value.as_f64())
+        .ok_or_else(|| "Offline GPS ping is missing longitude.".to_string())?;
+    if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lng) {
+        return Err("Offline GPS ping had invalid coordinates.".into());
+    }
+
+    create_tracking_point(pool, leg_id, lat, lng, captured_at)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+async fn replay_offline_document_upload(
+    state: &AppState,
+    pool: &db::DbPool,
+    leg_id: i64,
+    payload: &serde_json::Value,
+    session: &auth_session::ResolvedSession,
+) -> Result<(), String> {
+    let document_type = payload
+        .get("document_type")
+        .or_else(|| payload.get("documentType"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "Offline document upload is missing document_type.".to_string())?;
+    if !is_supported_execution_document_type(document_type) {
+        return Err("Offline document upload had an unsupported document_type.".into());
+    }
+
+    let document_name = payload
+        .get("document_name")
+        .or_else(|| payload.get("documentName"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(document_type);
+    let original_name = payload
+        .get("file_name")
+        .or_else(|| payload.get("fileName"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("offline-document.bin");
+    let mime_type = payload
+        .get("mime_type")
+        .or_else(|| payload.get("mimeType"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let raw_base64 = payload
+        .get("bytes_base64")
+        .or_else(|| payload.get("bytesBase64"))
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| "Offline document upload is missing file bytes.".to_string())?;
+    let clean_base64 = raw_base64
+        .split_once(',')
+        .map(|(_, encoded)| encoded)
+        .unwrap_or(raw_base64);
+    let bytes = general_purpose::STANDARD
+        .decode(clean_base64)
+        .map_err(|error| format!("Offline document upload bytes could not be decoded: {error}"))?;
+
+    validate_uploaded_document(original_name, mime_type, &bytes)
+        .map_err(|error| error.to_string())?;
+    let stored = state
+        .document_storage
+        .save_execution_document(leg_id, original_name, &bytes)
+        .await
+        .map_err(|error| error.to_string())?;
+    create_leg_document(
+        pool,
+        leg_id,
+        &CreateLegDocumentParams {
+            document_name: document_name.into(),
+            document_type: document_type.into(),
+            file_path: stored.file_path,
+            storage_provider: stored.storage_provider,
+            original_name: Some(original_name.into()),
+            mime_type: mime_type.map(str::to_string),
+            file_size: Some(bytes.len() as i64),
+        },
+        Some(session.user.id),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+async fn review_closeout_package(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<ExecutionCloseoutApprovalRequest>,
+) -> Result<Json<ApiResponse<ExecutionWorkflowMutationResponse>>, StatusCode> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+
+    let Some(leg) = find_execution_leg_by_id(pool, leg_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    if !can_manage_execution(&session, &leg) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let status = normalize_closeout_review_status(&payload.pod_review_status);
+    let current_readiness = execution_closeout_readiness(pool, leg_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if status == "approved"
+        && let Some(blocker) = closeout_approval_blocker(&current_readiness)
+    {
+        return Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+            success: false,
+            leg_id: leg_id.max(0) as u64,
+            status_label: "Closeout blocked".into(),
+            message: blocker,
+        })));
+    }
+
+    let readiness = approve_execution_closeout_package(
+        pool,
+        leg_id,
+        Some(session.user.id),
+        status,
+        payload.export_path.as_deref(),
+        payload.note.as_deref(),
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    publish_execution_update(
+        &state,
+        &session,
+        &leg,
+        format!(
+            "{} updated closeout review for leg #{} to {}.",
+            session.user.name, leg_id, status
+        ),
+    );
+
+    Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+        success: true,
+        leg_id: leg_id.max(0) as u64,
+        status_label: status.replace('_', " "),
+        message: execution_closeout_package_label(&readiness),
+    })))
+}
+
+async fn create_finance_exception(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<ExecutionFinanceExceptionRequest>,
+) -> Result<Json<ApiResponse<ExecutionWorkflowMutationResponse>>, StatusCode> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+
+    let Some(leg) = find_execution_leg_by_id(pool, leg_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    if !can_manage_execution(&session, &leg) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let description = payload.description.trim();
+    if description.is_empty() {
+        return Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+            success: false,
+            leg_id: leg_id.max(0) as u64,
+            status_label: "Missing description".into(),
+            message: "Claim, detention, or accessorial requests require a description.".into(),
+        })));
+    }
+
+    let exception_id = create_execution_finance_exception(
+        pool,
+        leg_id,
+        Some(session.user.id),
+        &normalize_finance_exception_type(&payload.exception_type),
+        &normalize_finance_exception_status(&payload.status),
+        payload.amount_cents,
+        &normalize_visibility(&payload.visibility),
+        description,
+        payload.evidence_document_id.map(|value| value as i64),
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    publish_execution_update(
+        &state,
+        &session,
+        &leg,
+        format!(
+            "{} recorded finance exception #{} for leg #{}.",
+            session.user.name, exception_id, leg_id
+        ),
+    );
+
+    Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+        success: true,
+        leg_id: leg_id.max(0) as u64,
+        status_label: "Recorded".into(),
+        message: format!(
+            "Finance exception #{} is recorded and visible in closeout/payment readiness.",
+            exception_id
+        ),
+    })))
+}
+
+async fn decide_finance_exception(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<ExecutionFinanceExceptionDecisionRequest>,
+) -> Result<Json<ApiResponse<ExecutionWorkflowMutationResponse>>, StatusCode> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+
+    let Some(leg) = find_execution_leg_by_id(pool, leg_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    if !can_manage_execution(&session, &leg)
+        && !session
+            .session
+            .permissions
+            .iter()
+            .any(|permission| permission == "manage_payments")
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let exception_type = normalize_finance_exception_type(&payload.exception_type);
+    let status = normalize_finance_exception_status(&payload.status);
+    let updated = decide_execution_finance_exceptions(
+        pool,
+        leg_id,
+        Some(session.user.id),
+        &exception_type,
+        &status,
+        payload.resolution_note.as_deref(),
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if updated > 0 {
+        publish_execution_update(
+            &state,
+            &session,
+            &leg,
+            format!(
+                "{} marked {} finance exception(s) for leg #{} as {}.",
+                session.user.name, updated, leg_id, status
+            ),
+        );
+    }
+
+    Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+        success: updated > 0,
+        leg_id: leg_id.max(0) as u64,
+        status_label: if updated > 0 {
+            status.replace('_', " ")
+        } else {
+            "No open exception".into()
+        },
+        message: if updated > 0 {
+            format!(
+                "{} {} exception(s) updated to {}; invoice, settlement, closeout, and support timeline context was recorded.",
+                updated, exception_type, status
+            )
+        } else {
+            format!(
+                "No open {} finance exception was found for this leg.",
+                exception_type
+            )
+        },
+    })))
+}
+
+async fn create_customer_tracking_share_link(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<ExecutionCustomerTrackingLinkRequest>,
+) -> Result<Json<ApiResponse<ExecutionCustomerTrackingLinkResponse>>, StatusCode> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+
+    let Some(leg) = find_execution_leg_by_id(pool, leg_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    if !can_manage_execution(&session, &leg) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let visibility_scope = normalize_customer_tracking_scope(&payload.visibility_scope);
+    let expires_in_hours = payload.expires_in_hours.unwrap_or(168).clamp(1, 24 * 30);
+    let expires_at = Utc::now().naive_utc() + chrono::Duration::hours(expires_in_hours);
+    let share_token = format!("trk_{}", uuid::Uuid::new_v4().simple());
+    let Some(link) = create_customer_tracking_link(
+        pool,
+        leg_id,
+        Some(session.user.id),
+        &share_token,
+        visibility_scope,
+        expires_at,
+        payload.rotate_existing,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    publish_execution_update(
+        &state,
+        &session,
+        &leg,
+        format!(
+            "{} created a customer tracking link for leg #{}.",
+            session.user.name, leg_id
+        ),
+    );
+
+    Ok(Json(ApiResponse::ok(
+        ExecutionCustomerTrackingLinkResponse {
+            success: true,
+            leg_id: leg_id.max(0) as u64,
+            customer_tracking_path: Some(format!("/track/{}", link.share_token)),
+            expires_at_label: Some(format_datetime(&link.expires_at)),
+            status_label: "Active".into(),
+            message: format!(
+                "Customer tracking link is active until {} with {} visibility.",
+                format_datetime(&link.expires_at),
+                link.visibility_scope.replace('_', " ")
+            ),
+        },
+    )))
+}
+
+async fn revoke_customer_tracking_share_links(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<ExecutionCustomerTrackingRevokeRequest>,
+) -> Result<Json<ApiResponse<ExecutionCustomerTrackingLinkResponse>>, StatusCode> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+
+    let Some(leg) = find_execution_leg_by_id(pool, leg_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    if !can_manage_execution(&session, &leg) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let revoked = revoke_customer_tracking_links(
+        pool,
+        leg_id,
+        Some(session.user.id),
+        payload.reason.as_deref(),
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if revoked > 0 {
+        publish_execution_update(
+            &state,
+            &session,
+            &leg,
+            format!(
+                "{} revoked customer tracking access for leg #{}.",
+                session.user.name, leg_id
+            ),
+        );
+    }
+
+    Ok(Json(ApiResponse::ok(
+        ExecutionCustomerTrackingLinkResponse {
+            success: true,
+            leg_id: leg_id.max(0) as u64,
+            customer_tracking_path: None,
+            expires_at_label: None,
+            status_label: if revoked > 0 {
+                "Revoked".into()
+            } else {
+                "No active link".into()
+            },
+            message: if revoked > 0 {
+                format!("Revoked {} active customer tracking link(s).", revoked)
+            } else {
+                "No active customer tracking link was found for this leg.".into()
+            },
+        },
+    )))
+}
+
+async fn upsert_telematics_status(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<ExecutionTelematicsConnectionRequest>,
+) -> Result<Json<ApiResponse<ExecutionWorkflowMutationResponse>>, StatusCode> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+
+    let Some(leg) = find_execution_leg_by_id(pool, leg_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    if !can_manage_execution(&session, &leg) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    if leg.booked_carrier_id.is_none() {
+        return Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+            success: false,
+            leg_id: leg_id.max(0) as u64,
+            status_label: "No carrier".into(),
+            message: "Telematics provider status requires a booked carrier.".into(),
+        })));
+    }
+
+    upsert_telematics_connection(
+        pool,
+        leg.booked_carrier_id,
+        &payload.provider_key,
+        &payload.status,
+        &payload.fallback_behavior,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+        success: true,
+        leg_id: leg_id.max(0) as u64,
+        status_label: payload.status.trim().replace('_', " "),
+        message: "Telematics provider decision/status is saved for this carrier.".into(),
+    })))
+}
+
+async fn ingest_telematics_ping(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<ExecutionTelematicsPingRequest>,
+) -> Result<Json<ApiResponse<ExecutionWorkflowMutationResponse>>, StatusCode> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+
+    let Some(leg) = find_execution_leg_by_id(pool, leg_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    if !can_manage_execution(&session, &leg)
+        && !session
+            .session
+            .permissions
+            .iter()
+            .any(|permission| permission == "manage_tms_operations")
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    if let (Some(lat), Some(lng)) = (payload.lat, payload.lng)
+        && (!(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lng))
+    {
+        return Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+            success: false,
+            leg_id: leg_id.max(0) as u64,
+            status_label: "Invalid coordinates".into(),
+            message: "Telematics ping latitude or longitude is outside valid bounds.".into(),
+        })));
+    }
+
+    let provider = payload.provider_key.trim();
+    if provider.is_empty() {
+        return Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+            success: false,
+            leg_id: leg_id.max(0) as u64,
+            status_label: "Missing provider".into(),
+            message: "Telematics ping requires a provider key.".into(),
+        })));
+    }
+
+    let recorded_at = payload.recorded_at.as_deref().and_then(parse_recorded_at);
+    record_telematics_execution_ping(
+        pool,
+        leg_id,
+        provider,
+        payload.lat,
+        payload.lng,
+        recorded_at,
+        payload.event_type.as_deref(),
+        payload.hos_status.as_deref(),
+        payload.truck_id.as_deref(),
+        payload.trailer_id.as_deref(),
+        Some(session.user.id),
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    publish_execution_update(
+        &state,
+        &session,
+        &leg,
+        format!(
+            "{} ingested {} telematics event for leg #{}.",
+            session.user.name, provider, leg_id
+        ),
+    );
+
+    Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+        success: true,
+        leg_id: leg_id.max(0) as u64,
+        status_label: "Telematics ingested".into(),
+        message:
+            "Normalized telematics ping was recorded into location, event, and execution history."
+                .into(),
+    })))
+}
+
+async fn upsert_route_plan(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<ExecutionRoutePlanRequest>,
+) -> Result<Json<ApiResponse<ExecutionWorkflowMutationResponse>>, StatusCode> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+
+    let Some(leg) = find_execution_leg_by_id(pool, leg_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    if !can_manage_execution(&session, &leg) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    if payload.provider_key.trim().is_empty() {
+        return Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+            success: false,
+            leg_id: leg_id.max(0) as u64,
+            status_label: "Missing provider".into(),
+            message: "Route plan requires a provider key such as manual, truck_safe_provider, or a contracted routing provider.".into(),
+        })));
+    }
+    if payload
+        .distance_miles
+        .is_some_and(|value| !(0.0..=10000.0).contains(&value))
+    {
+        return Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+            success: false,
+            leg_id: leg_id.max(0) as u64,
+            status_label: "Invalid mileage".into(),
+            message:
+                "Route mileage must be greater than zero and within a realistic freight range."
+                    .into(),
+        })));
+    }
+    if payload
+        .duration_minutes
+        .is_some_and(|value| !(1..=60 * 24 * 30).contains(&value))
+    {
+        return Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+            success: false,
+            leg_id: leg_id.max(0) as u64,
+            status_label: "Invalid duration".into(),
+            message:
+                "Route duration must be at least one minute and within a realistic freight range."
+                    .into(),
+        })));
+    }
+
+    upsert_execution_route_plan(
+        pool,
+        leg_id,
+        Some(session.user.id),
+        &payload.provider_key,
+        payload.distance_miles,
+        payload.duration_minutes,
+        payload.truck_safe,
+        &payload.status,
+        &payload.constraints,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(ApiResponse::ok(ExecutionWorkflowMutationResponse {
+        success: true,
+        leg_id: leg_id.max(0) as u64,
+        status_label: payload.status.trim().replace('_', " "),
+        message: "Route plan source is saved with truck-safe constraints and a history entry for ETA, pricing, exception, and settlement readiness.".into(),
+    })))
 }
 
 async fn run_leg_action(
@@ -175,49 +1181,41 @@ async fn run_leg_action(
     let has_delivery_pod = existing_documents
         .iter()
         .any(|document| document.r#type == "delivery_pod");
+    let has_completion_note = payload
+        .note
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty());
+    let has_tracking_consent = active_tracking_consent_for_leg_user(pool, leg_id, session.user.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .is_some();
 
-    if payload.action_key.trim() == "complete_delivery" && !has_delivery_pod {
-        return Ok(Json(ApiResponse::ok(ExecutionLegActionResponse {
-            success: false,
-            leg_id: leg_id.max(0) as u64,
-            status_label: status_label_from_code(existing.status_id),
-            message: "Upload a delivery POD document before completing delivery in the Rust execution flow.".into(),
-        })));
-    }
-
-    if payload.action_key.trim() == "complete_delivery"
-        && payload
-            .note
-            .as_deref()
-            .map(str::trim)
-            .unwrap_or_default()
-            .is_empty()
-    {
-        return Ok(Json(ApiResponse::ok(ExecutionLegActionResponse {
-            success: false,
-            leg_id: leg_id.max(0) as u64,
-            status_label: status_label_from_code(existing.status_id),
-            message: "Add a short delivery completion note before closing the leg in the Rust execution flow.".into(),
-        })));
-    }
-
-    let Some((next_status, event_type, success_label)) =
-        resolve_execution_action(existing.status_id, &payload.action_key)
-    else {
-        return Ok(Json(ApiResponse::ok(ExecutionLegActionResponse {
-            success: false,
-            leg_id: leg_id.max(0) as u64,
-            status_label: status_label_from_code(existing.status_id),
-            message: "This execution action is not available for the leg's current Rust status."
-                .into(),
-        })));
+    let transition = match execution_transition_for(
+        existing.status_id,
+        &payload.action_key,
+        ExecutionTransitionContext {
+            has_delivery_pod,
+            has_completion_note,
+            has_tracking_consent,
+        },
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(Json(ApiResponse::ok(ExecutionLegActionResponse {
+                success: false,
+                leg_id: leg_id.max(0) as u64,
+                status_label: status_label_from_code(existing.status_id),
+                message: execution_transition_error_message(error),
+            })));
+        }
     };
 
     let updated = advance_leg_execution(
         pool,
         leg_id,
-        next_status,
-        event_type,
+        transition.to,
+        transition.event_type,
         Some(session.user.id),
         payload.note.as_deref(),
     )
@@ -235,11 +1233,12 @@ async fn run_leg_action(
             .leg_code
             .clone()
             .unwrap_or_else(|| format!("leg #{}", leg_id)),
-        success_label
+        transition.success_label
     );
 
     state.publish_realtime(
         RoutedRealtimeEvent::new(RealtimeEvent {
+            request_id: None,
             kind: RealtimeEventKind::LegExecutionUpdated,
             leg_id: Some(leg_id.max(0) as u64),
             conversation_id: None,
@@ -265,7 +1264,81 @@ async fn run_leg_action(
         success: true,
         leg_id: leg_id.max(0) as u64,
         status_label: status_label_from_code(updated_leg.status_id),
-        message: format!("Rust execution updated the leg to {}.", success_label),
+        message: format!(
+            "Rust execution updated the leg to {}.",
+            transition.success_label
+        ),
+    })))
+}
+
+async fn capture_tracking_consent(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<ExecutionTrackingConsentRequest>,
+) -> Result<Json<ApiResponse<ExecutionTrackingConsentResponse>>, StatusCode> {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+
+    let Some(existing) = find_execution_leg_by_id(pool, leg_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    if !can_manage_execution(&session, &existing) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let consent_text = payload.consent_text.trim();
+    if consent_text.len() < 20 {
+        return Ok(Json(ApiResponse::ok(ExecutionTrackingConsentResponse {
+            success: false,
+            leg_id: leg_id.max(0) as u64,
+            message: "Tracking consent text is required before GPS tracking can start.".into(),
+        })));
+    }
+
+    record_tracking_consent(pool, leg_id, session.user.id, consent_text)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    state.publish_realtime(
+        RoutedRealtimeEvent::new(RealtimeEvent {
+            request_id: None,
+            kind: RealtimeEventKind::LegExecutionUpdated,
+            leg_id: Some(leg_id.max(0) as u64),
+            conversation_id: None,
+            offer_id: None,
+            message_id: None,
+            actor_user_id: Some(session.user.id.max(0) as u64),
+            subject_user_id: existing.booked_carrier_id.map(|value| value.max(0) as u64),
+            presence_state: None,
+            last_read_message_id: None,
+            summary: format!(
+                "{} accepted tracking consent for leg #{}.",
+                session.user.name, leg_id
+            ),
+        })
+        .for_user_ids(target_execution_user_ids(&existing))
+        .for_permission_keys(["manage_tracking", "access_admin_portal", "manage_loads"])
+        .with_topics([RealtimeTopic::ExecutionTracking.as_key()]),
+    );
+
+    Ok(Json(ApiResponse::ok(ExecutionTrackingConsentResponse {
+        success: true,
+        leg_id: leg_id.max(0) as u64,
+        message: "Tracking consent is recorded. GPS and pickup start actions are now unlocked."
+            .into(),
     })))
 }
 
@@ -297,12 +1370,19 @@ async fn store_leg_location(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    if !can_send_location_ping(existing.status_id) {
+    let has_tracking_consent = active_tracking_consent_for_leg_user(pool, leg_id, session.user.id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .is_some();
+
+    if !can_store_location_ping(existing.status_id, has_tracking_consent) {
         return Ok(Json(ApiResponse::ok(ExecutionLocationPingResponse {
             success: false,
             leg_id: leg_id.max(0) as u64,
             latest_location_label: None,
-            message: "Location ping is only accepted while the leg is in an active GPS-tracked execution state.".into(),
+            message:
+                "Location ping requires active execution status and recorded tracking consent."
+                    .into(),
         })));
     }
 
@@ -330,6 +1410,7 @@ async fn store_leg_location(
 
     state.publish_realtime(
         RoutedRealtimeEvent::new(RealtimeEvent {
+            request_id: None,
             kind: RealtimeEventKind::LegLocationUpdated,
             leg_id: Some(leg_id.max(0) as u64),
             conversation_id: None,
@@ -505,6 +1586,7 @@ async fn upload_leg_document(
         Ok(Some(document)) => {
             state.publish_realtime(
                 RoutedRealtimeEvent::new(RealtimeEvent {
+                    request_id: None,
                     kind: RealtimeEventKind::LegExecutionUpdated,
                     leg_id: Some(leg_id.max(0) as u64),
                     conversation_id: None,
@@ -555,6 +1637,185 @@ async fn upload_leg_document(
             message: format!("Execution document create failed: {}", error),
         })),
     }
+}
+
+async fn download_closeout_package(
+    State(state): State<AppState>,
+    Path(leg_id): Path<i64>,
+    headers: HeaderMap,
+) -> Response {
+    let Some(session) = auth_session::resolve_session_from_headers(&state, &headers)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return text_response(
+            StatusCode::UNAUTHORIZED,
+            "Sign in before exporting the closeout package.",
+        );
+    };
+
+    let Some(pool) = state.pool.as_ref() else {
+        return text_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Closeout export is unavailable while database access is offline.",
+        );
+    };
+
+    let Some(leg) = find_execution_leg_by_id(pool, leg_id).await.ok().flatten() else {
+        return text_response(StatusCode::NOT_FOUND, "Leg was not found.");
+    };
+
+    if !can_view_execution(&session, &leg) {
+        return text_response(
+            StatusCode::FORBIDDEN,
+            "This session cannot export closeout for the leg.",
+        );
+    }
+
+    let documents = list_leg_documents(pool, leg_id).await.unwrap_or_default();
+    let closeout = execution_closeout_readiness(pool, leg_id)
+        .await
+        .unwrap_or_else(|_| default_closeout_readiness(leg_id, false));
+    let exceptions = list_execution_finance_exception_summaries(pool, leg_id)
+        .await
+        .unwrap_or_default();
+
+    let mut body = String::new();
+    body.push_str("STLoads Closeout Package\n");
+    body.push_str("========================\n");
+    body.push_str(&format!(
+        "Leg: {}\nLoad: {}\nRoute: {} -> {}\nStatus: {}\nCloseout: {}\nGenerated: {}\n\n",
+        leg.leg_code
+            .clone()
+            .unwrap_or_else(|| format!("LEG-{}", leg_id)),
+        leg.load_number
+            .clone()
+            .unwrap_or_else(|| format!("#{}", leg.load_id)),
+        leg.pickup_location_name
+            .clone()
+            .unwrap_or_else(|| "Pickup".into()),
+        leg.delivery_location_name
+            .clone()
+            .unwrap_or_else(|| "Delivery".into()),
+        status_label_from_code(leg.status_id),
+        execution_closeout_package_label(&closeout),
+        format_datetime(&Utc::now().naive_utc())
+    ));
+    body.push_str("Closeout checklist\n");
+    for item in execution_closeout_checklist(&closeout) {
+        body.push_str(&format!(
+            "- {}: {} - {}\n",
+            item.label, item.status_label, item.detail
+        ));
+    }
+    body.push_str("\nRequired artifacts manifest\n");
+    body.push_str("- Delivery POD: required for release approval\n");
+    body.push_str("- POD review: approved or accepted before payment release\n");
+    body.push_str("- Claims/accessorials: no open pending, disputed, or review items\n");
+    body.push_str("- Offline replay: no pending, received, or failed submissions\n\n");
+    body.push_str("Documents\n");
+    let mut document_entries = Vec::new();
+    let mut document_warnings = Vec::new();
+    for document in &documents {
+        let document_name = execution_document_original_name(document)
+            .unwrap_or_else(|| execution_file_label(&document.path));
+        body.push_str(&format!(
+            "- {}: {} ({}) source={} secure_link=/execution/documents/{}/file\n",
+            event_label(&document.r#type),
+            document_name,
+            document_version_label(document.current_version, document.version_count),
+            document.path,
+            document.id
+        ));
+
+        let storage_provider = execution_document_storage_provider(document);
+        match state
+            .document_storage
+            .read_document(&storage_provider, &document.path)
+            .await
+        {
+            Ok(bytes) => {
+                document_entries.push((
+                    closeout_document_zip_name(document.id, &document_name),
+                    bytes,
+                ));
+            }
+            Err(error) if document.r#type == "delivery_pod" => {
+                return text_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!(
+                        "Closeout package cannot be generated because required delivery POD '{}' could not be read: {}",
+                        document_name, error
+                    ),
+                );
+            }
+            Err(error) => {
+                let warning = format!(
+                    "{} ({}) could not be embedded: {}",
+                    document_name,
+                    event_label(&document.r#type),
+                    error
+                );
+                document_warnings.push(warning.clone());
+                document_entries.push((
+                    closeout_document_zip_name(
+                        document.id,
+                        &format!("{document_name}-READ-ERROR.txt"),
+                    ),
+                    warning.into_bytes(),
+                ));
+            }
+        }
+    }
+    if !document_warnings.is_empty() {
+        body.push_str("\nDocument embed warnings\n");
+        for warning in document_warnings {
+            body.push_str(&format!("- {warning}\n"));
+        }
+    }
+    body.push_str("\nClaims, detention, and accessorials\n");
+    if exceptions.is_empty() {
+        body.push_str("- None recorded\n");
+    } else {
+        for item in exceptions {
+            body.push_str(&format!(
+                "- {} {} x{} amount {}\n",
+                item.exception_type,
+                item.status,
+                item.count,
+                item.amount_cents
+                    .map(|value| format!("${:.2}", value as f64 / 100.0))
+                    .unwrap_or_else(|| "not set".into())
+            ));
+        }
+    }
+
+    let package_bytes = match build_closeout_zip_package(&body, document_entries) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return text_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("Closeout package generation failed: {error}"),
+            );
+        }
+    };
+
+    let mut response = Response::new(Body::from(package_bytes));
+    *response.status_mut() = StatusCode::OK;
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/zip"),
+    );
+    if let Ok(value) = HeaderValue::from_str(&format!(
+        "attachment; filename=\"stloads-closeout-leg-{}.zip\"",
+        leg_id
+    )) {
+        response
+            .headers_mut()
+            .insert(header::CONTENT_DISPOSITION, value);
+    }
+    response
 }
 
 async fn download_leg_document_file(
@@ -660,23 +1921,41 @@ async fn download_leg_document_file(
     response
 }
 
+// Execution screens aggregate many independently loaded operational panels.
+// A wide signature keeps the data dependencies visible until this becomes a
+// dedicated read model.
+#[allow(clippy::too_many_arguments)]
 fn build_execution_screen(
     session: &auth_session::ResolvedSession,
     leg: &db::tracking::ExecutionLegRecord,
     latest_location: Option<&db::tracking::LegLocationRecord>,
+    tracking_consent: Option<&db::tracking::ExecutionTrackingConsentRecord>,
+    closeout: Option<&db::tracking::ExecutionCloseoutReadinessRecord>,
+    offline_submissions: &[db::tracking::ExecutionOfflineSubmissionRecord],
+    finance_exceptions: &[db::tracking::ExecutionFinanceExceptionSummaryRecord],
+    customer_tracking_link: Option<&db::tracking::ExecutionCustomerTrackingLinkRecord>,
+    route_plan: Option<&db::tracking::ExecutionRoutePlanRecord>,
+    telematics: Option<&db::tracking::ExecutionTelematicsSummaryRecord>,
     tracking_points: Vec<db::tracking::LegLocationRecord>,
     events: Vec<db::tracking::LegEventRecord>,
     documents: Vec<db::tracking::LegDocumentRecord>,
     execution_notes: Vec<db::tracking::ExecutionNoteRecord>,
 ) -> ExecutionLegScreen {
     let can_manage = can_manage_execution(session, leg);
-    let live_tracking_available =
-        leg.booked_carrier_id == Some(session.user.id) && can_send_location_ping(leg.status_id);
+    let tracking_consent_granted = tracking_consent.is_some();
+    let live_tracking_available = leg.booked_carrier_id == Some(session.user.id)
+        && can_store_location_ping(leg.status_id, tracking_consent_granted);
     let can_upload_documents = can_upload_execution_documents(session, leg);
     let delivery_completion_ready = documents
         .iter()
         .any(|document| document.r#type == "delivery_pod");
-    let action_items = execution_action_items(leg.status_id, can_manage, delivery_completion_ready);
+    let required_documents = execution_required_document_checklist(delivery_completion_ready);
+    let action_items = execution_action_items(
+        leg.status_id,
+        can_manage,
+        delivery_completion_ready,
+        tracking_consent_granted,
+    );
     let route_label = format!(
         "{} -> {}",
         leg.pickup_location_name
@@ -689,6 +1968,21 @@ fn build_execution_screen(
     let (tracking_health_label, tracking_health_tone) =
         execution_tracking_health(latest_location, leg.status_id);
     let next_action_label = execution_next_action_label(leg.status_id, delivery_completion_ready);
+    let (geofence_status_label, geofence_status_tone, eta_risk_label, eta_risk_tone) =
+        execution_location_risk_labels(leg, latest_location);
+    let closeout = closeout
+        .cloned()
+        .unwrap_or_else(|| default_closeout_readiness(leg.leg_id, delivery_completion_ready));
+    let closeout_ready = execution_closeout_ready(&closeout);
+    let pending_offline_submission_count = offline_submissions
+        .iter()
+        .filter(|item| {
+            matches!(
+                item.processing_status.as_str(),
+                "received" | "pending" | "failed"
+            )
+        })
+        .count() as u64;
 
     ExecutionLegScreen {
         title: format!(
@@ -718,12 +2012,61 @@ fn build_execution_screen(
         )),
         tracking_health_label,
         tracking_health_tone: tracking_health_tone.into(),
+        tracking_consent_required: leg.booked_carrier_id == Some(session.user.id),
+        tracking_consent_granted,
+        tracking_consent_text: execution_tracking_consent_text(leg),
+        tracking_retention_label: tracking_consent
+            .map(|consent| {
+                format!(
+                    "Location data for this leg is retained for {} day(s) unless legal hold or customer contract requires otherwise.",
+                    consent.retention_days
+                )
+            })
+            .unwrap_or_else(|| {
+                "Location data retention target is 90 days for active execution tracking.".into()
+            }),
+        customer_tracking_scope_label: tracking_consent
+            .map(|consent| consent.customer_visible_scope.replace('_', " "))
+            .unwrap_or_else(|| "latest location and status after consent".into()),
+        field_capture_strategy_label:
+            "Camera-first web capture for BOL, POD, seals, damage, accessorial evidence, and stop photos."
+                .into(),
+        offline_strategy_label:
+            "PWA-first offline queue: actions, notes, GPS pings, and uploads must be marked pending until reconciled by the API."
+                .into(),
+        mobile_support_label:
+            "Supported target: current Chrome on Android and Safari on iOS; native app remains a later go/no-go decision."
+                .into(),
+        geofence_status_label,
+        geofence_status_tone: geofence_status_tone.into(),
+        eta_risk_label,
+        eta_risk_tone: eta_risk_tone.into(),
+        closeout_ready,
+        closeout_package_label: execution_closeout_package_label(&closeout),
+        closeout_package_tone: if closeout_ready { "success" } else { "warning" }.into(),
+        closeout_export_path: closeout.export_path.clone(),
+        customer_tracking_path: customer_tracking_link
+            .map(|link| format!("/track/{}", link.share_token)),
+        offline_submission_count: offline_submissions.len() as u64,
+        pending_offline_submission_count,
+        offline_submission_status_label: if pending_offline_submission_count == 0 {
+            "Offline queue clear".into()
+        } else {
+            format!("{} offline submission(s) need reconciliation", pending_offline_submission_count)
+        },
+        telematics_status_label: execution_telematics_label(telematics),
+        route_plan_label: execution_route_plan_label(route_plan),
+        route_plan_tone: if route_plan.is_some() { "success" } else { "warning" }.into(),
+        closeout_checklist: execution_closeout_checklist(&closeout),
+        claims_accessorial_items: execution_claims_accessorial_items(finance_exceptions),
         next_action_label,
         can_manage_execution: can_manage,
-        can_send_location_ping: can_manage && can_send_location_ping(leg.status_id),
+        can_send_location_ping: can_manage && can_store_location_ping(leg.status_id, tracking_consent_granted),
         live_tracking_available,
         live_tracking_note: Some(if live_tracking_available {
             "Driver view is active. Keep this page open to let the Rust workspace keep sending fresh GPS updates automatically.".into()
+        } else if leg.booked_carrier_id == Some(session.user.id) && !tracking_consent_granted {
+            "Tracking consent is required before live GPS or pickup start actions unlock.".into()
         } else if leg.booked_carrier_id == Some(session.user.id) {
             "Automatic GPS tracking unlocks only while this leg is in an active pickup, transit, or arrival state.".into()
         } else {
@@ -804,12 +2147,20 @@ fn build_execution_screen(
                     execution_document_uploaded_by_user_id(&document),
                 ),
                 created_at_label: format_datetime(&document.created_at),
+                current_version: document.current_version.max(1) as u32,
+                version_count: document.version_count.max(1) as u64,
+                version_history_label: document_version_label(
+                    document.current_version,
+                    document.version_count,
+                ),
             })
             .collect(),
+        required_documents,
         notes: vec![
-            "Execution actions follow the legacy pickup/depart/arrival/delivery sequence rather than allowing arbitrary jumps.".into(),
-            "Location pings are currently accepted only while the leg is in an active GPS-tracked execution status.".into(),
+            "Execution actions now use the central domain transition state machine rather than route-local status jumps.".into(),
+            "Location pings require both an active GPS-tracked execution status and recorded tracking consent.".into(),
             "Execution documents now support pickup BOL, pickup photos, delivery POD, delivery photos, and other attachments from the Rust tracking workspace.".into(),
+            "Mobile capture is web/PWA first with camera input, pending offline reconciliation, and explicit supported-browser targets.".into(),
             "Delivery completion is now guarded so the Rust flow requires a Delivery POD document plus a completion note before the leg can be marked delivered.".into(),
             "Admins, the load owner, and the booked carrier can view this screen, while state changes are limited to the booked carrier or admin-scoped operators.".into(),
         ],
@@ -871,6 +2222,469 @@ fn execution_tracking_health(
             ),
             "secondary",
         ),
+    }
+}
+
+fn execution_location_risk_labels(
+    leg: &db::tracking::ExecutionLegRecord,
+    latest_location: Option<&db::tracking::LegLocationRecord>,
+) -> (Option<String>, &'static str, Option<String>, &'static str) {
+    let Some(point) = latest_location else {
+        return (
+            Some("No GPS ping is available for geofence or ETA risk scoring yet.".into()),
+            "warning",
+            Some("ETA risk unknown until the first mobile location ping is captured.".into()),
+            "warning",
+        );
+    };
+
+    let current = point.coordinate();
+    let pickup = leg
+        .pickup_latitude
+        .zip(leg.pickup_longitude)
+        .map(|(lat, lng)| Coordinate { lat, lng });
+    let delivery = leg
+        .delivery_latitude
+        .zip(leg.delivery_longitude)
+        .map(|(lat, lng)| Coordinate { lat, lng });
+
+    let target = match LegacyLoadLegStatusCode::from_legacy_code(leg.status_id) {
+        Some(LegacyLoadLegStatusCode::PickupStarted) | Some(LegacyLoadLegStatusCode::AtPickup) => {
+            pickup.map(|coordinate| ("pickup", coordinate, leg.pickup_date))
+        }
+        Some(LegacyLoadLegStatusCode::InTransit) | Some(LegacyLoadLegStatusCode::AtDelivery) => {
+            delivery.map(|coordinate| ("delivery", coordinate, leg.delivery_date))
+        }
+        _ => None,
+    };
+
+    let Some((stop_label, stop_coordinate, appointment_at)) = target else {
+        return (
+            Some(
+                "Geofence monitoring activates during pickup, transit, and delivery stages.".into(),
+            ),
+            "info",
+            Some("ETA risk is idle outside active execution movement.".into()),
+            "info",
+        );
+    };
+
+    let distance_km = haversine_km(current, stop_coordinate);
+    let geofence = if is_inside_geofence(current, stop_coordinate, 0.5) {
+        (
+            Some(format!("Inside the {} geofence within 0.5 km.", stop_label)),
+            "success",
+        )
+    } else {
+        (
+            Some(format!(
+                "{:.1} km from the {} geofence. Keep monitoring route progress.",
+                distance_km, stop_label
+            )),
+            if distance_km <= 20.0 {
+                "warning"
+            } else {
+                "info"
+            },
+        )
+    };
+
+    let eta = appointment_at
+        .map(|appointment| {
+            let minutes_until_due = (appointment - Utc::now().naive_utc()).num_minutes();
+            if minutes_until_due < -30 {
+                (
+                    Some(format!(
+                        "{} appointment is {} minute(s) overdue.",
+                        stop_label,
+                        minutes_until_due.abs()
+                    )),
+                    "danger",
+                )
+            } else if minutes_until_due <= 60 && distance_km > 80.0 {
+                (
+                    Some(format!(
+                        "Delay risk: {:.1} km from {} with {} minute(s) until appointment.",
+                        distance_km, stop_label, minutes_until_due
+                    )),
+                    "warning",
+                )
+            } else {
+                (
+                    Some(format!(
+                        "ETA risk normal: {:.1} km from {} with {} minute(s) until appointment.",
+                        distance_km, stop_label, minutes_until_due
+                    )),
+                    "success",
+                )
+            }
+        })
+        .unwrap_or_else(|| {
+            (
+                Some("ETA risk needs pickup/delivery appointment times before scoring.".into()),
+                "info",
+            )
+        });
+
+    (geofence.0, geofence.1, eta.0, eta.1)
+}
+
+fn default_closeout_readiness(
+    leg_id: i64,
+    delivery_pod_attached: bool,
+) -> db::tracking::ExecutionCloseoutReadinessRecord {
+    db::tracking::ExecutionCloseoutReadinessRecord {
+        leg_id,
+        closeout_status: None,
+        pod_review_status: None,
+        export_path: None,
+        delivery_pod_count: if delivery_pod_attached { 1 } else { 0 },
+        open_exception_count: 0,
+        pending_offline_count: 0,
+    }
+}
+
+fn execution_closeout_ready(closeout: &db::tracking::ExecutionCloseoutReadinessRecord) -> bool {
+    closeout.delivery_pod_count > 0
+        && closeout.open_exception_count == 0
+        && closeout.pending_offline_count == 0
+        && matches!(
+            closeout.pod_review_status.as_deref(),
+            Some("approved") | Some("accepted")
+        )
+}
+
+fn execution_closeout_package_label(
+    closeout: &db::tracking::ExecutionCloseoutReadinessRecord,
+) -> String {
+    if execution_closeout_ready(closeout) {
+        "Closeout package approved and payment-release ready.".into()
+    } else if closeout.delivery_pod_count == 0 {
+        "Closeout blocked: delivery POD is missing.".into()
+    } else if closeout.open_exception_count > 0 {
+        format!(
+            "Closeout blocked by {} open claim/accessorial exception(s).",
+            closeout.open_exception_count
+        )
+    } else if closeout.pending_offline_count > 0 {
+        format!(
+            "Closeout waiting on {} offline replay item(s).",
+            closeout.pending_offline_count
+        )
+    } else {
+        "Closeout waiting on POD review approval.".into()
+    }
+}
+
+fn closeout_approval_blocker(
+    closeout: &db::tracking::ExecutionCloseoutReadinessRecord,
+) -> Option<String> {
+    if closeout.delivery_pod_count == 0 {
+        Some("POD closeout approval is blocked until at least one delivery POD is attached.".into())
+    } else if closeout.open_exception_count > 0 {
+        Some(format!(
+            "POD closeout approval is blocked by {} open claim/accessorial exception(s).",
+            closeout.open_exception_count
+        ))
+    } else if closeout.pending_offline_count > 0 {
+        Some(format!(
+            "POD closeout approval is blocked while {} offline submission(s) still need reconciliation.",
+            closeout.pending_offline_count
+        ))
+    } else {
+        None
+    }
+}
+
+fn execution_closeout_checklist(
+    closeout: &db::tracking::ExecutionCloseoutReadinessRecord,
+) -> Vec<ExecutionStatusItem> {
+    vec![
+        ExecutionStatusItem {
+            key: "delivery_pod".into(),
+            label: "Delivery POD".into(),
+            status_label: if closeout.delivery_pod_count > 0 {
+                "Ready"
+            } else {
+                "Missing"
+            }
+            .into(),
+            status_tone: if closeout.delivery_pod_count > 0 {
+                "success"
+            } else {
+                "warning"
+            }
+            .into(),
+            detail: format!(
+                "{} delivery POD document(s) attached.",
+                closeout.delivery_pod_count
+            ),
+        },
+        ExecutionStatusItem {
+            key: "pod_review".into(),
+            label: "POD review".into(),
+            status_label: closeout
+                .pod_review_status
+                .clone()
+                .unwrap_or_else(|| "Pending".into()),
+            status_tone: if matches!(
+                closeout.pod_review_status.as_deref(),
+                Some("approved") | Some("accepted")
+            ) {
+                "success"
+            } else {
+                "warning"
+            }
+            .into(),
+            detail: "POD must be approved before finance release.".into(),
+        },
+        ExecutionStatusItem {
+            key: "finance_exceptions".into(),
+            label: "Claims and accessorials".into(),
+            status_label: if closeout.open_exception_count == 0 {
+                "Clear"
+            } else {
+                "Open"
+            }
+            .into(),
+            status_tone: if closeout.open_exception_count == 0 {
+                "success"
+            } else {
+                "danger"
+            }
+            .into(),
+            detail: format!(
+                "{} open claim/accessorial exception(s).",
+                closeout.open_exception_count
+            ),
+        },
+        ExecutionStatusItem {
+            key: "offline_replay".into(),
+            label: "Offline replay".into(),
+            status_label: if closeout.pending_offline_count == 0 {
+                "Clear"
+            } else {
+                "Pending"
+            }
+            .into(),
+            status_tone: if closeout.pending_offline_count == 0 {
+                "success"
+            } else {
+                "warning"
+            }
+            .into(),
+            detail: format!(
+                "{} offline submission(s) still need reconciliation.",
+                closeout.pending_offline_count
+            ),
+        },
+    ]
+}
+
+fn execution_claims_accessorial_items(
+    items: &[db::tracking::ExecutionFinanceExceptionSummaryRecord],
+) -> Vec<ExecutionStatusItem> {
+    if items.is_empty() {
+        return vec![ExecutionStatusItem {
+            key: "none".into(),
+            label: "Claims/accessorials".into(),
+            status_label: "None open".into(),
+            status_tone: "success".into(),
+            detail: "No detention, accessorial, claim, damage, shortage, dispute, or service-failure records are open for this leg.".into(),
+        }];
+    }
+
+    items
+        .iter()
+        .map(|item| ExecutionStatusItem {
+            key: format!("{}:{}", item.exception_type, item.status),
+            label: item.exception_type.replace('_', " "),
+            status_label: item.status.replace('_', " "),
+            status_tone: if matches!(item.status.as_str(), "approved" | "resolved") {
+                "success"
+            } else if matches!(item.status.as_str(), "rejected") {
+                "secondary"
+            } else {
+                "warning"
+            }
+            .into(),
+            detail: format!(
+                "{} item(s), amount {}",
+                item.count,
+                item.amount_cents
+                    .map(|value| format!("${:.2}", value as f64 / 100.0))
+                    .unwrap_or_else(|| "not set".into())
+            ),
+        })
+        .collect()
+}
+
+fn execution_route_plan_label(
+    route_plan: Option<&db::tracking::ExecutionRoutePlanRecord>,
+) -> String {
+    route_plan
+        .map(|plan| {
+            let distance = plan
+                .distance_miles
+                .map(|value| format!("{:.1} mi", value))
+                .unwrap_or_else(|| "distance TBD".into());
+            let duration = plan
+                .duration_minutes
+                .map(|value| format!("{} min", value))
+                .unwrap_or_else(|| "duration TBD".into());
+            format!(
+                "{} route via {}: {}, {}, truck-safe {}.",
+                plan.status,
+                plan.provider_key,
+                distance,
+                duration,
+                if plan.truck_safe { "yes" } else { "not confirmed" }
+            )
+        })
+        .unwrap_or_else(|| {
+            "Route source pending: mileage, ETA, pricing, settlement, and exception logic need a documented provider or manual plan.".into()
+        })
+}
+
+fn execution_telematics_label(
+    telematics: Option<&db::tracking::ExecutionTelematicsSummaryRecord>,
+) -> String {
+    telematics
+        .map(|item| {
+            let last_ping = item
+                .last_ping_at
+                .as_ref()
+                .map(format_datetime)
+                .unwrap_or_else(|| "no provider ping yet".into());
+            format!(
+                "{} telematics is {}; last ping {}; fallback: {}",
+                item.provider_key, item.status, last_ping, item.fallback_behavior
+            )
+        })
+        .unwrap_or_else(|| {
+            "No ELD/telematics provider connected. Manual/mobile tracking remains the fallback source."
+                .into()
+        })
+}
+
+fn execution_tracking_consent_text(leg: &db::tracking::ExecutionLegRecord) -> String {
+    format!(
+        "I consent to STLoads collecting and sharing GPS location for {} while this leg is active, limited to dispatch, customer-visible tracking status, exception handling, and delivery proof. Retention target: 90 days unless legal hold or contract rules require otherwise.",
+        leg.leg_code
+            .clone()
+            .unwrap_or_else(|| format!("leg #{}", leg.leg_id))
+    )
+}
+
+fn execution_transition_error_message(error: ExecutionTransitionError) -> String {
+    match error {
+        ExecutionTransitionError::UnknownAction => {
+            "This execution action is unknown to the Rust state machine.".into()
+        }
+        ExecutionTransitionError::InvalidCurrentState => {
+            "This execution action is not available for the leg's current Rust status.".into()
+        }
+        ExecutionTransitionError::MissingTrackingConsent => {
+            "Record tracking consent before starting pickup or GPS tracking.".into()
+        }
+        ExecutionTransitionError::MissingDeliveryPod => {
+            "Upload a delivery POD document before completing delivery in the Rust execution flow."
+                .into()
+        }
+        ExecutionTransitionError::MissingCompletionNote => {
+            "Add a short delivery completion note before closing the leg in the Rust execution flow."
+                .into()
+        }
+    }
+}
+
+fn publish_execution_update(
+    state: &AppState,
+    session: &auth_session::ResolvedSession,
+    leg: &db::tracking::ExecutionLegRecord,
+    summary: String,
+) {
+    state.publish_realtime(
+        RoutedRealtimeEvent::new(RealtimeEvent {
+            request_id: None,
+            kind: RealtimeEventKind::LegExecutionUpdated,
+            leg_id: Some(leg.leg_id.max(0) as u64),
+            conversation_id: None,
+            offer_id: None,
+            message_id: None,
+            actor_user_id: Some(session.user.id.max(0) as u64),
+            subject_user_id: leg.booked_carrier_id.map(|value| value.max(0) as u64),
+            presence_state: None,
+            last_read_message_id: None,
+            summary,
+        })
+        .for_user_ids(target_execution_user_ids(leg))
+        .for_permission_keys(["manage_tracking", "access_admin_portal", "manage_loads"])
+        .with_topics([
+            RealtimeTopic::ExecutionTracking.as_key(),
+            RealtimeTopic::LoadBoard.as_key(),
+        ]),
+    );
+}
+
+fn normalize_closeout_review_status(value: &str) -> &'static str {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "approved" | "accepted" => "approved",
+        "rejected" => "rejected",
+        "needs_review" | "review" => "needs_review",
+        _ => "pending",
+    }
+}
+
+fn normalize_finance_exception_type(value: &str) -> String {
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .replace([' ', '-'], "_")
+        .as_str()
+    {
+        "damage" | "shortage" | "late_delivery" | "charge_dispute" | "service_failure"
+        | "detention" | "accessorial" | "lumper" | "layover" => {
+            value.trim().to_ascii_lowercase().replace([' ', '-'], "_")
+        }
+        _ => "accessorial".into(),
+    }
+}
+
+fn normalize_finance_exception_status(value: &str) -> String {
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .replace([' ', '-'], "_")
+        .as_str()
+    {
+        "approved" | "rejected" | "resolved" | "disputed" | "review" => {
+            value.trim().to_ascii_lowercase().replace([' ', '-'], "_")
+        }
+        _ => "pending".into(),
+    }
+}
+
+fn normalize_visibility(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "customer" | "carrier" | "shared" => value.trim().to_ascii_lowercase(),
+        _ => "internal".into(),
+    }
+}
+
+fn normalize_customer_tracking_scope(value: &str) -> &'static str {
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .replace([' ', '-'], "_")
+        .as_str()
+    {
+        "status_eta" => "status_eta",
+        "status_eta_latest_location" | "latest_location" => "status_eta_latest_location",
+        "status_eta_latest_location_documents" | "documents" => {
+            "status_eta_latest_location_documents"
+        }
+        _ => "status_eta_latest_location",
     }
 }
 
@@ -950,27 +2764,28 @@ fn can_manage_execution(
 }
 
 fn can_send_location_ping(status_id: i16) -> bool {
-    matches!(status_id, 5 | 6 | 7 | 9)
+    is_trackable_execution_status(status_id)
 }
 
 fn can_upload_execution_documents(
     session: &auth_session::ResolvedSession,
     leg: &db::tracking::ExecutionLegRecord,
 ) -> bool {
-    can_manage_execution(session, leg) && matches!(leg.status_id, 4 | 5 | 6 | 7 | 8 | 9 | 10)
+    can_manage_execution(session, leg) && matches!(leg.status_id, 4..=10)
 }
 
 fn execution_action_items(
     status_id: i16,
     can_manage: bool,
     delivery_completion_ready: bool,
+    tracking_consent_granted: bool,
 ) -> Vec<ExecutionActionItem> {
     [
         (
             "start_pickup",
             "Start pickup",
-            "Carrier confirms the pickup workflow has started.",
-            matches!(status_id, 4 | 8),
+            "Carrier confirms consented tracking and starts the pickup workflow.",
+            matches!(status_id, 4 | 8) && tracking_consent_granted,
         ),
         (
             "arrive_pickup",
@@ -1015,26 +2830,49 @@ fn execution_document_type_options() -> Vec<ExecutionDocumentTypeOption> {
             key: "pickup_bol".into(),
             label: "Pickup BOL".into(),
             description: "Bill of lading or signed pickup paperwork.".into(),
+            mobile_capture_hint: "Camera or PDF upload at pickup.".into(),
         },
         ExecutionDocumentTypeOption {
             key: "pickup_photo".into(),
             label: "Pickup Photos".into(),
             description: "Pickup condition or loading proof captured on site.".into(),
+            mobile_capture_hint: "Camera-first pickup evidence.".into(),
         },
         ExecutionDocumentTypeOption {
             key: "delivery_pod".into(),
             label: "Delivery POD".into(),
             description: "Proof of delivery or signed receiving confirmation.".into(),
+            mobile_capture_hint: "Camera or PDF proof required for closeout.".into(),
         },
         ExecutionDocumentTypeOption {
             key: "delivery_photo".into(),
             label: "Delivery Photos".into(),
             description: "Delivery condition or unload proof captured on site.".into(),
+            mobile_capture_hint: "Camera-first delivery evidence.".into(),
+        },
+        ExecutionDocumentTypeOption {
+            key: "seal_photo".into(),
+            label: "Seal Photos".into(),
+            description: "Seal number, intact seal, or seal exception proof.".into(),
+            mobile_capture_hint: "Camera capture before departure or delivery.".into(),
+        },
+        ExecutionDocumentTypeOption {
+            key: "damage_photo".into(),
+            label: "Damage Evidence".into(),
+            description: "Damage, shortage, overage, or exception evidence.".into(),
+            mobile_capture_hint: "Camera capture with dispatch note required.".into(),
+        },
+        ExecutionDocumentTypeOption {
+            key: "accessorial_evidence".into(),
+            label: "Accessorial Evidence".into(),
+            description: "Detention, lumper, layover, or accessorial proof.".into(),
+            mobile_capture_hint: "Receipt or camera proof for billing review.".into(),
         },
         ExecutionDocumentTypeOption {
             key: "other".into(),
             label: "Other".into(),
             description: "Additional execution-stage attachment kept with the leg.".into(),
+            mobile_capture_hint: "Camera or file upload.".into(),
         },
     ]
 }
@@ -1042,53 +2880,29 @@ fn execution_document_type_options() -> Vec<ExecutionDocumentTypeOption> {
 fn is_supported_execution_document_type(value: &str) -> bool {
     matches!(
         value,
-        "pickup_bol" | "pickup_photo" | "delivery_pod" | "delivery_photo" | "other"
+        "pickup_bol"
+            | "pickup_photo"
+            | "delivery_pod"
+            | "delivery_photo"
+            | "seal_photo"
+            | "damage_photo"
+            | "accessorial_evidence"
+            | "other"
     )
-}
-
-fn resolve_execution_action(
-    current_status: i16,
-    action_key: &str,
-) -> Option<(LegacyLoadLegStatusCode, &'static str, &'static str)> {
-    match action_key.trim() {
-        "start_pickup" if matches!(current_status, 4 | 8) => Some((
-            LegacyLoadLegStatusCode::PickupStarted,
-            "pickup_started",
-            "Pickup Started",
-        )),
-        "arrive_pickup" if current_status == 5 => Some((
-            LegacyLoadLegStatusCode::AtPickup,
-            "pickup_arrived",
-            "At Pickup",
-        )),
-        "depart_pickup" if current_status == 6 => Some((
-            LegacyLoadLegStatusCode::InTransit,
-            "departed_pickup",
-            "In Transit",
-        )),
-        "arrive_delivery" if current_status == 7 => Some((
-            LegacyLoadLegStatusCode::AtDelivery,
-            "delivery_arrived",
-            "At Delivery",
-        )),
-        "complete_delivery" if current_status == 9 => {
-            Some((LegacyLoadLegStatusCode::Delivered, "delivered", "Delivered"))
-        }
-        _ => None,
-    }
 }
 
 fn target_execution_user_ids(leg: &db::tracking::ExecutionLegRecord) -> Vec<u64> {
     let mut users = Vec::new();
-    if let Some(load_owner_user_id) = leg.load_owner_user_id {
-        if load_owner_user_id > 0 {
-            users.push(load_owner_user_id as u64);
-        }
+    if let Some(load_owner_user_id) = leg.load_owner_user_id
+        && load_owner_user_id > 0
+    {
+        users.push(load_owner_user_id as u64);
     }
-    if let Some(booked_carrier_id) = leg.booked_carrier_id {
-        if booked_carrier_id > 0 && !users.contains(&(booked_carrier_id as u64)) {
-            users.push(booked_carrier_id as u64);
-        }
+    if let Some(booked_carrier_id) = leg.booked_carrier_id
+        && booked_carrier_id > 0
+        && !users.contains(&(booked_carrier_id as u64))
+    {
+        users.push(booked_carrier_id as u64);
     }
     users
 }
@@ -1154,6 +2968,43 @@ fn format_datetime(value: &chrono::NaiveDateTime) -> String {
     value.format("%b %d, %Y %H:%M").to_string()
 }
 
+fn document_version_label(current_version: i32, version_count: i64) -> String {
+    let current = current_version.max(1);
+    let count = version_count.max(1);
+    if count == 1 {
+        format!("v{} (original)", current)
+    } else {
+        format!("v{} of {}", current, count)
+    }
+}
+
+fn execution_required_document_checklist(
+    delivery_pod_attached: bool,
+) -> Vec<RequiredDocumentChecklistItem> {
+    vec![RequiredDocumentChecklistItem {
+        key: "delivery_pod".into(),
+        label: "Delivery POD".into(),
+        requirement_scope: "Execution closeout".into(),
+        lifecycle_state: "complete_delivery".into(),
+        is_required: true,
+        is_satisfied: delivery_pod_attached,
+        status_label: if delivery_pod_attached {
+            "Ready"
+        } else {
+            "Missing"
+        }
+        .into(),
+        status_tone: if delivery_pod_attached {
+            "success"
+        } else {
+            "warning"
+        }
+        .into(),
+        blocking_message: (!delivery_pod_attached)
+            .then(|| "Delivery POD is required before Complete delivery unlocks.".into()),
+    }]
+}
+
 fn parse_recorded_at(value: &str) -> Option<NaiveDateTime> {
     chrono::DateTime::parse_from_rfc3339(value)
         .ok()
@@ -1207,20 +3058,17 @@ async fn parse_document_upload(mut multipart: Multipart) -> Result<ParsedUploade
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| event_label(&document_type));
     let bytes = bytes.ok_or_else(|| "Choose a file before uploading a document.".to_string())?;
-    if bytes.is_empty() {
-        return Err("Uploaded document files cannot be empty.".into());
-    }
+    let original_name = original_name
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "document.bin".into());
+    let verdict = validate_uploaded_document(&original_name, mime_type.as_deref(), &bytes)?;
 
     Ok(ParsedUploadedDocument {
         document_name,
         document_type,
-        original_name: original_name
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "document.bin".into()),
-        mime_type: mime_type
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty()),
+        original_name,
+        mime_type: verdict.normalized_mime_type,
         bytes,
     })
 }
@@ -1314,6 +3162,49 @@ fn sanitize_header_file_name(value: &str) -> String {
     }
 }
 
+fn sanitize_zip_entry_name(value: &str) -> String {
+    let sanitized = value
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\r' | '\n' => '_',
+            _ => ch,
+        })
+        .collect::<String>();
+
+    let trimmed = sanitized.trim_matches(['.', ' ']).trim();
+    if trimmed.is_empty() {
+        "document.bin".into()
+    } else {
+        trimmed.into()
+    }
+}
+
+fn closeout_document_zip_name(document_id: i64, document_name: &str) -> String {
+    format!(
+        "documents/{}-{}",
+        document_id,
+        sanitize_zip_entry_name(document_name)
+    )
+}
+
+fn build_closeout_zip_package(
+    manifest: &str,
+    documents: Vec<(String, Vec<u8>)>,
+) -> anyhow::Result<Vec<u8>> {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+    writer.start_file("manifest.txt", options)?;
+    writer.write_all(manifest.as_bytes())?;
+
+    for (entry_name, bytes) in documents {
+        writer.start_file(entry_name, options)?;
+        writer.write_all(&bytes)?;
+    }
+
+    Ok(writer.finish()?.into_inner())
+}
+
 fn google_maps_url(lat: f64, lng: f64) -> String {
     format!("https://www.google.com/maps/search/?api=1&query={lat:.5},{lng:.5}")
 }
@@ -1355,6 +3246,26 @@ mod tests {
         assert!(!missing_pod.success);
         assert!(missing_pod.message.contains("delivery POD"));
 
+        let blocked_closeout = review_closeout_package(
+            State(state.clone()),
+            Path(fixture.leg_id),
+            carrier_headers.clone(),
+            Json(ExecutionCloseoutApprovalRequest {
+                pod_review_status: "approved".into(),
+                export_path: Some(format!(
+                    "/execution/legs/{}/closeout-package",
+                    fixture.leg_id
+                )),
+                note: Some("Trying to approve before POD.".into()),
+            }),
+        )
+        .await
+        .expect("closeout review should return a structured response")
+        .0
+        .data;
+        assert!(!blocked_closeout.success);
+        assert!(blocked_closeout.message.contains("delivery POD"));
+
         let saved = state
             .document_storage
             .save_execution_document(fixture.leg_id, "pod.pdf", b"pod-bytes")
@@ -1388,6 +3299,60 @@ mod tests {
         )
         .await;
         assert_eq!(carrier_download.status(), StatusCode::OK);
+
+        let approved_closeout = review_closeout_package(
+            State(state.clone()),
+            Path(fixture.leg_id),
+            carrier_headers.clone(),
+            Json(ExecutionCloseoutApprovalRequest {
+                pod_review_status: "approved".into(),
+                export_path: Some(format!(
+                    "/execution/legs/{}/closeout-package",
+                    fixture.leg_id
+                )),
+                note: Some("POD is attached and reviewed.".into()),
+            }),
+        )
+        .await
+        .expect("closeout review should return a structured response")
+        .0
+        .data;
+        assert!(approved_closeout.success);
+        assert!(approved_closeout.message.contains("payment-release ready"));
+
+        let closeout_package = download_closeout_package(
+            State(state.clone()),
+            Path(fixture.leg_id),
+            carrier_headers.clone(),
+        )
+        .await;
+        assert_eq!(closeout_package.status(), StatusCode::OK);
+        assert_eq!(
+            closeout_package
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/zip")
+        );
+        assert!(
+            closeout_package
+                .headers()
+                .get(header::CONTENT_DISPOSITION)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.contains(".zip"))
+        );
+        let closeout_bytes = axum::body::to_bytes(closeout_package.into_body(), usize::MAX).await?;
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(closeout_bytes.to_vec()))?;
+        assert!(archive.by_name("manifest.txt").is_ok());
+        let archive_names = archive
+            .file_names()
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>();
+        assert!(
+            archive_names
+                .iter()
+                .any(|value| value.starts_with("documents/") && value.ends_with("pod.pdf"))
+        );
 
         let missing_note = run_leg_action(
             State(state.clone()),

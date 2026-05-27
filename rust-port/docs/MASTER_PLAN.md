@@ -24,6 +24,7 @@ For privileged MFA, recovery codes, and step-up requirements for high-risk actio
 For organization tables, memberships, default-tenant migration, and tenant-scoped table ownership, use `docs/ENTERPRISE_ORGANIZATION_TENANT_MODEL.md`.
 For current tenant isolation enforcement, cross-tenant tests, and break-glass requirements, use `docs/ENTERPRISE_TENANT_ISOLATION.md`.
 For platform-role, organization-role, and route-guard permission mapping, use `docs/ENTERPRISE_PERMISSION_MATRIX.md`.
+For test lanes, CI jobs, pinned frontend tooling, Docker gates, and smoke/performance policy, use `docs/ENTERPRISE_TEST_LANES_AND_CI.md`.
 
 ## What Exists Now
 

@@ -15,6 +15,12 @@ function Require-Command {
     }
 }
 
+function Test-Command {
+    param([string]$Name)
+
+    return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
+}
+
 function Invoke-PsqlJson {
     param(
         [string]$DatabaseUrl,
@@ -56,7 +62,19 @@ if ([string]::IsNullOrWhiteSpace($RustDatabaseUrl)) {
     throw 'RustDatabaseUrl or DATABASE_URL is required.'
 }
 
-Require-Command 'psql'
+if (-not (Test-Command 'psql')) {
+    if (-not (Test-Command 'cargo')) {
+        throw 'psql is not installed and cargo is not available for the Rust reconciliation fallback.'
+    }
+
+    $arguments = @('run', '-q', '-p', 'backend', '--bin', 'cutover_reconciliation', '--', '--database-url', $RustDatabaseUrl, '--output', $OutputPath)
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedJsonPath)) {
+        $arguments += @('--expected-json-path', $ExpectedJsonPath)
+    }
+
+    & cargo @arguments
+    exit $LASTEXITCODE
+}
 
 $summary = [ordered]@{
     generated_at_utc = (Get-Date).ToUniversalTime().ToString('o')

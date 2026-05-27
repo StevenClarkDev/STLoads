@@ -2,7 +2,7 @@ use anyhow::{Context, anyhow};
 use aws_config::{BehaviorVersion, Region};
 use aws_credential_types::{Credentials, provider::SharedCredentialsProvider};
 use aws_sdk_s3::{Client, config::Builder as S3ConfigBuilder, primitives::ByteStream};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use tokio::fs;
 use uuid::Uuid;
 
@@ -128,13 +128,7 @@ impl DocumentStorageService {
     ) -> anyhow::Result<Vec<u8>> {
         match storage_provider.trim().to_ascii_lowercase().as_str() {
             "local" => {
-                let relative = file_path
-                    .strip_prefix("local://")
-                    .unwrap_or(file_path)
-                    .trim_start_matches('/');
-                let disk_path = self
-                    .root
-                    .join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
+                let disk_path = self.resolve_local_document_path(file_path).await?;
                 fs::read(&disk_path).await.with_context(|| {
                     format!("failed to read local document {}", disk_path.display())
                 })
@@ -157,13 +151,7 @@ impl DocumentStorageService {
     ) -> anyhow::Result<()> {
         match storage_provider.trim().to_ascii_lowercase().as_str() {
             "local" => {
-                let relative = file_path
-                    .strip_prefix("local://")
-                    .unwrap_or(file_path)
-                    .trim_start_matches('/');
-                let disk_path = self
-                    .root
-                    .join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
+                let disk_path = self.resolve_local_document_path(file_path).await?;
                 match fs::remove_file(&disk_path).await {
                     Ok(_) => Ok(()),
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -180,6 +168,50 @@ impl DocumentStorageService {
                 "document storage provider '{}' cannot delete documents yet in this Rust slice",
                 other
             )),
+        }
+    }
+
+    async fn resolve_local_document_path(&self, file_path: &str) -> anyhow::Result<PathBuf> {
+        let relative = safe_local_relative_path(file_path)?;
+        fs::create_dir_all(&self.root).await.with_context(|| {
+            format!(
+                "failed to create document storage root {}",
+                self.root.display()
+            )
+        })?;
+        let root = fs::canonicalize(&self.root).await.with_context(|| {
+            format!(
+                "failed to canonicalize document storage root {}",
+                self.root.display()
+            )
+        })?;
+        let candidate = root.join(relative);
+
+        match fs::canonicalize(&candidate).await {
+            Ok(canonical) if canonical.starts_with(&root) => Ok(canonical),
+            Ok(_) => Err(anyhow!("local document path escapes storage root")),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let parent = candidate
+                    .parent()
+                    .ok_or_else(|| anyhow!("local document path has no parent directory"))?;
+                let canonical_parent = fs::canonicalize(parent).await.with_context(|| {
+                    format!(
+                        "failed to canonicalize local document parent {}",
+                        parent.display()
+                    )
+                })?;
+                if canonical_parent.starts_with(&root) {
+                    Ok(candidate)
+                } else {
+                    Err(anyhow!("local document path escapes storage root"))
+                }
+            }
+            Err(error) => Err(anyhow!(error)).with_context(|| {
+                format!(
+                    "failed to canonicalize local document path {}",
+                    candidate.display()
+                )
+            }),
         }
     }
 
@@ -599,6 +631,37 @@ fn parse_object_storage_path(file_path: &str) -> Option<(String, String)> {
     Some((bucket.to_string(), key.to_string()))
 }
 
+fn safe_local_relative_path(file_path: &str) -> anyhow::Result<PathBuf> {
+    let trimmed = file_path.trim();
+    let without_scheme = trimmed.strip_prefix("local://").unwrap_or(trimmed);
+    if without_scheme.starts_with('/') || without_scheme.starts_with('\\') {
+        return Err(anyhow!("local document path is not a safe relative path"));
+    }
+    let normalized = without_scheme.replace('\\', "/");
+    let normalized = normalized.trim_start_matches('/');
+    if normalized.is_empty() {
+        return Err(anyhow!("local document path is empty"));
+    }
+
+    let path = Path::new(normalized);
+    let mut safe = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => safe.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(anyhow!("local document path is not a safe relative path"));
+            }
+        }
+    }
+
+    if safe.as_os_str().is_empty() {
+        Err(anyhow!("local document path is empty"))
+    } else {
+        Ok(safe)
+    }
+}
+
 fn sanitize_file_name(value: &str) -> String {
     let mut sanitized = value
         .chars()
@@ -616,4 +679,79 @@ fn sanitize_file_name(value: &str) -> String {
     }
 
     sanitized
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn local_service(root: PathBuf) -> DocumentStorageService {
+        DocumentStorageService {
+            backend: "local".into(),
+            root,
+            object_storage: None,
+        }
+    }
+
+    fn test_root() -> PathBuf {
+        std::env::temp_dir().join(format!("stloads-doc-storage-test-{}", Uuid::new_v4()))
+    }
+
+    #[tokio::test]
+    async fn local_read_allows_canonical_path_inside_storage_root() {
+        let root = test_root();
+        let service = local_service(root.clone());
+        let stored = service
+            .save_load_document(42, "rate-confirmation.pdf", b"inside")
+            .await
+            .expect("document saves inside local root");
+
+        let bytes = service
+            .read_document("local", &stored.file_path)
+            .await
+            .expect("document reads inside local root");
+        assert_eq!(bytes, b"inside");
+
+        let _ = fs::remove_dir_all(root).await;
+    }
+
+    #[tokio::test]
+    async fn local_read_rejects_path_traversal_attempts() {
+        let root = test_root();
+        fs::create_dir_all(&root).await.expect("root exists");
+        let service = local_service(root.clone());
+
+        for candidate in [
+            "local://../secret.txt",
+            "local://load-documents/../../secret.txt",
+            "local://load-documents\\..\\..\\secret.txt",
+            "/absolute/path.txt",
+        ] {
+            let error = service
+                .read_document("local", candidate)
+                .await
+                .expect_err("traversal should be rejected");
+            assert!(
+                error.to_string().contains("safe relative path"),
+                "unexpected error for {candidate}: {error:?}"
+            );
+        }
+
+        let _ = fs::remove_dir_all(root).await;
+    }
+
+    #[tokio::test]
+    async fn local_delete_rejects_path_traversal_attempts() {
+        let root = test_root();
+        fs::create_dir_all(&root).await.expect("root exists");
+        let service = local_service(root.clone());
+
+        let error = service
+            .delete_document("local", "local://../outside.txt")
+            .await
+            .expect_err("delete traversal should be rejected");
+        assert!(error.to_string().contains("safe relative path"));
+
+        let _ = fs::remove_dir_all(root).await;
+    }
 }

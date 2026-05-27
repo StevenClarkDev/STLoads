@@ -10,12 +10,14 @@ aws-config.workspace = true
 aws-credential-types.workspace = true
 aws-sdk-s3.workspace = true
 axum.workspace = true
+base64.workspace = true
 bcrypt.workspace = true
 chrono.workspace = true
 db = { path = "../db" }
 domain = { path = "../domain" }
 futures-util.workspace = true
 hmac.workspace = true
+jsonwebtoken.workspace = true
 lettre.workspace = true
 reqwest.workspace = true
 serde.workspace = true
@@ -28,6 +30,7 @@ tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
 serial_test = "3.2"

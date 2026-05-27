@@ -1,10 +1,13 @@
 use axum::{
     Json, Router,
+    body::Body,
     extract::State,
     http::{
-        HeaderValue, Method, StatusCode,
+        HeaderName, HeaderValue, Method, Request, StatusCode,
         header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
     },
+    middleware::{self, Next},
+    response::Response,
     routing::get,
 };
 use db::inventory;
@@ -14,7 +17,9 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::{config::RuntimeConfig, routes, state::AppState};
+use crate::{api_contract, config::RuntimeConfig, routes, state::AppState};
+
+pub const REQUEST_ID_HEADER: &str = "x-request-id";
 
 #[derive(Debug, Serialize)]
 struct HealthResponse {
@@ -62,6 +67,7 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/health/live", get(liveness))
         .route("/health/ready", get(readiness))
+        .route("/openapi.json", get(openapi))
         .nest("/auth", routes::auth::router())
         .nest("/dispatch", routes::dispatch::router())
         .nest("/marketplace", routes::marketplace::router())
@@ -74,7 +80,82 @@ pub fn router(state: AppState) -> Router {
         .nest("/realtime", routes::realtime::router())
         .layer(cors)
         .layer(TraceLayer::new_for_http())
+        .layer(middleware::from_fn(security_headers_middleware))
+        .layer(middleware::from_fn(request_id_middleware))
         .with_state(state)
+}
+
+async fn openapi() -> Json<serde_json::Value> {
+    Json(api_contract::openapi_spec())
+}
+
+async fn request_id_middleware(mut request: Request<Body>, next: Next) -> Response {
+    let request_id = ensure_request_id_header(request.headers_mut());
+    tracing::info!(
+        request_id = %request_id,
+        method = %request.method(),
+        path = %request.uri().path(),
+        "request received"
+    );
+    let mut response = next.run(request).await;
+    if let Ok(value) = HeaderValue::from_str(&request_id) {
+        response
+            .headers_mut()
+            .insert(HeaderName::from_static(REQUEST_ID_HEADER), value);
+    }
+    response
+}
+
+async fn security_headers_middleware(request: Request<Body>, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    apply_security_headers(response.headers_mut());
+    response
+}
+
+fn apply_security_headers(headers: &mut axum::http::HeaderMap) {
+    static SECURITY_HEADERS: &[(&str, &str)] = &[
+        ("x-content-type-options", "nosniff"),
+        ("x-frame-options", "DENY"),
+        ("referrer-policy", "strict-origin-when-cross-origin"),
+        (
+            "permissions-policy",
+            "camera=(), microphone=(), payment=(), usb=(), geolocation=(self)",
+        ),
+        (
+            "strict-transport-security",
+            "max-age=31536000; includeSubDomains",
+        ),
+        (
+            "content-security-policy",
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+        ),
+    ];
+
+    for (name, value) in SECURITY_HEADERS {
+        if let Ok(header_name) = HeaderName::from_bytes(name.as_bytes())
+            && let Ok(header_value) = HeaderValue::from_str(value)
+        {
+            headers.insert(header_name, header_value);
+        }
+    }
+}
+
+fn ensure_request_id_header(headers: &mut axum::http::HeaderMap) -> String {
+    let header_name = HeaderName::from_static(REQUEST_ID_HEADER);
+    if let Some(value) = headers
+        .get(&header_name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return value.to_string();
+    }
+
+    let request_id = format!("req_{}", uuid::Uuid::new_v4().simple());
+    if let Ok(value) = HeaderValue::from_str(&request_id) {
+        headers.insert(header_name, value);
+    }
+    request_id
 }
 
 async fn liveness() -> Json<LivenessResponse> {
@@ -290,6 +371,56 @@ mod tests {
         }));
     }
 
+    #[test]
+    fn request_id_header_is_generated_or_preserved() {
+        let mut headers = axum::http::HeaderMap::new();
+        let generated = super::ensure_request_id_header(&mut headers);
+        assert!(generated.starts_with("req_"));
+        assert_eq!(
+            headers
+                .get(super::REQUEST_ID_HEADER)
+                .and_then(|value| value.to_str().ok()),
+            Some(generated.as_str())
+        );
+
+        headers.insert(
+            super::REQUEST_ID_HEADER,
+            axum::http::HeaderValue::from_static("req_existing"),
+        );
+        assert_eq!(
+            super::ensure_request_id_header(&mut headers),
+            "req_existing"
+        );
+    }
+
+    #[tokio::test]
+    async fn enterprise_security_headers_are_defined() {
+        use axum::http::header;
+
+        let mut headers = axum::http::HeaderMap::new();
+        super::apply_security_headers(&mut headers);
+
+        assert_eq!(
+            headers
+                .get("x-content-type-options")
+                .and_then(|value| value.to_str().ok()),
+            Some("nosniff")
+        );
+        assert_eq!(
+            headers
+                .get("x-frame-options")
+                .and_then(|value| value.to_str().ok()),
+            Some("DENY")
+        );
+        assert!(
+            headers
+                .get("content-security-policy")
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.contains("default-src 'none'"))
+        );
+        assert!(headers.get(header::STRICT_TRANSPORT_SECURITY).is_some());
+    }
+
     fn test_state(config: RuntimeConfig, include_pool: bool) -> AppState {
         let (realtime_tx, _) = broadcast::channel::<RoutedRealtimeEvent>(32);
         let document_storage = DocumentStorageService::from_config(&config);
@@ -317,6 +448,9 @@ mod tests {
             port: 3001,
             deployment_target: "ibm-code-engine".into(),
             environment: "production".into(),
+            runtime_mode: "web".into(),
+            log_format: "json".into(),
+            otel_exporter_endpoint: None,
             public_base_url: Some("https://api.stloads.com".into()),
             cors_allowed_origins: vec!["https://portal.stloads.com".into()],
             run_migrations: false,

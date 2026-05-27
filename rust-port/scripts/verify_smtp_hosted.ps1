@@ -239,6 +239,10 @@ function Wait-ForOutboxRow {
 
 $DatabaseUrl = Add-DatabaseHostaddrFallback -DbUrl (Resolve-DatabaseUrl -Value $DatabaseUrl)
 $email = "smtp.validation.$((Get-Date).ToUniversalTime().ToString('yyyyMMddHHmmss'))@stloads.test"
+$registrationPassword = $env:STLOADS_SMTP_VALIDATION_PASSWORD
+if ([string]::IsNullOrWhiteSpace($registrationPassword)) {
+    throw 'STLOADS_SMTP_VALIDATION_PASSWORD is required for hosted SMTP validation.'
+}
 
 Write-Step 'Checking hosted backend health'
 $health = Invoke-RestMethod -Uri "$BaseUrl/health" -Method Get
@@ -251,8 +255,8 @@ Write-Step 'Triggering a registration OTP through hosted SMTP'
 $body = @{
     name = 'SMTP Validation'
     email = $email
-    password = 'Password123!'
-    password_confirmation = 'Password123!'
+    password = $registrationPassword
+    password_confirmation = $registrationPassword
     role_key = 'shipper'
     phone_no = '555-0199'
     address = '100 SMTP Validation Way'

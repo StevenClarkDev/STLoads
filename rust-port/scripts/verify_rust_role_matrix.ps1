@@ -2,23 +2,23 @@ param(
     [string]$BaseUrl = 'https://stloads-rust-backend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud',
     [string]$FrontendUrl = 'https://stloads-rust-frontend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud',
     [string]$AdminEmail = 'admin.smoke@stloads.test',
-    [string]$AdminPassword = 'AdminPass123!',
+    [string]$AdminPassword = $env:STLOADS_SMOKE_ADMIN_PASSWORD,
     [string]$ShipperEmail = 'shipper.smoke@stloads.test',
-    [string]$ShipperPassword = 'ShipperPass123!',
+    [string]$ShipperPassword = $env:STLOADS_SMOKE_SHIPPER_PASSWORD,
     [string]$CarrierEmail = 'carrier.smoke@stloads.test',
-    [string]$CarrierPassword = 'CarrierPass123!',
+    [string]$CarrierPassword = $env:STLOADS_SMOKE_CARRIER_PASSWORD,
     [string]$BrokerEmail = 'broker.qa@stloads.test',
-    [string]$BrokerPassword = 'BrokerQaPass123!',
+    [string]$BrokerPassword = $env:STLOADS_QA_BROKER_PASSWORD,
     [string]$FreightForwarderEmail = 'forwarder.qa@stloads.test',
-    [string]$FreightForwarderPassword = 'ForwarderQaPass123!',
+    [string]$FreightForwarderPassword = $env:STLOADS_QA_FORWARDER_PASSWORD,
     [string]$PendingOtpEmail = 'pending.otp.qa@stloads.test',
-    [string]$PendingOtpPassword = 'PendingOtpQa123!',
+    [string]$PendingOtpPassword = $env:STLOADS_QA_PENDING_OTP_PASSWORD,
     [string]$PendingReviewEmail = 'pending.review.qa@stloads.test',
-    [string]$PendingReviewPassword = 'PendingReviewQa123!',
+    [string]$PendingReviewPassword = $env:STLOADS_QA_PENDING_REVIEW_PASSWORD,
     [string]$RevisionRequestedEmail = 'revision.requested.qa@stloads.test',
-    [string]$RevisionRequestedPassword = 'RevisionQa123!',
+    [string]$RevisionRequestedPassword = $env:STLOADS_QA_REVISION_PASSWORD,
     [string]$RejectedEmail = 'rejected.qa@stloads.test',
-    [string]$RejectedPassword = 'RejectedQa123!'
+    [string]$RejectedPassword = $env:STLOADS_QA_REJECTED_PASSWORD
 )
 
 Set-StrictMode -Version Latest
@@ -27,6 +27,22 @@ Add-Type -AssemblyName System.Net.Http | Out-Null
 
 $BaseUrl = $BaseUrl.TrimEnd('/')
 $FrontendUrl = $FrontendUrl.TrimEnd('/')
+
+foreach ($requiredSecret in @(
+    @{ Name = 'STLOADS_SMOKE_ADMIN_PASSWORD'; Value = $AdminPassword },
+    @{ Name = 'STLOADS_SMOKE_SHIPPER_PASSWORD'; Value = $ShipperPassword },
+    @{ Name = 'STLOADS_SMOKE_CARRIER_PASSWORD'; Value = $CarrierPassword },
+    @{ Name = 'STLOADS_QA_BROKER_PASSWORD'; Value = $BrokerPassword },
+    @{ Name = 'STLOADS_QA_FORWARDER_PASSWORD'; Value = $FreightForwarderPassword },
+    @{ Name = 'STLOADS_QA_PENDING_OTP_PASSWORD'; Value = $PendingOtpPassword },
+    @{ Name = 'STLOADS_QA_PENDING_REVIEW_PASSWORD'; Value = $PendingReviewPassword },
+    @{ Name = 'STLOADS_QA_REVISION_PASSWORD'; Value = $RevisionRequestedPassword },
+    @{ Name = 'STLOADS_QA_REJECTED_PASSWORD'; Value = $RejectedPassword }
+)) {
+    if ([string]::IsNullOrWhiteSpace($requiredSecret.Value)) {
+        throw "$($requiredSecret.Name) is required for hosted Rust role matrix verification."
+    }
+}
 
 function Write-Step {
     param([string]$Message)

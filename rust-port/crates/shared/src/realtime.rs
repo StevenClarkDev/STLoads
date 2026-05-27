@@ -45,6 +45,7 @@ pub enum RealtimeEventKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RealtimeEvent {
+    pub request_id: Option<String>,
     pub kind: RealtimeEventKind,
     pub leg_id: Option<u64>,
     pub conversation_id: Option<u64>,

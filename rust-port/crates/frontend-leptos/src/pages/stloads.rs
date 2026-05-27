@@ -135,7 +135,7 @@ pub fn StloadsOperationsPage() -> impl IntoView {
         }
 
         is_loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::fetch_stloads_operations_screen(status_filter.as_deref()).await {
                 Ok(next_screen) => {
@@ -168,7 +168,7 @@ pub fn StloadsOperationsPage() -> impl IntoView {
         }
 
         let current_user_id = current_session.user.as_ref().map(|user| user.id);
-        let auth = auth.clone();
+        let auth = auth;
         if let Some(existing_handle) = ws_handle.get_untracked() {
             existing_handle.abort();
         }
@@ -209,7 +209,7 @@ pub fn StloadsOperationsPage() -> impl IntoView {
 
         pending_sync_error_id.set(Some(sync_error_id));
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::resolve_sync_error(
                 sync_error_id,
@@ -251,7 +251,7 @@ pub fn StloadsOperationsPage() -> impl IntoView {
 
         pending_action.set(Some("push".into()));
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::push_tms_handoff(&payload).await {
                 Ok(result) => {
@@ -286,7 +286,7 @@ pub fn StloadsOperationsPage() -> impl IntoView {
 
         pending_action.set(Some("queue".into()));
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::queue_tms_handoff(&payload).await {
                 Ok(result) => {
@@ -322,7 +322,7 @@ pub fn StloadsOperationsPage() -> impl IntoView {
 
         pending_action.set(Some("requeue".into()));
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
         let request = TmsRequeueRequest {
             handoff_id,
             pushed_by: (!operator_pushed_by.get().trim().is_empty())
@@ -365,7 +365,7 @@ pub fn StloadsOperationsPage() -> impl IntoView {
 
         pending_action.set(Some("withdraw".into()));
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
         let request = TmsWithdrawRequest {
             handoff_id,
             reason: (!operator_reason.get().trim().is_empty()).then(|| operator_reason.get()),
@@ -409,7 +409,7 @@ pub fn StloadsOperationsPage() -> impl IntoView {
 
         pending_action.set(Some("close".into()));
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
         let request = TmsCloseRequest {
             handoff_id,
             reason: (!operator_reason.get().trim().is_empty()).then(|| operator_reason.get()),
@@ -458,8 +458,9 @@ pub fn StloadsOperationsPage() -> impl IntoView {
 
         pending_action.set(Some("webhook".into()));
         action_message.set(None);
-        let auth = auth.clone();
+        let auth = auth;
         let request = TmsStatusWebhookRequest {
+            event_id: None,
             tms_load_id: webhook_tms_load_id.get(),
             tenant_id: webhook_tenant_id.get(),
             tms_status: webhook_status.get(),

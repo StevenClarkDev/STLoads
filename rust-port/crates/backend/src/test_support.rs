@@ -49,6 +49,9 @@ pub fn test_state(pool: DbPool) -> AppState {
         port: 3001,
         deployment_target: "backend-test".into(),
         environment: "development".into(),
+        runtime_mode: "web".into(),
+        log_format: "pretty".into(),
+        otel_exporter_endpoint: None,
         public_base_url: Some("https://rust.test".into()),
         cors_allowed_origins: vec!["https://rust.test".into()],
         run_migrations: false,
@@ -268,6 +271,8 @@ pub async fn read_leg_status(pool: &DbPool, leg_id: i64) -> Result<i16, sqlx::Er
 async fn reset_database(pool: &DbPool) -> Result<(), sqlx::Error> {
     sqlx::query(
         "TRUNCATE TABLE
+            support_case_events,
+            support_cases,
             stloads_reconciliation_log,
             stloads_sync_errors,
             stloads_external_refs,

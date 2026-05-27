@@ -4,6 +4,7 @@ use serde_json::Value;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookLoadLegRequest {
     pub booked_amount: Option<f64>,
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,8 +43,26 @@ pub struct CreateLoadRequest {
     pub load_type_id: u64,
     pub equipment_id: u64,
     pub commodity_type_id: u64,
+    pub customer_contract_id: Option<u64>,
+    pub customer_contract_lane_id: Option<u64>,
+    pub freight_mode: Option<String>,
+    pub visibility: Option<String>,
+    pub service_level: Option<String>,
+    pub customer_reference: Option<String>,
+    pub po_number: Option<String>,
+    pub pickup_appointment_ref: Option<String>,
+    pub delivery_appointment_ref: Option<String>,
+    pub facility_contact_name: Option<String>,
+    pub facility_contact_phone: Option<String>,
+    pub facility_contact_email: Option<String>,
+    pub appointment_window_start: Option<String>,
+    pub appointment_window_end: Option<String>,
+    pub accessorial_flags: Option<Value>,
     pub weight_unit: String,
     pub weight: f64,
+    pub temperature_data: Option<Value>,
+    pub container_data: Option<Value>,
+    pub securement_data: Option<Value>,
     pub special_instructions: Option<String>,
     pub is_hazardous: bool,
     pub is_temperature_controlled: bool,
@@ -56,6 +75,142 @@ pub struct CreateLoadResponse {
     pub load_id: Option<i64>,
     pub load_number: Option<String>,
     pub leg_count: u64,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BulkLoadImportPreviewRequest {
+    pub csv: String,
+    pub filename: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BulkLoadImportCommitRequest {
+    pub csv: String,
+    pub filename: Option<String>,
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BulkLoadImportRowResult {
+    pub row_number: u64,
+    pub valid: bool,
+    pub errors: Vec<String>,
+    pub load_id: Option<i64>,
+    pub load_number: Option<String>,
+    pub title: Option<String>,
+    pub pickup_label: Option<String>,
+    pub delivery_label: Option<String>,
+    pub price: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BulkLoadImportResponse {
+    pub success: bool,
+    pub batch_id: Option<i64>,
+    pub total_rows: u64,
+    pub valid_rows: u64,
+    pub invalid_rows: u64,
+    pub created_load_count: u64,
+    pub error_csv: Option<String>,
+    pub rows: Vec<BulkLoadImportRowResult>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiPostLoadRequest {
+    pub idempotency_key: String,
+    pub load: CreateLoadRequest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiPostLoadResponse {
+    pub success: bool,
+    pub duplicate: bool,
+    pub load_id: Option<i64>,
+    pub load_number: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RateCalculationRequest {
+    pub mileage_miles_override: Option<f64>,
+    pub mileage_source_override: Option<String>,
+    pub manual_override_total: Option<f64>,
+    pub manual_override_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RateAccessorialLine {
+    pub code: String,
+    pub label: String,
+    pub amount: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RateCalculationResponse {
+    pub success: bool,
+    pub quote_id: Option<i64>,
+    pub load_id: i64,
+    pub leg_count: u64,
+    pub base_rate: f64,
+    pub mileage_miles: f64,
+    pub mileage_source: String,
+    pub mileage_charge: f64,
+    pub fuel_surcharge: f64,
+    pub accessorial_total: f64,
+    pub total_customer_rate: f64,
+    pub carrier_rate: f64,
+    pub margin: f64,
+    pub currency: String,
+    pub accessorials: Vec<RateAccessorialLine>,
+    pub explanation: Vec<String>,
+    pub audit_event_id: Option<i64>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FacilityAppointmentRequest {
+    pub leg_id: u64,
+    pub stop_type: String,
+    pub appointment_ref: Option<String>,
+    pub appointment_start: String,
+    pub appointment_end: Option<String>,
+    pub appointment_time_zone: Option<String>,
+    pub dock_name: Option<String>,
+    pub contact_name: Option<String>,
+    pub contact_phone: Option<String>,
+    pub contact_email: Option<String>,
+    pub notes: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FacilityAppointmentResponse {
+    pub success: bool,
+    pub appointment_id: Option<i64>,
+    pub event_id: Option<i64>,
+    pub load_id: i64,
+    pub leg_id: Option<i64>,
+    pub status: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadLifecycleActionRequest {
+    pub action: String,
+    pub reason: Option<String>,
+    pub template_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadLifecycleActionResponse {
+    pub success: bool,
+    pub load_id: Option<i64>,
+    pub load_number: Option<String>,
+    pub lifecycle_status: Option<String>,
+    pub revision_number: Option<i32>,
+    pub redirect_path: Option<String>,
     pub message: String,
 }
 
@@ -78,6 +233,28 @@ pub struct UpsertLoadDocumentResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateFreightDocumentsRequest {
+    pub template_keys: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneratedFreightDocumentItem {
+    pub template_key: String,
+    pub template_version: String,
+    pub document_id: i64,
+    pub document_name: String,
+    pub document_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateFreightDocumentsResponse {
+    pub success: bool,
+    pub load_id: i64,
+    pub generated: Vec<GeneratedFreightDocumentItem>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerifyLoadDocumentRequest {
     pub note: Option<String>,
 }
@@ -95,10 +272,26 @@ pub struct VerifyLoadDocumentResponse {
 pub struct DispatchDeskFollowUpRequest {
     pub desk_key: String,
     pub note: String,
+    pub visibility: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DispatchDeskFollowUpResponse {
+    pub success: bool,
+    pub leg_id: i64,
+    pub load_id: i64,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolveDispatchExceptionRequest {
+    pub desk_key: String,
+    pub exception_type: Option<String>,
+    pub resolution_note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolveDispatchExceptionResponse {
     pub success: bool,
     pub leg_id: i64,
     pub load_id: i64,
@@ -141,6 +334,32 @@ pub struct OfferReviewResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OfferCounterRequest {
+    pub amount: f64,
+    pub expires_at: Option<String>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OfferCounterResponse {
+    pub success: bool,
+    pub offer_id: i64,
+    pub source_offer_id: i64,
+    pub leg_id: i64,
+    pub status_label: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RateConfirmationResponse {
+    pub success: bool,
+    pub offer_id: i64,
+    pub leg_id: i64,
+    pub confirmation_ref: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatSendMessageRequest {
     pub body: String,
 }
@@ -176,6 +395,7 @@ pub struct ResolveSyncErrorResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EscrowFundRequest {
+    pub idempotency_key: Option<String>,
     pub amount_cents: Option<i64>,
     pub currency: Option<String>,
     pub platform_fee_cents: Option<i64>,
@@ -187,11 +407,13 @@ pub struct EscrowFundRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EscrowHoldRequest {
+    pub idempotency_key: Option<String>,
     pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EscrowReleaseRequest {
+    pub idempotency_key: Option<String>,
     pub transfer_id: Option<String>,
     pub note: Option<String>,
 }
@@ -210,6 +432,7 @@ pub struct EscrowLifecycleResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StripeWebhookRequest {
+    pub event_id: Option<String>,
     pub event_type: String,
     pub leg_id: Option<i64>,
     pub payment_intent_id: Option<String>,
@@ -327,6 +550,7 @@ pub struct TmsCloseRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TmsStatusWebhookRequest {
+    pub event_id: Option<String>,
     pub tms_load_id: String,
     pub tenant_id: String,
     pub tms_status: String,

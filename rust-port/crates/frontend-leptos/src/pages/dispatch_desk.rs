@@ -9,6 +9,7 @@ use crate::{
 use shared::{
     DispatchDeskFollowUpRequest, DispatchDeskRow, DispatchDeskScreen, EscrowFundRequest,
     EscrowHoldRequest, EscrowReleaseRequest, RealtimeEventKind, RealtimeTopic,
+    ResolveDispatchExceptionRequest,
 };
 
 fn tone_style(tone: &str) -> &'static str {
@@ -42,6 +43,7 @@ pub fn DispatchDeskPage() -> impl IntoView {
     let pending_handoff_id = RwSignal::new(None::<u64>);
     let pending_finance_leg_id = RwSignal::new(None::<u64>);
     let pending_note_leg_id = RwSignal::new(None::<u64>);
+    let pending_exception_leg_id = RwSignal::new(None::<u64>);
 
     let active_desk = Signal::derive(move || {
         params
@@ -86,7 +88,7 @@ pub fn DispatchDeskPage() -> impl IntoView {
         }
 
         loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::fetch_dispatch_desk_screen(&desk_key).await {
                 Ok(next) => {
@@ -109,7 +111,7 @@ pub fn DispatchDeskPage() -> impl IntoView {
 
     let run_handoff_action = move |handoff_id: u64, action_key: String| {
         pending_handoff_id.set(Some(handoff_id));
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::run_dispatch_desk_handoff_action(handoff_id, &action_key).await {
                 Ok(response) => {
@@ -132,39 +134,79 @@ pub fn DispatchDeskPage() -> impl IntoView {
         });
     };
 
-    let submit_follow_up = move |leg_id: u64, desk_key: String, note: String| {
-        pending_note_leg_id.set(Some(leg_id));
-        let auth = auth.clone();
-        spawn_local(async move {
-            match api::add_dispatch_desk_follow_up(
-                leg_id,
-                &DispatchDeskFollowUpRequest { desk_key, note },
-            )
-            .await
-            {
-                Ok(response) => {
-                    feedback.set(Some(response.message));
-                    if response.success {
-                        refresh_nonce.update(|value| *value += 1);
+    let submit_follow_up =
+        move |leg_id: u64, desk_key: String, note: String, visibility: String| {
+            pending_note_leg_id.set(Some(leg_id));
+            let auth = auth;
+            spawn_local(async move {
+                match api::add_dispatch_desk_follow_up(
+                    leg_id,
+                    &DispatchDeskFollowUpRequest {
+                        desk_key,
+                        note,
+                        visibility: Some(visibility),
+                    },
+                )
+                .await
+                {
+                    Ok(response) => {
+                        feedback.set(Some(response.message));
+                        if response.success {
+                            refresh_nonce.update(|value| *value += 1);
+                        }
+                    }
+                    Err(error) => {
+                        if error.contains("returned 401") {
+                            session::invalidate_session(
+                                &auth,
+                                "Your Rust session expired; sign in again.",
+                            );
+                        }
+                        feedback.set(Some(error));
                     }
                 }
-                Err(error) => {
-                    if error.contains("returned 401") {
-                        session::invalidate_session(
-                            &auth,
-                            "Your Rust session expired; sign in again.",
-                        );
+                pending_note_leg_id.set(None);
+            });
+        };
+
+    let resolve_exception =
+        move |leg_id: u64, desk_key: String, exception_type: Option<String>, note: String| {
+            pending_exception_leg_id.set(Some(leg_id));
+            let auth = auth;
+            spawn_local(async move {
+                match api::resolve_dispatch_exception(
+                    leg_id,
+                    &ResolveDispatchExceptionRequest {
+                        desk_key,
+                        exception_type,
+                        resolution_note: note,
+                    },
+                )
+                .await
+                {
+                    Ok(response) => {
+                        feedback.set(Some(response.message));
+                        if response.success {
+                            refresh_nonce.update(|value| *value += 1);
+                        }
                     }
-                    feedback.set(Some(error));
+                    Err(error) => {
+                        if error.contains("returned 401") {
+                            session::invalidate_session(
+                                &auth,
+                                "Your Rust session expired; sign in again.",
+                            );
+                        }
+                        feedback.set(Some(error));
+                    }
                 }
-            }
-            pending_note_leg_id.set(None);
-        });
-    };
+                pending_exception_leg_id.set(None);
+            });
+        };
 
     let run_finance_action = move |leg_id: u64, action_key: String, desk_key: String| {
         pending_finance_leg_id.set(Some(leg_id));
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             let note = format!("Triggered from the Rust {} desk.", desk_key);
             let result = match action_key.as_str() {
@@ -172,6 +214,7 @@ pub fn DispatchDeskPage() -> impl IntoView {
                     api::fund_escrow(
                         leg_id,
                         &EscrowFundRequest {
+                            idempotency_key: None,
                             amount_cents: None,
                             currency: Some("USD".into()),
                             platform_fee_cents: None,
@@ -183,11 +226,21 @@ pub fn DispatchDeskPage() -> impl IntoView {
                     )
                     .await
                 }
-                "hold" => api::hold_escrow(leg_id, &EscrowHoldRequest { note: Some(note) }).await,
+                "hold" => {
+                    api::hold_escrow(
+                        leg_id,
+                        &EscrowHoldRequest {
+                            idempotency_key: None,
+                            note: Some(note),
+                        },
+                    )
+                    .await
+                }
                 "release" => {
                     api::release_escrow(
                         leg_id,
                         &EscrowReleaseRequest {
+                            idempotency_key: None,
                             transfer_id: None,
                             note: Some(note),
                         },
@@ -230,7 +283,7 @@ pub fn DispatchDeskPage() -> impl IntoView {
         }
 
         let current_user_id = current_session.user.as_ref().map(|user| user.id);
-        let auth = auth.clone();
+        let auth = auth;
 
         if let Some(existing_handle) = ws_handle.get_untracked() {
             existing_handle.abort();
@@ -400,9 +453,11 @@ pub fn DispatchDeskPage() -> impl IntoView {
                                                         pending_handoff_id,
                                                         pending_finance_leg_id,
                                                         pending_note_leg_id,
+                                                        pending_exception_leg_id,
                                                         run_handoff_action,
                                                         run_finance_action,
                                                         submit_follow_up,
+                                                        resolve_exception,
                                                     )
                                                 })
                                                 .collect_view()
@@ -451,9 +506,11 @@ fn render_row<F>(
     pending_handoff_id: RwSignal<Option<u64>>,
     pending_finance_leg_id: RwSignal<Option<u64>>,
     pending_note_leg_id: RwSignal<Option<u64>>,
+    pending_exception_leg_id: RwSignal<Option<u64>>,
     run_handoff_action: F,
     run_finance_action: impl Fn(u64, String, String) + Copy + 'static,
-    submit_follow_up: impl Fn(u64, String, String) + Copy + 'static,
+    submit_follow_up: impl Fn(u64, String, String, String) + Copy + 'static,
+    resolve_exception: impl Fn(u64, String, Option<String>, String) + Copy + 'static,
 ) -> impl IntoView
 where
     F: Fn(u64, String) + Copy + 'static,
@@ -462,6 +519,9 @@ where
         load_id,
         leg_id,
         handoff_id,
+        queue_label,
+        entry_rule_label,
+        exit_rule_label,
         load_number,
         title,
         equipment_label,
@@ -479,6 +539,19 @@ where
         archive_guidance_tone,
         archive_guidance_note,
         latest_activity_note,
+        latest_internal_note,
+        latest_customer_update,
+        assigned_owner_label,
+        priority_label,
+        priority_tone,
+        sla_due_label,
+        sla_tone,
+        escalation_reason,
+        exception_label,
+        exception_tone,
+        exception_resolution_key,
+        exception_resolution_label,
+        exception_resolution_enabled,
         load_href,
         primary_action_key,
         primary_action_label,
@@ -492,6 +565,8 @@ where
     } = row;
     let desk_key_value = desk_key.to_string();
     let follow_up_note = RwSignal::new(String::new());
+    let customer_update_note = RwSignal::new(String::new());
+    let resolution_note = RwSignal::new(String::new());
 
     let third_column = match desk_key {
         "quote" => format!(
@@ -546,7 +621,7 @@ where
             </A>
         }
         .into_any(),
-        _ => view! { <></> }.into_any(),
+        _ => ().into_any(),
     };
     let finance_action_view =
         match (finance_action_key, finance_action_label, finance_action_enabled) {
@@ -587,16 +662,29 @@ where
                 <small style="color:#92400e;">"Payments permission required for direct finance actions."</small>
             }
             .into_any(),
-            _ => view! { <></> }.into_any(),
+            _ => ().into_any(),
         };
 
     view! {
         <tr style="border-top:1px solid #e5e7eb;">
             <td style="padding:0.9rem;">{load_number_view}</td>
-            <td style="padding:0.9rem;">{title}</td>
+            <td style="padding:0.9rem;">
+                <div style="display:grid;gap:0.35rem;">
+                    <strong>{title}</strong>
+                    <small style="color:#64748b;">{queue_label}</small>
+                    <small style="color:#475569;">{entry_rule_label}</small>
+                    <small style="color:#475569;">{exit_rule_label}</small>
+                </div>
+            </td>
             <td style="padding:0.9rem;">{third_column}</td>
             <td style="padding:0.9rem;">
-                <span style=tone_style(&leg_status_tone)>{leg_status_label}</span>
+                <div style="display:grid;gap:0.35rem;">
+                    <span style=tone_style(&leg_status_tone)>{leg_status_label}</span>
+                    <span style=tone_style(&priority_tone)>{priority_label}</span>
+                    <span style=tone_style(&sla_tone)>{sla_due_label}</span>
+                    {assigned_owner_label.map(|label| view! { <small style="color:#475569;">{format!("Owner: {}", label)}</small> })}
+                    {escalation_reason.map(|reason| view! { <small style="color:#be123c;">{reason}</small> })}
+                </div>
             </td>
             <td style="padding:0.9rem;">{stloads_view}</td>
             <td style="padding:0.9rem;">
@@ -611,11 +699,54 @@ where
                     {latest_activity_note.map(|note| view! {
                         <small style="color:#0f172a;font-style:italic;">{note}</small>
                     })}
+                    {latest_internal_note.map(|note| view! {
+                        <small style="color:#0f172a;">{format!("Internal: {}", note)}</small>
+                    })}
+                    {latest_customer_update.map(|note| view! {
+                        <small style="color:#0369a1;">{format!("Customer: {}", note)}</small>
+                    })}
+                    {exception_label.map(|label| {
+                        let tone = exception_tone.clone().unwrap_or_else(|| "warning".into());
+                        view! { <span style=tone_style(&tone)>{label}</span> }
+                    })}
                     <div style="display:flex;gap:0.45rem;flex-wrap:wrap;">
                         {action_view}
                         {finance_action_view}
                         {secondary_action_view}
                     </div>
+                    {exception_resolution_key.clone().map(|exception_key| {
+                        let label = exception_resolution_label.clone().unwrap_or_else(|| "Resolve exception".into());
+                        let desk_for_resolution = desk_key_value.clone();
+                        view! {
+                            <div style="display:grid;gap:0.35rem;padding-top:0.35rem;">
+                                <input
+                                    prop:value=move || resolution_note.get()
+                                    on:input=move |ev| resolution_note.set(event_target_value(&ev))
+                                    placeholder="Resolution note"
+                                    style="padding:0.55rem 0.65rem;border:1px solid #cbd5e1;border-radius:0.75rem;"
+                                />
+                                <button
+                                    type="button"
+                                    disabled=move || pending_exception_leg_id.get() == Some(leg_id) || !exception_resolution_enabled
+                                    on:click=move |_| {
+                                        let note = resolution_note.get();
+                                        if !note.trim().is_empty() {
+                                            resolve_exception(
+                                                leg_id,
+                                                desk_for_resolution.clone(),
+                                                Some(exception_key.clone()),
+                                                note,
+                                            );
+                                            resolution_note.set(String::new());
+                                        }
+                                    }
+                                    style="padding:0.45rem 0.7rem;border:1px solid #0f766e;border-radius:0.75rem;background:#ecfdf5;color:#0f766e;cursor:pointer;"
+                                >
+                                    {move || if pending_exception_leg_id.get() == Some(leg_id) { "Resolving...".to_string() } else { label.clone() }}
+                                </button>
+                            </div>
+                        }
+                    })}
                     <div style="display:grid;gap:0.35rem;padding-top:0.35rem;">
                         <textarea
                             rows="2"
@@ -628,16 +759,45 @@ where
                             <button
                                 type="button"
                                 disabled=move || pending_note_leg_id.get() == Some(leg_id)
-                                on:click=move |_| {
-                                    let note = follow_up_note.get();
-                                    if !note.trim().is_empty() {
-                                        submit_follow_up(leg_id, desk_key_value.clone(), note);
-                                        follow_up_note.set(String::new());
+                                on:click={
+                                    let desk_for_internal_note = desk_key_value.clone();
+                                    move |_| {
+                                        let note = follow_up_note.get();
+                                        if !note.trim().is_empty() {
+                                            submit_follow_up(leg_id, desk_for_internal_note.clone(), note, "internal".into());
+                                            follow_up_note.set(String::new());
+                                        }
                                     }
                                 }
                                 style="padding:0.45rem 0.7rem;border:1px solid #cbd5e1;border-radius:0.75rem;background:white;cursor:pointer;"
                             >
                                 {move || if pending_note_leg_id.get() == Some(leg_id) { "Saving note..." } else { "Save follow-up" }}
+                            </button>
+                        </div>
+                        <textarea
+                            rows="2"
+                            prop:value=move || customer_update_note.get()
+                            on:input=move |ev| customer_update_note.set(event_target_value(&ev))
+                            placeholder="Add customer-visible update"
+                            style="padding:0.55rem 0.65rem;border:1px solid #bfdbfe;border-radius:0.75rem;"
+                        />
+                        <div style="display:flex;justify-content:flex-end;">
+                            <button
+                                type="button"
+                                disabled=move || pending_note_leg_id.get() == Some(leg_id)
+                                on:click={
+                                    let desk_for_customer_update = desk_key_value.clone();
+                                    move |_| {
+                                        let note = customer_update_note.get();
+                                        if !note.trim().is_empty() {
+                                            submit_follow_up(leg_id, desk_for_customer_update.clone(), note, "customer_visible".into());
+                                            customer_update_note.set(String::new());
+                                        }
+                                    }
+                                }
+                                style="padding:0.45rem 0.7rem;border:1px solid #bfdbfe;border-radius:0.75rem;background:#eff6ff;color:#1d4ed8;cursor:pointer;"
+                            >
+                                {move || if pending_note_leg_id.get() == Some(leg_id) { "Saving update..." } else { "Save customer update" }}
                             </button>
                         </div>
                     </div>

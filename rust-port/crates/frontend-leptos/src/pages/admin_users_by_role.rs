@@ -38,7 +38,7 @@ pub fn AdminUsersByRolePage() -> impl IntoView {
         }
 
         loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
         spawn_local(async move {
             match api::fetch_admin_user_directory().await {
                 Ok(next) => {
@@ -104,7 +104,7 @@ pub fn AdminUsersByRolePage() -> impl IntoView {
                                 } else if let Some(profile) = selected_profile.get() {
                                     render_role_profile_panel(profile, feedback).into_any()
                                 } else {
-                                    view! { <></> }.into_any()
+                                    ().into_any()
                                 }}
 
                                 {move || {
@@ -244,7 +244,7 @@ fn render_role_profile_panel(
                                 <div>
                                     <strong>{document.document_name}</strong>
                                     <p style="margin:0.15rem 0;">{document.original_name.unwrap_or_else(|| "Unnamed file".into())}</p>
-                                    <small>{format!("{} | {}", document.document_type, document.uploaded_at_label)}</small>
+                                    <small>{format!("{} | {} | {}", document.document_type, document.version_history_label, document.uploaded_at_label)}</small>
                                 </div>
                                 {download_path.map(|path| view! {
                                     <button type="button" on:click=move |_| {

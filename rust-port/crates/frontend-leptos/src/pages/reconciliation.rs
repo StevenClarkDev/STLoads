@@ -51,7 +51,7 @@ pub fn StloadsReconciliationPage() -> impl IntoView {
         }
 
         is_loading.set(true);
-        let auth = auth.clone();
+        let auth = auth;
 
         spawn_local(async move {
             match api::fetch_stloads_reconciliation_screen(action_filter.as_deref()).await {
@@ -86,7 +86,7 @@ pub fn StloadsReconciliationPage() -> impl IntoView {
         }
 
         let current_user_id = current_session.user.as_ref().map(|user| user.id);
-        let auth = auth.clone();
+        let auth = auth;
 
         if let Some(existing_handle) = ws_handle.get_untracked() {
             existing_handle.abort();
