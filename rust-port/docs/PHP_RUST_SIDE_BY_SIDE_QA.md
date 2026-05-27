@@ -2,8 +2,7 @@
 
 Last updated: 2026-04-27
 
-This checklist is for the final parity pass before treating the Rust/Leptos app as a real replacement for the Laravel Blade app.
-Use it with the PHP app open in one browser/session and the Rust app open in another.
+This checklist is retained as historical parity evidence from the Laravel-to-Rust migration. The local PHP/Laravel scaffold has been removed from the repository root; use this document only when reviewing past cutover decisions or comparing against an external archived PHP environment.
 Record results and defects in `docs/PHP_RUST_QA_FINDINGS.md`.
 
 Current hosted staging status:
@@ -11,8 +10,7 @@ Current hosted staging status:
 - Keep using this checklist for regression passes, future deploy validation, and any new parity issues.
 
 Helpful repo helpers before the manual pass:
-- `scripts/verify_php_role_logins.ps1` for the five core PHP roles
-- `scripts/verify_php_lifecycle_states.ps1` for PHP pending-OTP, pending-review, revision-requested, and rejected accounts
+- Historical PHP role/lifecycle verification was completed before the PHP scripts were removed from the Rust workspace.
 - `scripts/verify_rust_role_matrix.ps1` for hosted Rust role and lifecycle-state preflight
 
 ## Goal
@@ -59,7 +57,7 @@ Prepare one of each:
 
 - [ ] Rust backend `/health` returns healthy.
 - [ ] Rust app points to IBM PostgreSQL staging or a disposable local equivalent.
-- [ ] PHP app points to comparable staging data.
+- [ ] Archived/external PHP comparison environment points to comparable staging data if this historical checklist is rerun.
 - [ ] `RUN_MIGRATIONS=false` after the first successful migration run.
 - [ ] Document storage backend is known and recorded: `local` or `ibm_cos`.
 - [ ] If using `ibm_cos`, bucket, prefix, and HMAC credential are confirmed.

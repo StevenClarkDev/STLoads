@@ -1,6 +1,6 @@
 # STLoads Rust Port
 
-This workspace is the starting point for the Rust + Leptos copy of the current Laravel application.
+This workspace is the Rust + Leptos STLoads application. The old Laravel/PHP scaffold has been removed from the repository root, and new development should happen here.
 
 ## Workspace Layout
 
@@ -38,33 +38,22 @@ This workspace is the starting point for the Rust + Leptos copy of the current L
 - `docs/ENTERPRISE_TENANT_ISOLATION.md`: current tenant isolation enforcement, tests, and remaining break-glass requirements.
 - `docs/ENTERPRISE_PERMISSION_MATRIX.md`: platform-role and organization-role permission matrix plus route guard map.
 - `docs/ENTERPRISE_TEST_LANES_AND_CI.md`: Phase 16 test lanes, CI jobs, pinned frontend build tooling, and smoke/performance verification policy.
-- `docs/CANONICAL_STATUS_MODEL.md`: Rust-side status model and legacy PHP code mapping.
-- `docs/SCHEMA_BASELINE.md`: draft SQL baseline inferred from Laravel write paths.
+- `docs/CANONICAL_STATUS_MODEL.md`: Rust-side status model and historical legacy-code mapping.
+- `docs/SCHEMA_BASELINE.md`: draft SQL baseline inferred during the Laravel-to-Rust migration.
 - `docs/POSTGRES_PIVOT.md`: PostgreSQL migration checklist for the Rust port.
 - `docs/IBM_DEPLOYMENT_NOTES.md`: IBM-hosting assumptions and runtime constraints.
 - `docs/IBM_CODE_ENGINE_DEPLOYMENT.md`: step-by-step beginner deployment guide for IBM Code Engine.
 
-## Migration Approach
+## Operating Approach
 
-The current Laravel application remains the production source while we rebuild feature parity inside this workspace.
-
-Recommended order:
-
-1. Recover and normalize the real current production schema from MySQL.
-2. Translate that schema into the target PostgreSQL shape for IBM deployment.
-3. Port authentication, roles, and onboarding.
-4. Port loads, load legs, documents, and dashboard queries.
-5. Port offers, chat, tracking, and realtime flows.
-6. Port Stripe escrow and payout flows.
-7. Port STLOADS/TMS inbound, webhook, and reconciliation flows.
-8. Cut over page-by-page from Blade to Leptos.
+Use this workspace as the source of truth for the STLoads platform. Historical Laravel migration notes remain in `docs/` only as reference material for schema decisions, parity history, and cutover evidence.
 
 ## Current Status
 
 - The Rust workspace now targets PostgreSQL through SQLx.
 - The heavy runtime SQL surface has been moved into PostgreSQL-compatible query syntax.
 - The backend can be containerized and deployed to IBM Code Engine with the included `Dockerfile`.
-- The current fastest IBM milestone is backend deployment first, then PostgreSQL smoke validation using the included seed and smoke scripts.
+- Enterprise-readiness execution is tracked in `docs/ENTERPRISE_LOADBOARD_TASK_LIST.md` and `docs/ENTERPRISE_WORK_BOARD.md`.
 
 ## IBM Starter Assets
 

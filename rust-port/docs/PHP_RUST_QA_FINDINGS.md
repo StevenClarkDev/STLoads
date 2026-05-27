@@ -10,7 +10,7 @@ Every side-by-side difference should be logged here, even if it is later marked 
 | Field | Value |
 | --- | --- |
 | Run status | `verified`: IBM hosted Rust backend cutover validation, COS validation, hosted Stripe release verification, Rust role-and-lifecycle route verification, PHP role login verification, manual browser QA, hosted PHP lifecycle-state verification, and the custom-domain production cutover all passed. All recorded QA findings QA-001 through QA-010 are now closed as `verified`. |
-| PHP app URL | `https://portal.stloads.com` |
+| PHP app URL | Historical external app used during migration; the local PHP scaffold has been removed from the repository root. |
 | Rust frontend URL | `https://portal.stloads.com` |
 | Rust backend URL | `https://stloads-rust-backend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud` |
 | Database | IBM PostgreSQL live IBM Code Engine runtime / disposable smoke dataset for verification |
@@ -132,10 +132,10 @@ Use this section for observations that are not findings yet.
 - COS validation passed after switching staging to `ibm_cos` and redeploying the current backend image.
 - PHP app URL is now recorded from local config as `https://portal.stloads.com`.
 - Rust-side disposable QA operator accounts are now seeded and verified through the hosted IBM backend using `scripts/seed_operator_qa_accounts.ps1`.
-- PHP login verification now passes for admin, shipper, carrier, broker, and freight-forwarder through `scripts/verify_php_role_logins.ps1`.
+- Historical PHP login verification passed for admin, shipper, carrier, broker, and freight-forwarder before the local PHP verification scripts were removed.
 - Hosted Rust role and lifecycle-state verification now also passes through `scripts/verify_rust_role_matrix.ps1`, so the remaining QA-002 risk is on the PHP lifecycle-state side and true browser comparison rather than on Rust route uncertainty.
 - The hosted role-matrix script now refreshes the disposable Rust lifecycle-state QA accounts before asserting their states, so reruns stay stable even after staging data drifts during manual QA.
-- `scripts/verify_php_lifecycle_states.ps1` now exists to verify PHP pending-OTP, pending-review, revision-requested, and rejected behavior with real hosted credentials.
+- Historical PHP pending-OTP, pending-review, revision-requested, and rejected behavior was verified with real hosted credentials before the local PHP verification scripts were removed.
 - The earlier PHP accounts that had been labeled as pending OTP, pending review, revision requested, and rejected did not actually behave as those states; both manual checks and the verifier confirmed they logged into `/dashboard`.
 - Fresh hosted PHP lifecycle accounts were created directly on 2026-04-25 through the live Laravel registration, OTP, onboarding, and admin-review flows, and the verifier now passes for pending review, revision requested, and rejected.
 - The last PHP-side blocker is the pending-OTP redirect path: `AuthController::otp()` logs an undefined `$fromAddress`, catches its own exception, and sends the user back to `/normal-login` with the generic error banner instead of showing the OTP form.

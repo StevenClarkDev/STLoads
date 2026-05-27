@@ -1,6 +1,6 @@
 # Master Plan
 
-This is the working blueprint for the Rust + Leptos copy of STLoads.
+This is the working blueprint for the Rust + Leptos STLoads platform.
 
 For the current enterprise-readiness execution tracker, use `docs/ENTERPRISE_LOADBOARD_TASK_LIST.md`.
 For the higher-level roadmap behind that tracker, use `docs/ENTERPRISE_LOADBOARD_ROADMAP.md`.
@@ -28,8 +28,8 @@ For test lanes, CI jobs, pinned frontend tooling, Docker gates, and smoke/perfor
 
 ## What Exists Now
 
-- The current production system remains the Laravel application at the repo root.
-- The Rust port lives under `rust-port/`.
+- The Rust application lives under `rust-port/`.
+- The old Laravel/PHP scaffold has been removed from the repository root. Historical Laravel references in docs are migration evidence only.
 - Initial workspace scaffold exists for:
   - `crates/backend`
   - `crates/db`
@@ -43,7 +43,7 @@ For test lanes, CI jobs, pinned frontend tooling, Docker gates, and smoke/perfor
 
 ## Migration Rule
 
-The PHP system stays authoritative until each feature area is rebuilt and validated inside `rust-port/`.
+The Rust workspace is the active application source. Historical PHP/Laravel notes should be used only for audit trail, parity history, and legacy data reconciliation.
 
 ## Deployment Constraint
 

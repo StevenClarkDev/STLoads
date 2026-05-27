@@ -7,7 +7,7 @@ These are for IBM staging only and are safe to recreate with `scripts/seed_opera
 
 ## URLs
 
-- PHP app: `https://portal.stloads.com`
+- Historical PHP app used during migration: `https://portal.stloads.com`
 - Rust backend: `https://stloads-rust-backend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud`
 - Rust frontend: `https://stloads-rust-frontend.28hm0zrfwqqw.us-south.codeengine.appdomain.cloud`
 
