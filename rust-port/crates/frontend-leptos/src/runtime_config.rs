@@ -25,5 +25,10 @@ pub fn backend_api_base_url() -> Option<String> {
 }
 
 pub fn google_maps_api_key() -> Option<String> {
-    read_string_property("googleMapsApiKey")
+    read_string_property("googleMapsApiKey").or_else(|| {
+        option_env!("GOOGLE_MAPS_API_KEY")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
 }

@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>STLoads</title>
+  <meta name="description" content="STLoads freight and logistics management platform for shippers, carriers, and brokers." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,700;0,800;0,900;1,700;1,800;1,900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --blue: #0077ff;
+      --dark: #000;
+      --card: #4b4b4b;
+      --grey: #787878;
+      --purple: #6750a4;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: #000;
+      color: #fff;
+      font-family: Inter, Arial, sans-serif;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .stage {
+      width: 100vw;
+      height: var(--stage-height, 4755px);
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .canvas {
+      position: relative;
+      width: 1440px;
+      height: 4755px;
+      background: #000;
+      overflow: hidden;
+      transform: scale(var(--stage-scale, 1));
+      transform-origin: top left;
+    }
+
+    .top-strip {
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: 1440px;
+      height: 54px;
+      background: var(--blue);
+    }
+
+    .strip-word {
+      position: absolute;
+      top: 16px;
+      font-size: 16px;
+      line-height: 1.2;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .strip-dot {
+      position: absolute;
+      top: 20px;
+      width: 13px;
+      height: 13px;
+      border-radius: 999px;
+      background: #fff;
+    }
+
+    .hero-image {
+      position: absolute;
+      left: 0;
+      top: 52px;
+      width: 1440px;
+      height: 630px;
+      object-fit: cover;
+    }
+
+    .hero-shade {
+      position: absolute;
+      left: 0;
+      top: 54px;
+      width: 1440px;
+      height: 626px;
+      background: rgba(0, 0, 0, .45);
+    }
+
+    .logo-crop {
+      position: absolute;
+      left: 53px;
+      top: 75px;
+      width: 207px;
+      height: 82px;
+      overflow: hidden;
+      filter: drop-shadow(0 4px 4px rgba(0, 0, 0, .25));
+    }
+
+    .logo-crop img {
+      position: absolute;
+      left: -33.59%;
+      top: -66.67%;
+      width: 169.51%;
+      height: 241.18%;
+      max-width: none;
+    }
+
+    .nav-link {
+      position: absolute;
+      top: 97px;
+      font-size: 14px;
+      line-height: 1.2;
+      font-weight: 700;
+      color: #000;
+    }
+
+    .nav-button {
+      position: absolute;
+      top: 85px;
+      height: 45px;
+      border-radius: 6px;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      line-height: 1.2;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .hero-kicker {
+      position: absolute;
+      left: 40px;
+      top: 239px;
+      width: 432px;
+      height: 53px;
+      border-radius: 6px;
+      background: #fff;
+      color: var(--blue);
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 700;
+      white-space: pre;
+    }
+
+    .hero-title {
+      position: absolute;
+      left: 47px;
+      top: 318px;
+      width: 520px;
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.14;
+      font-weight: 900;
+      font-style: italic;
+      color: #fff;
+    }
+
+    .blue { color: var(--blue); }
+
+    .hero-copy {
+      position: absolute;
+      left: 47px;
+      top: 430px;
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 800;
+      color: #fff;
+      text-shadow: 0 4px 1.1px rgba(0, 0, 0, .71);
+      white-space: pre-line;
+    }
+
+    .hero-cta {
+      position: absolute;
+      top: 530px;
+      height: 68px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 900;
+      font-style: italic;
+      color: #fff;
+    }
+
+    .stats-band {
+      position: absolute;
+      left: 0;
+      top: 682px;
+      width: 1440px;
+      height: 146px;
+      background: var(--blue);
+    }
+
+    .stat {
+      position: absolute;
+      top: 713px;
+      transform: translateX(-50%);
+      text-align: center;
+      color: #fff;
+      font-weight: 900;
+      font-style: italic;
+      white-space: nowrap;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 38px;
+      line-height: 1.2;
+    }
+
+    .stat span {
+      display: block;
+      font-size: 18px;
+      line-height: 1.2;
+    }
+
+    .section-kicker {
+      position: absolute;
+      margin: 0;
+      color: var(--blue);
+      font-weight: 900;
+      font-style: italic;
+      line-height: 1.2;
+    }
+
+    .portal-title {
+      position: absolute;
+      left: 90px;
+      top: 907px;
+      width: 337px;
+      margin: 0;
+      color: #fff;
+      font-size: 34px;
+      line-height: 1.39;
+      font-weight: 900;
+      font-style: italic;
+    }
+
+    .portal-copy {
+      position: absolute;
+      left: 533px;
+      top: 927px;
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+      font-weight: 500;
+      color: #fff;
+      white-space: pre-line;
+    }
+
+    .role-card {
+      position: absolute;
+      top: 1017px;
+      width: 395px;
+      height: 572px;
+      border-radius: 8px;
+      background: var(--card);
+    }
+
+    .role-card.shipper {
+      left: 74px;
+      border-radius: 0;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    .role-card.shipper img {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .role-card.carrier { left: 509px; top: 1016px; width: 399px; }
+    .role-card.broker { left: 946px; }
+
+    .role-name {
+      position: absolute;
+      top: 1051px;
+      margin: 0;
+      color: var(--blue);
+      font-size: 30px;
+      line-height: 1.2;
+      font-weight: 900;
+    }
+
+    .role-heading {
+      position: absolute;
+      top: 1137px;
+      margin: 0;
+      color: #fff;
+      font-size: 14px;
+      line-height: 1.2;
+      font-weight: 700;
+    }
+
+    .role-body {
+      position: absolute;
+      top: 1187px;
+      margin: 0;
+      color: #fff;
+      font-size: 14px;
+      line-height: 1.22;
+      font-weight: 700;
+      white-space: pre-line;
+    }
+
+    .role-point {
+      position: absolute;
+      margin: 0;
+      color: #fff;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 700;
+    }
+
+    .check {
+      position: absolute;
+      width: 17px;
+      height: 9px;
+      border-left: 4px solid #fff;
+      border-bottom: 4px solid #fff;
+      transform: rotate(-45deg);
+    }
+
+    .blue-check {
+      border-color: var(--blue);
+    }
+
+    .role-button {
+      position: absolute;
+      top: 1493px;
+      height: 47px;
+      display: grid;
+      place-items: center;
+      background: var(--blue);
+      color: #fff;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 400;
+    }
+
+    .process-band {
+      position: absolute;
+      left: 1px;
+      top: 1650px;
+      width: 1440px;
+      height: 548px;
+      background: var(--card);
+    }
+
+    .process-title {
+      position: absolute;
+      left: 69px;
+      top: 1767px;
+      width: 325px;
+      margin: 0;
+      color: #fff;
+      font-size: 34px;
+      line-height: 1.18;
+      font-weight: 900;
+      font-style: italic;
+    }
+
+    .process-copy {
+      position: absolute;
+      left: 558px;
+      top: 1759px;
+      width: 661px;
+      margin: 0;
+      color: #fff;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 400;
+      white-space: pre-line;
+    }
+
+    .step-num {
+      position: absolute;
+      top: 1919px;
+      margin: 0;
+      color: #fff;
+      font-size: 62px;
+      line-height: 1.05;
+      font-weight: 400;
+    }
+
+    .step-title {
+      position: absolute;
+      top: 1988px;
+      margin: 0;
+      color: #fff;
+      font-size: 22px;
+      line-height: 1.2;
+      font-weight: 400;
+    }
+
+    .step-copy {
+      position: absolute;
+      top: 2032px;
+      margin: 0;
+      color: #fff;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 400;
+      white-space: pre-line;
+    }
+
+    .cap-title {
+      position: absolute;
+      left: 524px;
+      top: 2291px;
+      margin: 0;
+      color: var(--blue);
+      font-size: 34px;
+      line-height: 1.2;
+      font-weight: 700;
+    }
+
+    .cap-sub {
+      position: absolute;
+      left: 446px;
+      top: 2345px;
+      width: 509px;
+      margin: 0;
+      color: #fff;
+      font-size: 22px;
+      line-height: 1.2;
+      font-weight: 900;
+      font-style: italic;
+    }
+
+    .feature {
+      position: absolute;
+      width: 402px;
+      height: 215px;
+      border-radius: 5px;
+      background: var(--card);
+      color: #fff;
+    }
+
+    .feature-icon {
+      position: absolute;
+      left: 24px;
+      top: 16px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: #f5f5f5;
+      color: #4b4b4b;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .feature h3 {
+      position: absolute;
+      left: 24px;
+      top: 56px;
+      margin: 0;
+      color: #fff;
+      font-size: 22px;
+      line-height: 1.2;
+      font-weight: 700;
+      font-style: italic;
+    }
+
+    .feature p {
+      position: absolute;
+      left: 20px;
+      top: 102px;
+      width: 343px;
+      margin: 0;
+      color: #fff;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 500;
+    }
+
+    .about-image {
+      position: absolute;
+      left: 701px;
+      top: 3045px;
+      width: 674px;
+      height: 355px;
+      object-fit: cover;
+    }
+
+    .about-title {
+      position: absolute;
+      left: 62px;
+      top: 3128px;
+      width: 430px;
+      margin: 0;
+      color: #fff;
+      font-size: 30px;
+      line-height: 1.2;
+      font-weight: 800;
+      font-style: italic;
+      white-space: pre-line;
+    }
+
+    .about-copy {
+      position: absolute;
+      left: 59px;
+      top: 3272px;
+      width: 635px;
+      margin: 0;
+      color: #fff;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 500;
+      white-space: pre-line;
+    }
+
+    .about-check {
+      position: absolute;
+      left: 42px;
+      width: 13px;
+      height: 13px;
+      border-radius: 2px;
+      background: var(--purple);
+    }
+
+    .about-check::after {
+      content: "";
+      position: absolute;
+      left: 4px;
+      top: 1px;
+      width: 4px;
+      height: 8px;
+      border-right: 2px solid #fff;
+      border-bottom: 2px solid #fff;
+      transform: rotate(45deg);
+    }
+
+    .about-point {
+      position: absolute;
+      left: 85px;
+      margin: 0;
+      color: #fff;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .cta-band {
+      position: absolute;
+      left: 0;
+      top: 3849px;
+      width: 1440px;
+      height: 492px;
+      background: var(--blue);
+    }
+
+    .cta-title {
+      position: absolute;
+      left: 141px;
+      top: 3928px;
+      margin: 0;
+      color: #fff;
+      font-size: 34px;
+      line-height: 1.2;
+      font-weight: 400;
+      white-space: pre-line;
+    }
+
+    .cta-copy {
+      position: absolute;
+      left: 145px;
+      top: 4053px;
+      margin: 0;
+      color: #fff;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 400;
+      white-space: pre-line;
+    }
+
+    .white-button {
+      position: absolute;
+      height: 65px;
+      border-radius: 5px;
+      display: grid;
+      place-items: center;
+      background: #fff;
+      color: var(--blue);
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 400;
+    }
+
+    .footer-text {
+      position: absolute;
+      margin: 0;
+      color: #fff;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 700;
+    }
+
+    .footer-bottom {
+      position: absolute;
+      left: 0;
+      top: 4711px;
+      width: 1440px;
+      height: 44px;
+      border-radius: 6px;
+      background: var(--blue);
+    }
+
+  </style>
+</head>
+<body>
+  <main class="stage" aria-label="STLoads landing page">
+    <div class="canvas">
+      <div class="top-strip"></div>
+      <span class="strip-word" style="left:530px">SECURE</span>
+      <span class="strip-dot" style="left:621px"></span>
+      <span class="strip-word" style="left:652px">TRANSPARENT</span>
+      <span class="strip-dot" style="left:804px"></span>
+      <span class="strip-word" style="left:830px">ALWAYS</span>
+
+      <img class="hero-image" src="/assets/hero.png" alt="" />
+      <div class="hero-shade"></div>
+      <a class="logo-crop" href="/"><img src="/assets/logo.png" alt="STLoads" /></a>
+
+      <a class="nav-link" href="#portals" style="left:373px">Portals</a>
+      <a class="nav-link" href="/how-it-works.html" style="left:472px">How It Works</a>
+      <a class="nav-link" href="/features.html" style="left:613px">Features</a>
+      <a class="nav-link" href="/about.html" style="left:733px">About Us</a>
+      <a class="nav-link" href="/contact.html" style="left:860px">Contact</a>
+      <a class="nav-button" href="https://portal.stloads.com/auth/login" style="left:1068px;width:110px;background:#787878">Sign In</a>
+      <a class="nav-button" href="https://portal.stloads.com/auth/register" style="left:1200px;width:164px;background:#0077ff">Get Started</a>
+
+      <div class="hero-kicker">FREIGHT  &  LOGISTICS  MANAGEMENT</div>
+      <h1 class="hero-title">Every Load Managed<br />With <span class="blue">Absolute Precision.</span></h1>
+      <p class="hero-copy">STLoads connects shippers, carriers, and brokers on a single
+intelligent platform built for speed, visibility, and total
+operational control.</p>
+      <a class="hero-cta" href="https://portal.stloads.com/auth/register" style="left:47px;width:223px;background:#0077ff">Join the Platform</a>
+      <a class="hero-cta" href="#portals" style="left:289px;width:189px;background:#787878">Explore Portals</a>
+
+      <div class="stats-band"></div>
+      <div class="stat" style="left:181px"><strong>500+</strong><span>Verified Carriers</span></div>
+      <div class="stat" style="left:529.5px"><strong>10K+</strong><span>Loads Delivered</span></div>
+      <div class="stat" style="left:884px"><strong>350+</strong><span>Active Shippers</span></div>
+      <div class="stat" style="left:1233.5px"><strong>24/7</strong><span>Dedicated Support</span></div>
+
+      <p id="portals" class="section-kicker" style="left:104px;top:864px;font-size: 22px">Portal Access</p>
+      <h2 class="portal-title">One Platform.<br />Every Role.</h2>
+      <p class="portal-copy">Whether you're moving freight, hauling loads, or brokering deals
+STLoads has a dedicated portal built for your workflow.</p>
+
+      <div class="role-card shipper"><img src="/assets/shipper.svg" alt="" /></div>
+      <div class="role-card carrier"></div>
+      <div class="role-card broker"></div>
+
+      <p class="role-name" style="left:208px">Shipper</p>
+      <p class="role-heading" style="left:116px">Post Loads & Get Quotes</p>
+      <p class="role-body" style="left:116px;width:349px">Submit freight, receive competitive
+carrier bids, track shipments in
+real time, and manage every load
+from one dashboard.</p>
+      <span class="check" style="left:114px;top:1309px"></span>
+      <p class="role-point" style="left:150px;top:1306px">Instant load matching</p>
+      <span class="check" style="left:114px;top:1353px"></span>
+      <p class="role-point" style="left:150px;top:1350px">Real-time shipment tracking</p>
+      <span class="check" style="left:114px;top:1397px"></span>
+      <p class="role-point" style="left:150px;top:1394px">Digital BOL & invoicing</p>
+      <span class="check" style="left:114px;top:1436px"></span>
+      <p class="role-point" style="left:150px;top:1433px">Carrier performance reports</p>
+      <a class="role-button" href="https://portal.stloads.com/auth/register?role=shipper" style="left:136px;width:251px">Shipper Registration -&gt;</a>
+
+      <p class="role-name" style="left:651px">Carrier</p>
+      <p class="role-heading" style="left:552px">Find Loads & Grow Revenue</p>
+      <p class="role-body" style="left:552px;top:1194px;width:380px">Browse available loads that match your
+routes, bid competitively, and maximize
+your fleet utilization with smart tools.</p>
+      <span class="check blue-check" style="left:544px;top:1310px"></span>
+      <p class="role-point" style="left:581px;top:1306px">Load board access</p>
+      <span class="check blue-check" style="left:544px;top:1354px"></span>
+      <p class="role-point" style="left:581px;top:1350px">Route-optimized matching</p>
+      <span class="check blue-check" style="left:544px;top:1400px"></span>
+      <p class="role-point" style="left:581px;top:1396px">Faster payment processing</p>
+      <span class="check blue-check" style="left:544px;top:1443px"></span>
+      <p class="role-point" style="left:581px;top:1439px">Fleet management dashboard</p>
+      <a class="role-button" href="https://portal.stloads.com/auth/register?role=carrier" style="left:604px;width:219px">Carrier Sign Up -&gt;</a>
+
+      <p class="role-name" style="left:1090px">Broker</p>
+      <p class="role-heading" style="left:980px">Coordinate & Earn on Freight</p>
+      <p class="role-body" style="left:980px;width:332px">Connect shippers with the right carriers,
+manage multiple accounts, and
+earn on every deal with full transaction
+visibility.</p>
+      <span class="check blue-check" style="left:970px;top:1310px"></span>
+      <p class="role-point" style="left:1011px;top:1308px">Multi-shipper management</p>
+      <span class="check blue-check" style="left:970px;top:1354px"></span>
+      <p class="role-point" style="left:1011px;top:1352px">Carrier vetting tools</p>
+      <span class="check blue-check" style="left:970px;top:1398px"></span>
+      <p class="role-point" style="left:1011px;top:1395px">Commission tracking</p>
+      <span class="check blue-check" style="left:970px;top:1443px"></span>
+      <p class="role-point" style="left:1011px;top:1435px">Full audit trail</p>
+      <a class="role-button" href="https://portal.stloads.com/auth/register?role=broker" style="left:1030px;width:214px">Broker Access -&gt;</a>
+
+      <div id="process" class="process-band"></div>
+      <p class="section-kicker" style="left:70px;top:1717px;font-size: 22px;color:#123daa">The Process</p>
+      <h2 class="process-title">From Pickup to<br />Perfect Delivery.</h2>
+      <p class="process-copy">Every order is managed with precision, transparency,
+and professionalism giving you confidence and control over your
+freight operations.</p>
+      <p class="step-num" style="left:82px">01</p>
+      <p class="step-title" style="left:68px;top:1997px">Create Your Account</p>
+      <p class="step-copy" style="left:68px;width:304px;top:2039px">Register as a shipper, carrier,
+or broker in minutes. No
+paperwork, no friction.</p>
+      <p class="step-num" style="left:454px">02</p>
+      <p class="step-title" style="left:433px">Post or Find Loads</p>
+      <p class="step-copy" style="left:417px;width:285px;top:2039px">Shippers post freight, carriers
+browse the board, brokers
+coordinate all in one place.</p>
+      <p class="step-num" style="left:787px">03</p>
+      <p class="step-title" style="left:765px">Confirm & Dispatch</p>
+      <p class="step-copy" style="left:762px;width:328px">Accept bids, confirm routes, and
+dispatch. The system handles
+notifications and documents
+automatically.</p>
+      <p class="step-num" style="left:1127px">04</p>
+      <p class="step-title" style="left:1112px">Track & Get Paid</p>
+      <p class="step-copy" style="left:1120px;width:250px">Monitor every shipment live.
+POD is captured, invoices
+generated, and payments
+processed seamlessly.</p>
+
+      <h2 id="features" class="cap-title">Platform Capabilities</h2>
+      <p class="cap-sub">Built for Every Stage of the Freight Cycle.</p>
+      <article class="feature" style="left:70px;top:2417px"><span class="feature-icon">★</span><h3>Instant Load Matching</h3><p>Smart algorithms match freight with the right carrier based on route, capacity, and availability in minutes.</p></article>
+      <article class="feature" style="left:521px;top:2417px"><span class="feature-icon">⌖</span><h3>Real-Time Tracking</h3><p>Live shipment visibility from pickup to delivery. All parties stay informed at every milestone.</p></article>
+      <article class="feature" style="left:968px;top:2417px"><span class="feature-icon">◔</span><h3>Verified Carrier Network</h3><p>Every carrier is vetted, licensed, and insured. Only qualified operators move your freight.</p></article>
+      <article class="feature" style="left:70px;top:2642px"><span class="feature-icon">D</span><h3>Digital Documentation</h3><p>BOLs, rate confirmations, invoices, and PODs all generated and stored digitally.</p></article>
+      <article class="feature" style="left:521px;top:2642px"><span class="feature-icon">▰</span><h3>Analytics Dashboard</h3><p>Track spend, on-time rates, lane performance, and carrier metrics from one clean dashboard.</p></article>
+      <article class="feature" style="left:972px;top:2642px"><span class="feature-icon">24</span><h3>24/7 Support</h3><p>Dedicated logistics specialists available around the clock to resolve issues and keep freight moving.</p></article>
+
+      <p id="about" class="section-kicker" style="left:59px;top:3031px;font-size: 38px">Who We Are</p>
+      <p class="section-kicker" style="left:65px;top:3079px;font-size: 22px">About STLoads</p>
+      <h2 class="about-title">Built by Logistics
+Experts.
+Trusted by the Industry.</h2>
+      <p class="about-copy">STLoads is a freight management portal engineered
+to eliminate  friction from the supply chain.
+We give shippers, carriers, and  brokers the tools they need to
+operate with speed, transparency,  and confidence  every mile,
+every load.</p>
+      <span class="about-check" style="top:3472px"></span>
+      <p class="about-point" style="top:3472px">Designed specifically for the complexities of modern freight logistics</p>
+      <span class="about-check" style="top:3520px"></span>
+      <p class="about-point" style="top:3520px">Carrier vetting and compliance built into every transaction</p>
+      <span class="about-check" style="top:3571px"></span>
+      <p class="about-point" style="top:3571px">Real-time visibility and documentation from a single platform</p>
+      <span class="about-check" style="top:3619px"></span>
+      <p class="about-point" style="top:3619px">Dedicated support team with deep industry knowledge</p>
+      <a class="nav-button" href="https://portal.stloads.com/auth/register" style="left:61px;top:3712px;width:280px;height:61px;background:#0077ff;font-size: 22px;font-weight:500">Get Started Today -&gt;</a>
+      <img class="about-image" src="/assets/about.png" alt="" />
+
+      <div class="cta-band"></div>
+      <h2 class="cta-title">Ready to Move Freight
+the Right Way?</h2>
+      <p class="cta-copy">Join shippers, carriers, and brokers already
+running smarter logistics on STLoads.</p>
+      <a class="white-button" href="https://portal.stloads.com/auth/register?role=shipper" style="left:141px;top:4171px;width:248px">Register as Shipper</a>
+      <a class="white-button" href="https://portal.stloads.com/auth/register?role=carrier" style="left:437px;top:4174px;width:199px">Carrier Sign Up</a>
+
+      <a class="logo-crop" href="/" style="left:35px;top:4403px;width:206px;height:72px"><img src="/assets/logo.png" alt="STLoads" /></a>
+      <p class="footer-text" style="left:28px;top:4491px;width:450px">STLoads empowers shippers, carriers, and brokers with disciplined execution, seamless freight management, and full operational transparency.</p>
+      <p class="footer-text" style="left:838px;top:4414px">Portals</p>
+      <a class="footer-text" href="https://portal.stloads.com/auth/register?role=shipper" style="left:837px;top:4461px">Shipper</a>
+      <a class="footer-text" href="https://portal.stloads.com/auth/register?role=carrier" style="left:837px;top:4512px">Carrier</a>
+      <a class="footer-text" href="https://portal.stloads.com/auth/register?role=broker" style="left:837px;top:4568px">Broker</a>
+      <a class="footer-text" href="https://portal.stloads.com/auth/login" style="left:837px;top:4624px">Sign In</a>
+      <p id="contact" class="footer-text" style="left:1155px;top:4414px">Contact</p>
+      <p class="footer-text" style="left:1141px;top:4464px">Contact Us</p>
+      <p class="footer-text" style="left:1141px;top:4520px">123456789</p>
+      <p class="footer-text" style="left:1141px;top:4575px">Email address</p>
+      <p class="footer-text" style="left:1141px;top:4629px">United States</p>
+      <div class="footer-bottom"></div>
+      <p style="position:absolute;left:564px;top:4724px;margin:0;color:#fff;font-size: 14px;font-weight:700">All Rights Reserved. Copyrights @ 2026</p>
+    </div>
+  </main>
+  <script>
+    const setStageScale = () => {
+      const scale = window.innerWidth / 1440;
+      document.documentElement.style.setProperty('--stage-scale', scale);
+      document.documentElement.style.setProperty('--stage-height', `${4755 * scale}px`);
+    };
+    setStageScale();
+    window.addEventListener('resize', setStageScale);
+  </script>
+</body>
+</html>

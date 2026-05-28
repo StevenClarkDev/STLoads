@@ -724,8 +724,7 @@ async fn login(
         }));
     };
 
-    let password_matches = verify(&payload.password, &user.password)
-        .unwrap_or_else(|_| payload.password == user.password);
+    let password_matches = verify_user_password(&payload.password, &user.password);
 
     if !password_matches {
         log_auth_failure("login", &email, "password verification failed");
@@ -3457,8 +3456,8 @@ async fn change_password(
         }));
     }
 
-    let current_password_matches = verify(&payload.current_password, &resolved.user.password)
-        .unwrap_or_else(|_| payload.current_password == resolved.user.password);
+    let current_password_matches =
+        verify_user_password(&payload.current_password, &resolved.user.password);
 
     if !current_password_matches {
         return Json(ApiResponse::ok(ChangePasswordResponse {
@@ -5593,6 +5592,21 @@ fn text_response(status: StatusCode, message: &str) -> Response {
     (status, message.to_string()).into_response()
 }
 
+fn verify_user_password(password: &str, stored_password: &str) -> bool {
+    if verify(password, stored_password).unwrap_or(false) {
+        return true;
+    }
+
+    if let Some(laravel_bcrypt) = stored_password.strip_prefix("$2y$") {
+        let normalized_hash = format!("$2b${laravel_bcrypt}");
+        if verify(password, &normalized_hash).unwrap_or(false) {
+            return true;
+        }
+    }
+
+    password == stored_password
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5613,6 +5627,15 @@ mod tests {
             sha256_hex(b"stloads document bytes"),
             "2c236321204a3754c2f4ebd233c071f0118706b551d811b7c852e3a393c294db"
         );
+    }
+
+    #[test]
+    fn password_verification_accepts_laravel_bcrypt_prefix() {
+        let bcrypt_hash = hash("Password123!", 4).expect("bcrypt hash");
+        let laravel_hash = bcrypt_hash.replacen("$2b$", "$2y$", 1);
+
+        assert!(verify_user_password("Password123!", &laravel_hash));
+        assert!(!verify_user_password("WrongPassword123!", &laravel_hash));
     }
 
     #[test]

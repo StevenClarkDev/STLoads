@@ -75,11 +75,14 @@ export async function stloadsAttachAddressAutocomplete(inputId, cityId, countryI
     throw new Error('Google Maps Places library is not loaded.');
   }
 
+  const region = ((navigator.language || 'en-US').split(/[-_]/)[1] || '').toLowerCase();
   const options = {
     types: ['geocode', 'establishment'],
     fields: ['formatted_address', 'geometry', 'name', 'address_components', 'place_id'],
-    componentRestrictions: { country: ['us', 'ca'] },
   };
+  if (region) {
+    options.componentRestrictions = { country: [region] };
+  }
 
   const autocomplete = new google.maps.places.Autocomplete(input, options);
   autocomplete.setOptions({ strictBounds: false });
@@ -95,9 +98,10 @@ export async function stloadsAttachAddressAutocomplete(inputId, cityId, countryI
           east: longitude + biasDelta,
           west: longitude - biasDelta,
         });
+        autocomplete.setOptions({ componentRestrictions: null });
       },
       () => {
-        // No GPS or permission denied. Leave predictions unbiased so Google returns general suggestions.
+        // No GPS or permission denied. Browser-region restriction keeps suggestions local.
       },
       { enableHighAccuracy: false, maximumAge: 300000, timeout: 2500 }
     );

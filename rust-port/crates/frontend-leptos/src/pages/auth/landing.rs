@@ -3,7 +3,6 @@ use leptos_router::components::A;
 
 use crate::api;
 
-use crate::pages::auth_helpers::*;
 #[component]
 pub fn PortalLandingPage() -> impl IntoView {
     let shipper_count = RwSignal::new("Count --".to_string());
@@ -76,5 +75,28 @@ pub fn PortalLandingPage() -> impl IntoView {
                 />
             </section>
         </section>
+    }
+}
+
+#[component]
+fn RoleSignupCard(
+    signup_href: &'static str,
+    icon_class: &'static str,
+    title: &'static str,
+    role_count: Signal<String>,
+    description: &'static str,
+) -> impl IntoView {
+    view! {
+        <article class="portal-role-card">
+            <div class="portal-role-content">
+                <i class=format!("portal-role-icon {}", icon_class)></i>
+                <h3 class="portal-role-title">{title}</h3>
+                <p class="portal-role-count">{move || role_count.get()}</p>
+                <p class="portal-role-copy">{description}</p>
+                <div class="portal-role-actions">
+                    <A href=signup_href attr:class="portal-role-cta">"Start Signup"</A>
+                </div>
+            </div>
+        </article>
     }
 }

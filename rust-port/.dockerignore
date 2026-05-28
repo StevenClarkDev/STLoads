@@ -1,4 +1,6 @@
 target
+node_modules
+.tmp
 .git
 .gitignore
 .env
@@ -7,6 +9,8 @@ target
 README.md
 /docs
 /scripts
+/runtime
+package-lock.json
 .cos-*
 .tmp-ibm-*
 crates/frontend-leptos/dist

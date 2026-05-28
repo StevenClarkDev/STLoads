@@ -13,6 +13,7 @@ use shared::{
     UpsertKycDocumentRequest, VerifyKycDocumentRequest,
 };
 
+use super::auth_helpers::AddressAutocompleteField;
 use super::profile_helpers::*;
 use super::profile_kyc_helpers::render_kyc_workspace;
 
@@ -546,10 +547,12 @@ pub fn ProfilePage() -> impl IntoView {
                                     <label style=FIELD_LABEL_STYLE><span>"Phone"</span><input type="text" prop:value=move || phone_no.get() on:input=move |ev| phone_no.set(event_target_value(&ev)) /></label>
                                     <label style=FIELD_LABEL_STYLE><span>"Company"</span><input type="text" prop:value=move || company_name.get() on:input=move |ev| company_name.set(event_target_value(&ev)) /></label>
                                 </div>
-                                <label style=FIELD_LABEL_STYLE>
-                                    <span>"Address"</span>
-                                    <textarea rows="2" prop:value=move || address.get() on:input=move |ev| address.set(event_target_value(&ev)) style="padding:0.75rem 0.85rem;border:1px solid #d6d3d1;border-radius:0.85rem;resize:vertical;" />
-                                </label>
+                                <AddressAutocompleteField
+                                    label="Address"
+                                    value=address
+                                    placeholder="Search profile address"
+                                    input_id="profile-address"
+                                />
 
                                 {show_carrier_fields.then(|| view! {
                                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">

@@ -7,6 +7,7 @@ use crate::{
 use shared::{AdminCreateUserRequest, AdminUserDirectoryScreen, AdminUserProfileScreen};
 
 use super::admin_guard_view;
+use super::auth_helpers::AddressAutocompleteField;
 
 use super::admin_users_helpers::*;
 
@@ -157,7 +158,12 @@ pub fn AdminUsersPage() -> impl IntoView {
                                     <option value="revision_requested">"Revision Requested"</option>
                                     <option value="rejected">"Rejected"</option>
                                 </select>
-                                <input type="text" placeholder="Address" prop:value=move || create_address.get() on:input=move |ev| create_address.set(event_target_value(&ev)) />
+                                <AddressAutocompleteField
+                                    label="Address"
+                                    value=create_address
+                                    placeholder="Search user address"
+                                    input_id="admin-create-user-address"
+                                />
                                 <input type="password" placeholder="Password" prop:value=move || create_password.get() on:input=move |ev| create_password.set(event_target_value(&ev)) />
                                 <input type="password" placeholder="Confirm password" prop:value=move || create_password_confirmation.get() on:input=move |ev| create_password_confirmation.set(event_target_value(&ev)) />
                             </div>

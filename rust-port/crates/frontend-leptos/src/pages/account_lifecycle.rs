@@ -9,6 +9,7 @@ use shared::{
 };
 
 use super::admin_guard_view;
+use super::auth_helpers::AddressAutocompleteField;
 
 #[component]
 pub fn AccountLifecyclePage() -> impl IntoView {
@@ -341,7 +342,12 @@ fn LifecycleCreateCard(
                     <option value="freight_forwarder">"Freight Forwarder"</option>
                 </select>
                 <input type="text" placeholder="Phone" prop:value=move || phone.get() on:input=move |ev| phone.set(event_target_value(&ev)) />
-                <input type="text" placeholder="Address" prop:value=move || address.get() on:input=move |ev| address.set(event_target_value(&ev)) />
+                <AddressAutocompleteField
+                    label="Address"
+                    value=address
+                    placeholder="Search account address"
+                    input_id=format!("account-lifecycle-{}-address", status_key)
+                />
                 <input type="password" placeholder="Password" prop:value=move || password.get() on:input=move |ev| password.set(event_target_value(&ev)) />
                 <input type="password" placeholder="Confirm password" prop:value=move || password_confirmation.get() on:input=move |ev| password_confirmation.set(event_target_value(&ev)) />
             </div>

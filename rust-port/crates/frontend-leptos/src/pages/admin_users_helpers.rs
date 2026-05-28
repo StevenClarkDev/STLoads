@@ -7,6 +7,8 @@ use shared::{
     AdminUserProfileScreen, OtpPurpose, ResendOtpRequest, ReviewOnboardingRequest,
 };
 
+use super::auth_helpers::AddressAutocompleteField;
+
 pub(super) fn scroll_to_top_of_page() {
     #[cfg(target_arch = "wasm32")]
     {
@@ -661,7 +663,12 @@ pub(super) fn render_user_card(
                             <input type="text" placeholder="Name" prop:value=move || detail_name.get() on:input=move |ev| detail_name.set(event_target_value(&ev)) />
                             <input type="email" placeholder="Email" prop:value=move || detail_email.get() on:input=move |ev| detail_email.set(event_target_value(&ev)) />
                             <input type="text" placeholder="Phone" prop:value=move || detail_phone.get() on:input=move |ev| detail_phone.set(event_target_value(&ev)) />
-                            <input type="text" placeholder="Address" prop:value=move || detail_address.get() on:input=move |ev| detail_address.set(event_target_value(&ev)) />
+                            <AddressAutocompleteField
+                                label="Address"
+                                value=detail_address
+                                placeholder="Search profile address"
+                                input_id=format!("admin-user-{}-profile-address", user.user_id)
+                            />
                             <input type="password" placeholder="New password" prop:value=move || detail_password.get() on:input=move |ev| detail_password.set(event_target_value(&ev)) />
                             <input type="password" placeholder="Confirm new password" prop:value=move || detail_password_confirmation.get() on:input=move |ev| detail_password_confirmation.set(event_target_value(&ev)) />
                         </div>

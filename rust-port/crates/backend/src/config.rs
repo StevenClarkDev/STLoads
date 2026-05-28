@@ -340,31 +340,33 @@ impl RuntimeConfig {
             self.object_storage_secret_access_key.as_deref(),
         );
 
-        require_option(
-            &mut errors,
-            "STRIPE_SECRET",
-            self.stripe_secret_key.as_deref(),
-        );
-        require_option(
-            &mut errors,
-            "STRIPE_WEBHOOK_SHARED_SECRET",
-            self.stripe_webhook_shared_secret.as_deref(),
-        );
-        require_option(
-            &mut errors,
-            "STRIPE_WEBHOOK_CONNECT_SECRET",
-            self.stripe_webhook_connect_secret.as_deref(),
-        );
-        require_option(
-            &mut errors,
-            "STRIPE_CONNECT_REFRESH_URL",
-            self.stripe_connect_refresh_url.as_deref(),
-        );
-        require_option(
-            &mut errors,
-            "STRIPE_CONNECT_RETURN_URL",
-            self.stripe_connect_return_url.as_deref(),
-        );
+        if self.stripe_live_transfers_required {
+            require_option(
+                &mut errors,
+                "STRIPE_SECRET",
+                self.stripe_secret_key.as_deref(),
+            );
+            require_option(
+                &mut errors,
+                "STRIPE_WEBHOOK_SHARED_SECRET",
+                self.stripe_webhook_shared_secret.as_deref(),
+            );
+            require_option(
+                &mut errors,
+                "STRIPE_WEBHOOK_CONNECT_SECRET",
+                self.stripe_webhook_connect_secret.as_deref(),
+            );
+            require_option(
+                &mut errors,
+                "STRIPE_CONNECT_REFRESH_URL",
+                self.stripe_connect_refresh_url.as_deref(),
+            );
+            require_option(
+                &mut errors,
+                "STRIPE_CONNECT_RETURN_URL",
+                self.stripe_connect_return_url.as_deref(),
+            );
+        }
 
         require_option(
             &mut errors,
@@ -656,6 +658,19 @@ mod tests {
 
         assert!(error.contains("STRIPE_SECRET"));
         assert!(error.contains("PUBLIC_BASE_URL"));
+    }
+
+    #[test]
+    fn production_allows_manual_finance_without_stripe() {
+        let mut config = production_config();
+        config.stripe_live_transfers_required = false;
+        config.stripe_secret_key = None;
+        config.stripe_webhook_shared_secret = None;
+        config.stripe_webhook_connect_secret = None;
+        config.stripe_connect_refresh_url = None;
+        config.stripe_connect_return_url = None;
+
+        assert!(config.validate_for_startup().is_ok());
     }
 
     #[test]

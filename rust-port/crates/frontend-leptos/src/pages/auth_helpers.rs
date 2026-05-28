@@ -23,31 +23,6 @@ pub(crate) fn AuthArticle(
 }
 
 #[component]
-pub(crate) fn RoleSignupCard(
-    signup_href: &'static str,
-    icon_class: &'static str,
-    title: &'static str,
-    role_count: Signal<String>,
-    description: &'static str,
-) -> impl IntoView {
-    view! {
-        <article class="portal-role-card">
-            <div class="portal-role-content">
-                <i class=format!("{icon_class} portal-role-icon")></i>
-                <h3 class="portal-role-title">{title}</h3>
-                <p class="portal-role-count">{move || role_count.get()}</p>
-                <p class="portal-role-copy">{description}</p>
-                <div class="portal-role-actions">
-                    <A href=signup_href attr:class="portal-role-cta">
-                        "Signup"
-                    </A>
-                </div>
-            </div>
-        </article>
-    }
-}
-
-#[component]
 pub(crate) fn RoleRegisterSwitcher(current_role: RwSignal<String>) -> impl IntoView {
     view! {
         <section class="auth-field">
@@ -163,19 +138,60 @@ pub(crate) fn EmailField(label: &'static str, value: RwSignal<String>) -> impl I
 
 #[component]
 pub(crate) fn PhoneField(label: &'static str, value: RwSignal<String>) -> impl IntoView {
+    let selected_country = RwSignal::new(default_phone_country().iso.to_string());
+    let national_number = RwSignal::new(phone_national_input_from_value(&value.get_untracked()));
+
+    let sync_phone_value = move || {
+        let country = phone_country_by_iso(&selected_country.get());
+        let national_digits = phone_digits(&national_number.get());
+        if national_digits.is_empty() {
+            value.set(String::new());
+        } else {
+            value.set(format_international_phone(country, &national_digits));
+        }
+    };
+
     view! {
         <label class="auth-field">
             <span class="auth-label">{label}</span>
-            <input
-                type="tel"
-                prop:value=move || value.get()
-                on:input=move |ev| value.set(event_target_value(&ev))
-                placeholder="+1(123) 456-6789"
-                class="auth-input"
-                inputmode="tel"
-                autocomplete="tel"
-            />
-            <small class="auth-help">"Include your own country code, for example +1(123) 456-6789"</small>
+            <div style="display:grid;grid-template-columns:minmax(150px, 0.55fr) minmax(0, 1fr);gap:0.65rem;">
+                <select
+                    class="auth-select"
+                    aria-label="Phone country code"
+                    prop:value=move || selected_country.get()
+                    on:change=move |ev| {
+                        selected_country.set(event_target_value(&ev));
+                        sync_phone_value();
+                    }
+                >
+                    {PHONE_COUNTRIES.iter().map(|country| view! {
+                        <option value=country.iso>{format!("{} +{}", country.label, country.dial_code)}</option>
+                    }).collect_view()}
+                </select>
+                <input
+                    type="tel"
+                    prop:value=move || format_national_phone(
+                        phone_country_by_iso(&selected_country.get()),
+                        &phone_digits(&national_number.get()),
+                    )
+                    on:input=move |ev| {
+                        let country = phone_country_by_iso(&selected_country.get());
+                        let digits = phone_digits(&event_target_value(&ev));
+                        national_number.set(limit_phone_digits_for_country(country, &digits));
+                        sync_phone_value();
+                    }
+                    placeholder=move || phone_country_by_iso(&selected_country.get()).placeholder
+                    class="auth-input"
+                    inputmode="tel"
+                    autocomplete="tel-national"
+                />
+            </div>
+            <small class="auth-help">
+                {move || format!(
+                    "Country code is selected automatically from your browser region. Saved as {}.",
+                    phone_country_by_iso(&selected_country.get()).example
+                )}
+            </small>
         </label>
     }
 }
@@ -218,8 +234,9 @@ pub(crate) fn AddressAutocompleteField(
     label: &'static str,
     value: RwSignal<String>,
     placeholder: &'static str,
-    input_id: &'static str,
+    #[prop(into)] input_id: String,
 ) -> impl IntoView {
+    let input_id_for_effect = input_id.clone();
     let city = RwSignal::new(String::new());
     let country = RwSignal::new(String::new());
     let place_id = RwSignal::new(String::new());
@@ -229,7 +246,7 @@ pub(crate) fn AddressAutocompleteField(
 
     Effect::new(move |_| {
         let api_key = runtime_config::google_maps_api_key();
-        let input_id = input_id.to_string();
+        let input_id = input_id_for_effect.clone();
         let city_id = format!("{}-city", input_id);
         let country_id = format!("{}-country", input_id);
         let place_id_id = format!("{}-place-id", input_id);
@@ -269,7 +286,7 @@ pub(crate) fn AddressAutocompleteField(
         <label class="auth-field">
             <span class="auth-label">{label}</span>
             <input
-                id=input_id
+                id=input_id.clone()
                 type="text"
                 prop:value=move || value.get()
                 on:input=move |ev| value.set(event_target_value(&ev))
@@ -499,7 +516,7 @@ pub(crate) fn validate_register_step(
             return Some("Enter a valid email in the format abc@xyz.com.".into());
         }
         if !is_valid_phone_format(phone) {
-            return Some("Enter the phone number in the format +1(123) 456-6789.".into());
+            return Some("Enter a valid phone number with a country code.".into());
         }
         return None;
     }
@@ -557,35 +574,190 @@ pub(crate) fn is_valid_phone_format(value: &str) -> bool {
         return false;
     }
 
-    let Some(open_index) = trimmed.find('(') else {
-        return false;
-    };
-    let Some(close_index) = trimmed.find(')') else {
-        return false;
-    };
-    if close_index <= open_index || close_index + 1 >= trimmed.len() {
-        return false;
+    let digits = phone_digits(trimmed);
+    (8..=15).contains(&digits.len())
+}
+
+#[derive(Clone, Copy)]
+struct PhoneCountry {
+    iso: &'static str,
+    label: &'static str,
+    dial_code: &'static str,
+    national_max_digits: usize,
+    placeholder: &'static str,
+    example: &'static str,
+}
+
+const PHONE_COUNTRIES: &[PhoneCountry] = &[
+    PhoneCountry {
+        iso: "US",
+        label: "United States",
+        dial_code: "1",
+        national_max_digits: 10,
+        placeholder: "(555) 010-1234",
+        example: "+1 (555) 010-1234",
+    },
+    PhoneCountry {
+        iso: "CA",
+        label: "Canada",
+        dial_code: "1",
+        national_max_digits: 10,
+        placeholder: "(416) 555-0100",
+        example: "+1 (416) 555-0100",
+    },
+    PhoneCountry {
+        iso: "PK",
+        label: "Pakistan",
+        dial_code: "92",
+        national_max_digits: 10,
+        placeholder: "300 1234567",
+        example: "+92 300 1234567",
+    },
+    PhoneCountry {
+        iso: "IN",
+        label: "India",
+        dial_code: "91",
+        national_max_digits: 10,
+        placeholder: "98765 43210",
+        example: "+91 98765 43210",
+    },
+    PhoneCountry {
+        iso: "GB",
+        label: "United Kingdom",
+        dial_code: "44",
+        national_max_digits: 10,
+        placeholder: "7400 123456",
+        example: "+44 7400 123456",
+    },
+    PhoneCountry {
+        iso: "MX",
+        label: "Mexico",
+        dial_code: "52",
+        national_max_digits: 10,
+        placeholder: "55 1234 5678",
+        example: "+52 55 1234 5678",
+    },
+    PhoneCountry {
+        iso: "AU",
+        label: "Australia",
+        dial_code: "61",
+        national_max_digits: 9,
+        placeholder: "412 345 678",
+        example: "+61 412 345 678",
+    },
+    PhoneCountry {
+        iso: "AE",
+        label: "United Arab Emirates",
+        dial_code: "971",
+        national_max_digits: 9,
+        placeholder: "50 123 4567",
+        example: "+971 50 123 4567",
+    },
+];
+
+fn default_phone_country() -> PhoneCountry {
+    let region = browser_region_code();
+    PHONE_COUNTRIES
+        .iter()
+        .copied()
+        .find(|country| country.iso == region)
+        .unwrap_or(PHONE_COUNTRIES[0])
+}
+
+fn phone_country_by_iso(iso: &str) -> PhoneCountry {
+    PHONE_COUNTRIES
+        .iter()
+        .copied()
+        .find(|country| country.iso == iso)
+        .unwrap_or(PHONE_COUNTRIES[0])
+}
+
+fn phone_digits(value: &str) -> String {
+    value.chars().filter(|ch| ch.is_ascii_digit()).collect()
+}
+
+fn limit_phone_digits_for_country(country: PhoneCountry, digits: &str) -> String {
+    digits
+        .chars()
+        .take(country.national_max_digits)
+        .collect::<String>()
+}
+
+fn phone_national_input_from_value(value: &str) -> String {
+    let digits = phone_digits(value);
+    PHONE_COUNTRIES
+        .iter()
+        .find_map(|country| digits.strip_prefix(country.dial_code))
+        .unwrap_or(digits.as_str())
+        .to_string()
+}
+
+fn format_international_phone(country: PhoneCountry, national_digits: &str) -> String {
+    let limited = limit_phone_digits_for_country(country, national_digits);
+    let national = format_national_phone(country, &limited);
+    if national.is_empty() {
+        String::new()
+    } else {
+        format!("+{} {}", country.dial_code, national)
     }
+}
 
-    let country_code = &trimmed[1..open_index];
-    let area_code = &trimmed[open_index + 1..close_index];
-    let remainder = &trimmed[close_index + 1..];
+fn format_national_phone(country: PhoneCountry, digits: &str) -> String {
+    let digits = limit_phone_digits_for_country(country, digits);
+    match country.iso {
+        "US" | "CA" => format_north_american_phone(&digits),
+        "PK" => format_grouped_phone(&digits, &[3, 7]),
+        "IN" => format_grouped_phone(&digits, &[5, 5]),
+        "GB" => format_grouped_phone(&digits, &[4, 6]),
+        "MX" => format_grouped_phone(&digits, &[2, 4, 4]),
+        "AU" => format_grouped_phone(&digits, &[3, 3, 3]),
+        "AE" => format_grouped_phone(&digits, &[2, 3, 4]),
+        _ => format_grouped_phone(&digits, &[3, 3, 4]),
+    }
+}
 
-    let Some(remainder) = remainder.strip_prefix(' ') else {
-        return false;
-    };
-    let Some((prefix, line_number)) = remainder.split_once('-') else {
-        return false;
-    };
+fn format_north_american_phone(digits: &str) -> String {
+    match digits.len() {
+        0 => String::new(),
+        1..=3 => format!("({digits}"),
+        4..=6 => format!("({}) {}", &digits[..3], &digits[3..]),
+        _ => format!("({}) {}-{}", &digits[..3], &digits[3..6], &digits[6..]),
+    }
+}
 
-    (1..=3).contains(&country_code.len())
-        && (2..=4).contains(&area_code.len())
-        && (3..=4).contains(&prefix.len())
-        && (3..=4).contains(&line_number.len())
-        && country_code.chars().all(|ch| ch.is_ascii_digit())
-        && area_code.chars().all(|ch| ch.is_ascii_digit())
-        && prefix.chars().all(|ch| ch.is_ascii_digit())
-        && line_number.chars().all(|ch| ch.is_ascii_digit())
+fn format_grouped_phone(digits: &str, groups: &[usize]) -> String {
+    let mut remaining = digits;
+    let mut parts = Vec::new();
+    for group_len in groups {
+        if remaining.is_empty() {
+            break;
+        }
+        let take = (*group_len).min(remaining.len());
+        parts.push(remaining[..take].to_string());
+        remaining = &remaining[take..];
+    }
+    if !remaining.is_empty() {
+        parts.push(remaining.to_string());
+    }
+    parts.join(" ")
+}
+
+#[cfg(target_arch = "wasm32")]
+fn browser_region_code() -> String {
+    web_sys::window()
+        .and_then(|window| window.navigator().language())
+        .and_then(|language| {
+            language
+                .split(['-', '_'])
+                .nth(1)
+                .map(|region| region.to_ascii_uppercase())
+        })
+        .unwrap_or_else(|| "US".to_string())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn browser_region_code() -> String {
+    "US".to_string()
 }
 
 pub(crate) fn prefill_auth_field(

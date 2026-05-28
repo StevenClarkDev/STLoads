@@ -1,4 +1,6 @@
 target
+node_modules
+.tmp
 .git
 .gitignore
 .env
@@ -6,6 +8,8 @@ target
 !.env.ibm.example
 /docs
 /scripts
+/runtime
+package-lock.json
 .cos-*
 .tmp-ibm-*
 crates/frontend-leptos/dist
