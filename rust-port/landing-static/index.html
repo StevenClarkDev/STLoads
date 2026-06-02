@@ -22,10 +22,12 @@
     html,
     body {
       margin: 0;
+      width: 100%;
       min-height: 100%;
       background: #000;
       color: #fff;
       font-family: Inter, Arial, sans-serif;
+      overflow-x: hidden;
     }
 
     a {
@@ -34,7 +36,8 @@
     }
 
     .stage {
-      width: 100vw;
+      width: 100%;
+      max-width: 100%;
       height: var(--stage-height, 4755px);
       margin: 0;
       overflow: hidden;
@@ -800,14 +803,6 @@ running smarter logistics on STLoads.</p>
       <p style="position:absolute;left:564px;top:4724px;margin:0;color:#fff;font-size: 14px;font-weight:700">All Rights Reserved. Copyrights @ 2026</p>
     </div>
   </main>
-  <script>
-    const setStageScale = () => {
-      const scale = window.innerWidth / 1440;
-      document.documentElement.style.setProperty('--stage-scale', scale);
-      document.documentElement.style.setProperty('--stage-height', `${4755 * scale}px`);
-    };
-    setStageScale();
-    window.addEventListener('resize', setStageScale);
-  </script>
+  <script src="assets/landing-scale.js"></script>
 </body>
 </html>
